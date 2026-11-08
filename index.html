@@ -2043,7 +2043,7 @@ function frame(t) {
   // periodic redraws
   acc.board += dt; acc.desk += dt; acc.ticker += dt; acc.hud += dt; acc.panel += dt;
   if (acc.board > 2) { acc.board = 0; drawBoard(); drawWall(); }
-  if (acc.desk > 0.3) { acc.desk = 0; drawScreens(desks[deskIdx++ % desks.length]); }
+  if (acc.desk > 0.3) { acc.desk = 0; const d = desks[deskIdx++ % desks.length]; try { drawScreens(d); } catch (e) { console.warn('screen', d.a.id, e.message); } }
   if (acc.ticker > 15) { acc.ticker = 0; drawTicker(); }
   if (acc.hud > 1) { acc.hud = 0; topbar(); }
   if (acc.panel > 2 && PS.open) { acc.panel = 0; renderPanel(); }
@@ -2059,7 +2059,9 @@ $('#enter').onclick = () => {
   setTimeout(() => sayFor('scout', 'Welcome to the floor. Walk up to any desk and press E, or hit 1 to 5.'), 600);
 };
 camera.position.set(P.x, 1.66, P.z);
-drawBoard(); desks.forEach(drawScreens); drawTicker(); drawWall();
+// Reviewer/SMC code loads after this point: draw what we can now, then redraw every desk once all code is loaded.
+const drawAllScreens = () => desks.forEach(d => { try { drawScreens(d); } catch (e) { console.warn('screen', d.a.id, e.message); } });
+drawBoard(); drawAllScreens(); drawTicker(); drawWall(); setTimeout(drawAllScreens, 0);
 startEngine();
 requestAnimationFrame(frame);
 // If nothing arrives, explain why (most often: opened inside a preview window that blocks the internet)
