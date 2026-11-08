@@ -757,7 +757,7 @@ function ptClose(s, frac, why) {
     const R = p.risk ? p.realized / p.risk : 0;
     PT.log.unshift({s, b: p.b, side: p.side, t0: p.t, t1: now(), entry: p.entry, exit: fill, qty: p.qty0, notional: p.qty0 * p.entry, pnl: p.realized,
       R, fees: p.fees, funding: p.funding || 0, why: p.why, tag: p.tag, exitWhy: why, stop0: p.stop0, maxR: p.maxR || 0,
-      st: p.st || '', sc: p.sc, dist: p.dist, les: p.les || [], rvId: p.rvId || 0, unlK: p.unlK || 'none', unl: p.unl || '', strat: p.strat || 'rev', tp1R: p.tp1R, tpR: p.tpR, ex: (p.exits || []).map(e => [e.t, e.px, e.why])});
+      st: p.st || '', sc: p.sc, dist: p.dist, les: p.les || [], rvId: p.rvId || 0, unlK: p.unlK || 'none', unl: p.unl || '', strat: p.strat || 'rev', tp1R: p.tp1R, tpR: p.tpR, cx: p.cx, ex: (p.exits || []).map(e => [e.t, e.px, e.why])});
     if (PT.log.length > 500) PT.log.pop();
     delete PT.pos[s]; PT.cool[s] = now();
     raise('trader', s, 'close' + now(), `PAPER ${p.side === 'L' ? 'long' : 'short'} ${p.b} closed ${fmtMoney(p.realized, 1)} (${R >= 0 ? '+' : ''}${R.toFixed(2)}R) — ${why}`, p.realized >= 0 ? 1 : -1, 0, true);
@@ -796,7 +796,7 @@ function ptTryEnter(c) {
   const why = `${mom ? 'Momentum' : 'Reversal'} · ${tr.state.l} ${tr.score}/8 — ${tr.checks.filter(x => x.ok).map(x => x.label.split(' (')[0].toLowerCase()).slice(0, 4).join(', ')}`;
   const A = ptLessons();
   const uc = unlCtx(s);
-  PT.pos[s] = {strat: mom ? 'mom' : 'rev', unlK: uc.phase && uc.big ? uc.phase : 'none', unl: uc.phase ? unlLabel(uc) : '', st: tr.key, sc: tr.score, dist: dist * 100, les: R.les, rvId: A ? A.id || 0 : 0, tp1R: R.tp1R, tpR: R.tpR, hold: R.holdH, side, b: base(s), qty, qty0: qty, entry: fill, stop, stop0: stop, t: now(), risk: qty * Math.abs(fill - stop), realized: -fee, fees: fee,
+  PT.pos[s] = {cx: entryCtx(s, tr.checks), strat: mom ? 'mom' : 'rev', unlK: uc.phase && uc.big ? uc.phase : 'none', unl: uc.phase ? unlLabel(uc) : '', st: tr.key, sc: tr.score, dist: dist * 100, les: R.les, rvId: A ? A.id || 0 : 0, tp1R: R.tp1R, tpR: R.tpR, hold: R.holdH, side, b: base(s), qty, qty0: qty, entry: fill, stop, stop0: stop, t: now(), risk: qty * Math.abs(fill - stop), realized: -fee, fees: fee,
     funding: 0, why, tag: tg ? tg.l : '', nf: null, be: false, tp1: false, maxR: 0, exits: []};
   raise('trader', s, 'open' + now(), `PAPER ${mom ? 'MOMENTUM ' : ''}${side === 'L' ? 'LONG' : 'SHORT'} ${base(s)} @ ${fmtPx(fill)} · stop ${fmtPx(stop)} (${(dist * 100).toFixed(1)}%) · size ${fmtMoney(qty * fill)} · risk ${fmtMoney(qty * Math.abs(fill - stop))}${R.les.length ? ' · lessons: ' + R.les.join(', ') : ''}`, side === 'L' ? 1 : -1, 0, true);
   ptSave(); return true;
@@ -1032,7 +1032,7 @@ function smClose(s, frac, why) {
   if (frac >= 1 || p.qty <= p.qty0 * 1e-6) {
     const R = p.risk ? p.realized / p.risk : 0;
     SM.log.unshift({s, b: p.b, side: p.side, t0: p.t, t1: now(), entry: p.entry, exit: fill, qty: p.qty0, notional: p.qty0 * p.entry, pnl: p.realized, R, fees: p.fees,
-      funding: p.funding || 0, why: p.why, exitWhy: why, stop0: p.stop0, maxR: p.maxR || 0, sc: p.sc, rr: p.rr, zoneKind: p.zoneKind, target: p.target, zone: p.zone ? {lo: p.zone.lo, hi: p.zone.hi, kind: p.zone.kind} : null, sweep: p.sweep, lvl: p.lvl, unlK: p.unlK || 'none', strat: 'smc', ex: (p.exits || []).map(e => [e.t, e.px, e.why])});
+      funding: p.funding || 0, why: p.why, exitWhy: why, stop0: p.stop0, maxR: p.maxR || 0, sc: p.sc, rr: p.rr, zoneKind: p.zoneKind, target: p.target, zone: p.zone ? {lo: p.zone.lo, hi: p.zone.hi, kind: p.zone.kind} : null, sweep: p.sweep, lvl: p.lvl, unlK: p.unlK || 'none', strat: 'smc', cx: p.cx, ex: (p.exits || []).map(e => [e.t, e.px, e.why])});
     if (SM.log.length > 500) SM.log.pop();
     delete SM.pos[s]; SM.cool[s] = now();
     raise('smc', s, 'close' + now(), `SMC PAPER ${p.side === 'L' ? 'long' : 'short'} ${p.b} closed ${fmtMoney(p.realized, 1)} (${R >= 0 ? '+' : ''}${R.toFixed(2)}R) — ${why}`, p.realized >= 0 ? 1 : -1, 0, true);
@@ -1051,7 +1051,7 @@ function smTryEnter(c) {
   const fee = qty * fill * SM.cfg.feePct / 100; SM.cash -= fee;
   const rr = Math.abs(r.target - fill) / Math.abs(fill - stop), uc = unlCtx(s);
   const why = `${r.dir === 'L' ? 'Bullish' : 'Bearish'} SMC ${r.score}/6 — swept ${fmtPx(r.setup.swept.px)}, shift through ${fmtPx(r.setup.lvl.px)}, ${r.zone.kind} ${fmtPx(r.zone.lo)}–${fmtPx(r.zone.hi)}, target ${fmtPx(r.target)} (${rr.toFixed(1)}R)`;
-  SM.pos[s] = {side, b: base(s), qty, qty0: qty, entry: fill, stop, stop0: stop, target: r.target, rr, t: now(), risk: qty * Math.abs(fill - stop), realized: -fee, fees: fee, funding: 0,
+  SM.pos[s] = {cx: entryCtx(s, r.checks), side, b: base(s), qty, qty0: qty, entry: fill, stop, stop0: stop, target: r.target, rr, t: now(), risk: qty * Math.abs(fill - stop), realized: -fee, fees: fee, funding: 0,
     why, sc: r.score, zoneKind: r.zone.kind, zone: r.zone, sweep: r.setup.ext, lvl: r.setup.lvl.px, unlK: uc.phase && uc.big ? uc.phase : 'none', nf: null, be: false, tp1: false, maxR: 0, exits: [], dist: dist * 100};
   raise('smc', s, 'open' + now(), `SMC PAPER ${side === 'L' ? 'LONG' : 'SHORT'} ${base(s)} @ ${fmtPx(fill)} · stop ${fmtPx(stop)} (${(dist * 100).toFixed(1)}%) · target ${fmtPx(r.target)} (${rr.toFixed(1)}R) · ${r.zone.kind} entry, ${r.score}/6`, side === 'L' ? 1 : -1, 0, true);
   smSave(); return true;
@@ -1377,6 +1377,7 @@ function trReadPending() {
 }
 // called after every Trader tick: grade new trades, check stop-outs afterwards, decide when to review
 function rvTick() {
+  if (now() - (RVF.prof || 0) > 60e3) { RVF.prof = now(); try { profTick(); } catch (e) { console.warn('profile', e.message); } }
   if (now() - RVF.last > 120e3 && (typeof syTrading !== 'function' || syTrading())) rvFollowTick(2);
   if (!RV.on) return;
   let changed = false;
@@ -1491,5 +1492,118 @@ function rvTfStudy(L) {
     else rec = {k: 'stay', txt: `Stay on the current exits: no timeframe beat them by 0.3R or more per trade${best ? ` (best: ${best === '15m' ? '15m without early exits' : best}, ${fmtR(all[best].avg)} vs ${fmtR(A)})` : ''}.`};
   }
   return {n: T.length, all, lost, vd, pending, rec};
+}
+
+/* ---- screening criteria: which level of each coin reading led to better trades ---- */
+// When a trade opens, the coin's readings are saved with it (entryCtx), turned to the direction of the coin's move
+// (+ for a gainer, − for a loser) so gainers and losers can be judged together: "flow" = net taker flow WITH the move.
+// The Reviewer then looks, per strategy, for the level of each reading that split good trades from bad ones,
+// and publishes the clear ones as a screening profile that GainerLoser, OpenInterest and Flow use to rate coins.
+function entryCtx(s, checks) {
+  const m = mget(s), tk = S.tk.get(s) || {}, h = h1Stats(s), side = sideOf(s), dir = side === 'G' ? 1 : -1, fr = f4(s), e = S.trk[s];
+  const rk = (side === 'G' ? S.gainers : S.losers).indexOf(s), rsi = h && h.rsi.length ? h.rsi[h.rsi.length - 1] : null;
+  const r = v => fin(v) ? +(+v).toFixed(4) : null;
+  return {mv: r(Math.abs(tk.pct)), qv: r(tk.qv), rank: rk >= 0 ? rk + 1 : null, trkH: e ? r((now() - e.t0) / 3600e3) : null, volX: h ? r(h.volX) : null,
+    ext: h ? r(Math.abs(dir > 0 ? h.fromHi : h.fromLo) * 100) : null, mv1h: fin(m.pct1h) ? r(dir * m.pct1h) : null, rsi: fin(rsi) ? r(dir > 0 ? rsi : 100 - rsi) : null,
+    oi1h: r(fin(m.oi60) ? m.oi60 : m.oi15), flow: fin(m.net1h) && m.vol1h ? r(dir * m.net1h / m.vol1h * 100) : null,
+    bs: fin(m.ratio1h) && m.ratio1h > 0 ? r(dir > 0 ? m.ratio1h : 1 / m.ratio1h) : null, fund: fin(fr) ? r(dir * fr * 100) : null,
+    sg: (checks || []).map(c => c.ok === true ? 1 : c.ok === false ? 0 : null), side};
+}
+// ag = the agent that screens on it; lv = levels tested as cut-offs; u = unit
+const CRIT = [
+  {k: 'mv', ag: 'scout', lab: 'Size of the 24h move', u: '%', lv: [15, 25, 40, 60, 100]},
+  {k: 'qv', ag: 'scout', lab: '24h volume', u: '$', lv: [3e5, 5e5, 1e6, 2e6, 5e6]},
+  {k: 'rank', ag: 'scout', lab: 'Rank in the top 5 (1 = biggest mover)', u: '#', lv: [2, 3, 4, 5]},
+  {k: 'trkH', ag: 'scout', lab: 'Hours since it entered the top 5', u: 'h', lv: [1, 3, 6, 12]},
+  {k: 'volX', ag: 'scout', lab: 'Volume vs the previous day', u: '×', lv: [1, 1.5, 2.5, 4]},
+  {k: 'ext', ag: 'scout', lab: 'Distance from the 24h high (gainers) / low (losers)', u: '%', lv: [3, 8, 15, 25]},
+  {k: 'mv1h', ag: 'scout', lab: 'Last-hour move, in the trend\'s direction', u: '%', lv: [-5, -2, 0, 2, 5]},
+  {k: 'rsi', ag: 'scout', lab: '1h RSI, in the trend\'s direction', u: '', lv: [50, 60, 70, 80]},
+  {k: 'oi1h', ag: 'ivy', lab: 'Open interest change, last hour', u: '%', lv: [-5, -2, 0, 2, 5]},
+  {k: 'flow', ag: 'flo', lab: 'Net taker flow 1h with the trend (% of volume)', u: '%', lv: [-20, -10, 0, 10, 20]},
+  {k: 'bs', ag: 'flo', lab: 'Taker buy/sell 1h with the trend', u: '×', lv: [0.8, 0.9, 1, 1.1, 1.25]},
+  {k: 'fund', ag: 'flo', lab: 'Funding crowded with the trend (%/4h)', u: '%', lv: [-0.03, 0, 0.02, 0.05, 0.08]}];
+const CRIT_SIGNS = {
+  rev: ['Lower high / higher low on 15m', 'Crossed the 15m EMA20', 'Net flow turned (1h)', 'Taker pressure turned', 'Rejection wick ≥ 5%', 'Crowd paying funding', 'OI not backing the move', '1h RSI turning from an extreme'],
+  mom: ['Fresh 15m high / low', 'Sloping 15m EMA20', 'Net flow with the move', 'Taker pressure with the move', 'Volume expanding', 'Funding not crowded', 'OI building with the move', '1h RSI strong, not exhausted'],
+  smc: ['Liquidity swept', 'Structure shift', 'Fair value gap (not OB)', 'Discount / premium entry', '1h bias aligned', 'Displacement on volume']};
+const CRIT_STRAT = {rev: 'Reversal (Trader)', mom: 'Momentum (Trader)', smc: 'SMC Trader'};
+// many readings × several levels are tested, so a gap can appear by luck: a level is published only with enough trades
+// on both sides, a gap of 0.4R+, a Welch t-statistic of 3.2+, and the same gap (≥0.25R, same direction, 4+ trades a side) in both the older and the newer half of the trades.
+// Simulated on random data: about one chance pattern per 10–30 checks; a real 0.8R gap is caught ~60% of the time by 80 trades
+const CRIT_MIN = 20, CRIT_SIDE = 8, CRIT_EDGE = 0.4, CRIT_T = 3.2, CRIT_HALF = 4;
+function critT(A, B) {
+  const m = a => a.reduce((x, y) => x + y, 0) / a.length, v = (a, mu) => a.reduce((x, y) => x + (y - mu) ** 2, 0) / Math.max(1, a.length - 1);
+  const ra = A.map(x => x.R), rb = B.map(x => x.R), ma = m(ra), mb = m(rb), se = Math.sqrt(v(ra, ma) / ra.length + v(rb, mb) / rb.length);
+  return se > 1e-9 ? (ma - mb) / se : (ma === mb ? 0 : Math.sign(ma - mb) * 99);
+}
+const critFmt = (c, v) => c.u === '$' ? fmtUsd(v) : c.u === '#' ? '#' + v : c.u === '×' ? v + '×' : c.u === 'h' ? v + 'h' : v + (c.u || '');
+const critTrades = st => (st === 'smc' ? (typeof SM !== 'undefined' ? SM.log : []) : PT.log.filter(x => (x.strat || 'rev') === st)).filter(x => x.cx && !rvManual(x));
+function critSplit(T, c) {
+  const V = T.filter(x => fin(x.cx[c.k])); let best = null;
+  for (const t of c.lv) {
+    const A = V.filter(x => x.cx[c.k] >= t), B = V.filter(x => x.cx[c.k] < t);
+    if (A.length < CRIT_SIDE || B.length < CRIT_SIDE) continue;
+    const a = rvAgg(A), b = rvAgg(B), d = a.avgR - b.avgR, ts = critT(A, B);
+    if (!best || Math.abs(ts) > Math.abs(best.ts)) best = {t, a, b, d, ts};
+  }
+  const ed = [-Infinity, ...c.lv, Infinity], bk = [];
+  for (let i = 0; i < ed.length - 1; i++) { const A = V.filter(x => x.cx[c.k] >= ed[i] && x.cx[c.k] < ed[i + 1]); if (A.length) bk.push(Object.assign({lo: ed[i], hi: ed[i + 1]}, rvAgg(A))); }
+  return {n: V.length, best, bk};
+}
+// the pattern must repeat in the older and the newer half of the trades (a chance pattern rarely does)
+function critHoldsDir(T, inA, up) {
+  const S2 = [...T].sort((a, b) => a.t1 - b.t1), h = Math.floor(S2.length / 2);
+  return [S2.slice(0, h), S2.slice(h)].every(H => { const A = H.filter(inA), B = H.filter(x => !inA(x)); if (A.length < CRIT_HALF || B.length < CRIT_HALF) return false; const d = rvAgg(A).avgR - rvAgg(B).avgR; return up ? d >= 0.25 : d <= -0.25; });
+}
+function critSign(T, i) {
+  const A = T.filter(x => x.cx.sg && x.cx.sg[i] === 1), B = T.filter(x => x.cx.sg && x.cx.sg[i] === 0);
+  return {a: rvAgg(A), b: rvAgg(B), d: A.length && B.length ? rvAgg(A).avgR - rvAgg(B).avgR : null, ts: A.length > 1 && B.length > 1 ? critT(A, B) : 0};
+}
+// the published profile: only splits with enough trades on both sides and a clear gap
+function rvProfile() {
+  const F = [], n = {};
+  for (const st of ['rev', 'mom', 'smc']) {
+    const T = critTrades(st); n[st] = T.length; if (T.length < CRIT_MIN) continue;
+    for (const c of CRIT) {
+      const sp = critSplit(T, c), b = sp.best; if (!b || Math.abs(b.d) < CRIT_EDGE || Math.abs(b.ts) < CRIT_T) continue;
+      if (!critHoldsDir(T.filter(x => fin(x.cx[c.k])), x => x.cx[c.k] >= b.t, b.d > 0)) continue;
+      const up = b.d > 0, win = up ? b.a : b.b, lose = up ? b.b : b.a; if (!(win.avgR > 0)) continue;
+      F.push({st, k: c.k, ag: c.ag, t: b.t, up, txt: `${c.lab} ${up ? '≥' : 'under'} ${critFmt(c, b.t)}`, ev: `${fmtR(win.avgR)} over ${win.n} trades vs ${fmtR(lose.avgR)} over ${lose.n}`});
+    }
+    (CRIT_SIGNS[st] || []).forEach((lab, i) => {
+      const r = critSign(T, i); if (r.a.n < CRIT_SIDE || r.b.n < CRIT_SIDE || Math.abs(r.d) < CRIT_EDGE || Math.abs(r.ts) < CRIT_T) return;
+      if (!critHoldsDir(T.filter(x => x.cx.sg && x.cx.sg[i] != null), x => x.cx.sg[i] === 1, r.d > 0)) return;
+      const up = r.d > 0, win = up ? r.a : r.b, lose = up ? r.b : r.a; if (!(win.avgR > 0)) return;
+      F.push({st, k: 'sg' + i, ag: i === 6 && st !== 'smc' ? 'ivy' : [2, 3, 5].includes(i) && st !== 'smc' ? 'flo' : 'scout', sg: i, up, txt: up ? `"${lab}" present` : `"${lab}" absent`, ev: `${fmtR(win.avgR)} over ${win.n} trades vs ${fmtR(lose.avgR)} over ${lose.n}`});
+    });
+  }
+  RV.prof = {t: now(), n, F};
+  return RV.prof;
+}
+// how a coin looks against the profile right now, for one strategy
+function profFit(s, st) {
+  const F = ((RV.prof || {}).F || []).filter(f => f.st === st); if (!F.length) return null;
+  const chk = st === 'rev' ? (S.trC.get(s) || {}).checks : st === 'mom' ? (S.moC.get(s) || {}).checks : (S.smC && S.smC.get(s) || {}).checks;
+  const cx = entryCtx(s, chk), hit = [], miss = [];
+  for (const f of F) {
+    const v = f.sg != null ? (cx.sg[f.sg] == null ? null : cx.sg[f.sg]) : cx[f.k];
+    if (v == null) { miss.push(f); continue; }
+    const ok = f.sg != null ? (f.up ? v === 1 : v === 0) : (f.up ? v >= f.t : v < f.t);
+    (ok ? hit : miss).push(f);
+  }
+  return {hit, miss, of: F.length};
+}
+// keep the profile current and tell GainerLoser when a top-5 mover fits it fully
+function profTick() {
+  const nT = critTrades('rev').length + critTrades('mom').length + critTrades('smc').length;
+  if (!RV.prof || RV.prof.nT !== nT) { rvProfile(); RV.prof.nT = nT; rvSave(); }
+  if (!RV.prof.F.length) return;
+  for (const s of [...S.gainers, ...S.losers]) for (const st of ['rev', 'mom', 'smc']) {
+    if (st === 'rev' && sideOf(s) === 'L' && !PT.cfg.revLong) continue;
+    const f = profFit(s, st); if (!f || f.of < 2 || f.hit.length < f.of) continue;
+    const key = s + ':' + st; RV.fitSeen = RV.fitSeen || {}; if (now() - (RV.fitSeen[key] || 0) < 12 * 3600e3) continue; RV.fitSeen[key] = now(); rvSave();
+    raise('scout', s, 'fit' + st, `${base(s)} fits all ${f.of} of the Reviewer's winning criteria for ${CRIT_STRAT[st].toLowerCase()}: ${f.hit.map(x => x.txt).join('; ')}`, sideOf(s) === 'G' ? 1 : -1, 0, true);
+  }
 }
 
