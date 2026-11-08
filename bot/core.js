@@ -1377,6 +1377,7 @@ function trReadPending() {
 }
 // called after every Trader tick: grade new trades, check stop-outs afterwards, decide when to review
 function rvTick() {
+  if (now() - RVF.last > 120e3 && (typeof syTrading !== 'function' || syTrading())) rvFollowTick(2);
   if (!RV.on) return;
   let changed = false;
   for (const x of PT.log) {
@@ -1390,5 +1391,105 @@ function rvTick() {
   if (!RV.auto || RV.pending) return;
   const fresh = PT.log.filter(x => x.t1 > RV.lastT && !rvManual(x)).length, total = PT.log.filter(x => !rvManual(x)).length;
   if (total >= 3 && (fresh >= RV.every || (fresh >= 1 && now() - RV.lastT > 12 * 3600e3))) rvRun(false);
+}
+
+/* ---- 24h follow-up: what each trade did after it closed, and how other chart timeframes would have managed it ---- */
+// 24 h after a trade closes, the Reviewer pulls its candles and replays the same entry three ways:
+//   15m · same stop, no early exits (no "signals faded" or time stop): half at the first target, 15m EMA20 trail, full target
+//   1h  · stop beyond the 12h swing read on 1h candles (never tighter than the real stop), 1h EMA20 trail
+//   4h  · stop beyond the 24h swing read on 4h candles, 4h EMA20 trail
+// Price is walked on 15m candles in every case (worst case first inside each candle), until 24 h after the real exit.
+// R is net of fees and slippage, and each version risks the same 1%, so a wider stop means a smaller position.
+const RV_TF = {'15m': {ms: 15 * 60e3, sw: 24, lab: '15m chart, no early exits'}, '1h': {ms: 3600e3, sw: 12, lab: '1h chart'}, '4h': {ms: 4 * 3600e3, sw: 6, lab: '4h chart'}};
+const RV_FU_H = 24, RVF = {busy: false, last: 0};
+function rvSimTf(x, B15, Btf, tf, acct) {
+  const L = x.side === 'L', sg = L ? 1 : -1, E = x.entry, d0 = Math.abs(E - x.stop0), T = RV_TF[tf], end = x.t1 + RV_FU_H * 3600e3;
+  let d = d0;
+  if (tf !== '15m') {
+    const pre = Btf.filter(b => b[0] + T.ms <= x.t0).slice(-T.sw); if (pre.length < Math.min(3, T.sw)) return {na: 'not enough candles'};
+    const buf = (acct === 'sm' ? SM.cfg.stopBuf : PT.cfg.stopBuf) / 100;
+    const sw = L ? Math.min(...pre.map(b => b[3])) * (1 - buf) : Math.max(...pre.map(b => b[2])) * (1 + buf);
+    d = Math.max(d0, sg * (E - sw));
+  }
+  if (d / E > 0.3) return {na: `stop would be ${(d / E * 100).toFixed(0)}% away`};
+  const cost = 2 * (PT.cfg.feePct + PT.cfg.slipPct) / 100 * E / d;
+  const t1R = (acct === 'sm' ? SM.cfg.tp1R : x.tp1R || PT.cfg.tp1R), tpPx = acct === 'sm' && fin(x.target) ? x.target : E + sg * (x.tpR || PT.cfg.tpR) * d;
+  const half = E + sg * t1R * d;
+  // EMA20 of the timeframe's closes, known at each candle's close
+  const cl = Btf.map(b => b[4]), em = emaArr(cl, 20), emaAt = t => { let v = null; for (let i = 0; i < Btf.length && Btf[i][0] + T.ms <= t; i++) if (i >= 19) v = em[i]; return v; };
+  let stop = E - sg * d, real = 0, rest = 1, h = false, why = 'still open 24h after the exit';
+  const path = B15.filter(b => b[0] >= x.t0 && b[0] < end);
+  for (const b of path) {
+    const adv = L ? b[3] : b[2], fav = L ? b[2] : b[3];
+    if (sg * (adv - stop) <= 0) { real += rest * sg * (stop - E) / d; rest = 0; why = !h ? 'stop' : sg * (stop - E) > 1e-12 ? 'trailing stop' : 'breakeven'; break; }
+    if (!h && sg * (fav - half) >= 0) { h = true; real += 0.5 * t1R; rest = 0.5; stop = L ? Math.max(stop, E) : Math.min(stop, E); }
+    if (sg * (fav - tpPx) >= 0) { real += rest * sg * (tpPx - E) / d; rest = 0; why = 'target'; break; }
+    if (h) { const e = emaAt(b[0] + 15 * 60e3); if (fin(e)) { const ts = L ? e * 0.995 : e * 1.005; if (L ? ts > stop : ts < stop) stop = ts; } }
+  }
+  if (rest > 0 && path.length) real += rest * sg * (path[path.length - 1][4] - E) / d;
+  return {R: real - cost, why, stopPct: d / E * 100};
+}
+// after the exit: did price go on to the first target before touching the original stop?
+function rvAfterExit(x, B15) {
+  const L = x.side === 'L', sg = L ? 1 : -1, E = x.entry, d = Math.abs(E - x.stop0), end = x.t1 + RV_FU_H * 3600e3;
+  let mx = -Infinity, tMax = x.t1, pMax = x.exit, hitStop = false, tStop = null, reach = false, end24 = null;
+  for (const b of B15.filter(b => b[0] + 15 * 60e3 > x.t1 && b[0] < end)) {
+    const adv = L ? b[3] : b[2], fav = L ? b[2] : b[3], r = sg * (fav - E) / d;
+    if (!hitStop && r > mx) { mx = r; tMax = b[0] + 7.5 * 60e3; pMax = fav; if (r >= 1.5) reach = true; }
+    if (!hitStop && sg * (adv - x.stop0) <= 0) { hitStop = true; tStop = b[0]; }
+    end24 = sg * (b[4] - E) / d;
+  }
+  const lost = x.R <= 0, early = !/stop loss/.test(x.exitWhy || '');
+  let v, txt;
+  if (lost) {
+    if (reach) { v = early ? 'early' : 'tight'; txt = early ? `Closed too early: after the exit, price reached +${mx.toFixed(1)}R before touching the stop` : `Stop too tight: after the stop-out, price went on to +${mx.toFixed(1)}R`; }
+    else if (hitStop && early) { v = 'saved'; txt = `Early exit was right: price later hit the stop (saved ${fmtR(x.R + 1)})`; }
+    else { v = 'right'; txt = `Exit was right: price never got back to +1.5R in the next ${RV_FU_H}h (best +${Math.max(0, mx).toFixed(1)}R)`; }
+  } else if (mx > Math.max(x.maxR || 0, x.R) + 1) { v = 'left'; txt = `Left money: after the exit, price ran to +${mx.toFixed(1)}R`; }
+  else { v = 'fine'; txt = `Good exit: price did not go much further (best +${Math.max(0, mx).toFixed(1)}R after)`; }
+  return {v, txt, mx: fin(mx) ? mx : 0, tMax, pMax, hitStop, tStop, end: end24};
+}
+async function rvFollowOne(x, acct) {
+  const end = x.t1 + RV_FU_H * 3600e3;
+  const kl = async (iv, ms) => (await api(`/fapi/v1/klines?symbol=${x.s}&interval=${iv}&startTime=${x.t0 - 30 * ms}&endTime=${end}&limit=1500`)).map(b => [+b[0], +b[1], +b[2], +b[3], +b[4]]);
+  const B15 = await kl('15m', 15 * 60e3), B1 = await kl('1h', 3600e3), B4 = await kl('4h', 4 * 3600e3);
+  if (B15.length < 10) throw new Error('no candles');
+  const sim = {'15m': rvSimTf(x, B15, B15, '15m', acct), '1h': rvSimTf(x, B15, B1, '1h', acct), '4h': rvSimTf(x, B15, B4, '4h', acct)};
+  const af = rvAfterExit(x, B15);
+  const ok = Object.entries(sim).filter(([, v]) => fin(v.R)).sort((a, b) => b[1].R - a[1].R)[0];
+  x.fu = {t: now(), af, sim, best: ok ? ok[0] : null};
+  if (x.R <= 0) raise('rev', x.s, 'fu' + x.t1, `${x.b} ${x.side === 'L' ? 'long' : 'short'}${acct === 'sm' ? ' (SMC)' : ''}, 24h after its ${fmtR(x.R)} exit: ${af.txt}. Replayed: 15m ${fmtR(sim['15m'].R)} · 1h ${fmtR(sim['1h'].R)} · 4h ${fmtR(sim['4h'].R)}`, af.v === 'early' || af.v === 'tight' ? -1 : 1, 0);
+}
+// runs in the browser that trades (every 2 min) and in the cloud (each cycle): picks up trades whose 24h has passed
+async function rvFollowTick(max = 2) {
+  if (RVF.busy) return 0; RVF.busy = true; RVF.last = now(); let n = 0;
+  try {
+    const due = [];
+    for (const [a, L] of [['pt', PT.log], ['sm', typeof SM !== 'undefined' ? SM.log : []]])
+      for (const x of L) if (!x.fu && !rvManual(x) && now() >= x.t1 + RV_FU_H * 3600e3 + 5 * 60e3 && now() - x.t1 < 30 * 864e5 && !(x.fuErr && now() - x.fuErr < 30 * 60e3)) due.push([a, x]);
+    due.sort((p, q) => p[1].t1 - q[1].t1);
+    for (const [a, x] of due.slice(0, max)) { try { await rvFollowOne(x, a); n++; } catch (e) { x.fuErr = now(); } }
+    if (n) { ptSave(); if (typeof smSave === 'function') smSave(); }
+  } finally { RVF.busy = false; }
+  return n;
+}
+// which timeframe would have managed the trades best (all followed trades, so wider stops are also judged on the winners they'd give back)
+const RV_TF_MIN = 8;
+function rvTfStudy(L) {
+  const T = L.filter(x => x.fu && x.fu.sim), cols = ['act', '15m', '1h', '4h'];
+  const agg = A => Object.fromEntries(cols.map(k => { const R = A.map(x => k === 'act' ? x.R : (x.fu.sim[k] || {}).R).filter(fin); return [k, {n: R.length, avg: rvMean(R), win: R.length ? R.filter(v => v > 0).length / R.length * 100 : null, sum: R.reduce((a, b) => a + b, 0)}]; }));
+  const all = agg(T), lost = agg(T.filter(x => x.R <= 0)), vd = {};
+  for (const x of T.filter(x => x.R <= 0)) vd[x.fu.af.v] = (vd[x.fu.af.v] || 0) + 1;
+  const pending = L.filter(x => !x.fu && !rvManual(x) && now() - x.t1 < RV_FU_H * 3600e3).length;
+  let rec;
+  if (T.length < RV_TF_MIN) rec = {k: 'wait', txt: `Not enough evidence yet: ${T.length} trade${T.length === 1 ? '' : 's'} followed, needs ${RV_TF_MIN}. Keep trading as is.`};
+  else {
+    const best = ['15m', '1h', '4h'].filter(k => all[k].n >= RV_TF_MIN).sort((a, b) => all[b].avg - all[a].avg)[0], A = all.act.avg;
+    if (best && all[best].avg - A >= 0.3 && all[best].avg > 0) rec = {k: best, txt: best === '15m'
+      ? `Keep the 15m chart, but stop exiting early: holding to the stop, trail or target would have averaged ${fmtR(all['15m'].avg)} per trade vs ${fmtR(A)} with the early exits.`
+      : `Manage trades on the ${best} chart: a stop beyond the ${best} swing and a ${best} EMA20 trail would have averaged ${fmtR(all[best].avg)} per trade vs ${fmtR(A)} with the current 15m exits.`};
+    else rec = {k: 'stay', txt: `Stay on the current exits: no timeframe beat them by 0.3R or more per trade${best ? ` (best: ${best === '15m' ? '15m without early exits' : best}, ${fmtR(all[best].avg)} vs ${fmtR(A)})` : ''}.`};
+  }
+  return {n: T.length, all, lost, vd, pending, rec};
 }
 

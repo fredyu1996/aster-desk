@@ -119,12 +119,15 @@ async function main() {
     }
   }
 
+  X('RVF.last = Date.now()'); // the Reviewer's 24h follow-ups run below, not inside the tick
   // a normal live cycle, exactly what the desk does every few seconds
   X('computeAll(); periodicChecks(); trkUpdate();');
   // the Trader reads any pending review straight away (the browser waits 20 s so you can watch it happen)
   const cycle = () => X('if (RV.pending) { const r = RV.reviews.find(x => x.id === RV.pending); if (r) r.t -= 60e3; } ptTick();');
   cycle(); if (X('!!RV.pending')) cycle();
 
+  // trades that closed 24h+ ago: follow up what price did next and replay them on 15m / 1h / 4h charts
+  const followed = await X('rvFollowTick')(6); if (followed) log(`followed up ${followed} closed trade${followed > 1 ? 's' : ''} (24h after exit)`);
   if (process.env.DEBUG_SMC) for (const [k, r] of X('[...S.smC.entries()]')) log('  SMC', k, r.stage, r.dir || '', r.score + '/6', r.zone ? r.zone.kind : '', r.rr ? r.rr.toFixed(1) + 'R' : '');
   const keep = new Set(['trader', 'rev', 'scout', 'smc']); // tracker, unlock warnings, both traders' trades, reviews
   const fresh = X('S.alerts').filter(a => keep.has(a.agent)).map(a => ({t: a.t, agent: a.agent, s: a.s, text: a.text, dir: a.dir}));
