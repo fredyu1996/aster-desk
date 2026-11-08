@@ -1,0 +1,26 @@
+name: Cloud trader
+# One paper-trading cycle every ~5 minutes (GitHub's minimum; runs can start a few minutes late).
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: cloud-trader
+  cancel-in-progress: false
+jobs:
+  trade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run one trading cycle
+        run: node bot/run.mjs
+        env:
+          DATA_REPO: ${{ vars.DATA_REPO || 'fredyu1996/aster-desk-data' }}
+          DATA_TOKEN: ${{ secrets.DATA_TOKEN }}
+          TZ: America/Creston
