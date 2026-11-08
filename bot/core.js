@@ -756,7 +756,7 @@ function ptClose(s, frac, why) {
     const R = p.risk ? p.realized / p.risk : 0;
     PT.log.unshift({s, b: p.b, side: p.side, t0: p.t, t1: now(), entry: p.entry, exit: fill, qty: p.qty0, notional: p.qty0 * p.entry, pnl: p.realized,
       R, fees: p.fees, funding: p.funding || 0, why: p.why, tag: p.tag, exitWhy: why, stop0: p.stop0, maxR: p.maxR || 0,
-      st: p.st || '', sc: p.sc, dist: p.dist, les: p.les || [], rvId: p.rvId || 0, unlK: p.unlK || 'none', unl: p.unl || '', strat: p.strat || 'rev'});
+      st: p.st || '', sc: p.sc, dist: p.dist, les: p.les || [], rvId: p.rvId || 0, unlK: p.unlK || 'none', unl: p.unl || '', strat: p.strat || 'rev', tp1R: p.tp1R, tpR: p.tpR, ex: (p.exits || []).map(e => [e.t, e.px, e.why])});
     if (PT.log.length > 500) PT.log.pop();
     delete PT.pos[s]; PT.cool[s] = now();
     raise('trader', s, 'close' + now(), `PAPER ${p.side === 'L' ? 'long' : 'short'} ${p.b} closed ${fmtMoney(p.realized, 1)} (${R >= 0 ? '+' : ''}${R.toFixed(2)}R) — ${why}`, p.realized >= 0 ? 1 : -1, 0, true);
@@ -1031,7 +1031,7 @@ function smClose(s, frac, why) {
   if (frac >= 1 || p.qty <= p.qty0 * 1e-6) {
     const R = p.risk ? p.realized / p.risk : 0;
     SM.log.unshift({s, b: p.b, side: p.side, t0: p.t, t1: now(), entry: p.entry, exit: fill, qty: p.qty0, notional: p.qty0 * p.entry, pnl: p.realized, R, fees: p.fees,
-      funding: p.funding || 0, why: p.why, exitWhy: why, stop0: p.stop0, maxR: p.maxR || 0, sc: p.sc, rr: p.rr, zoneKind: p.zoneKind, target: p.target, unlK: p.unlK || 'none', strat: 'smc'});
+      funding: p.funding || 0, why: p.why, exitWhy: why, stop0: p.stop0, maxR: p.maxR || 0, sc: p.sc, rr: p.rr, zoneKind: p.zoneKind, target: p.target, zone: p.zone ? {lo: p.zone.lo, hi: p.zone.hi, kind: p.zone.kind} : null, sweep: p.sweep, lvl: p.lvl, unlK: p.unlK || 'none', strat: 'smc', ex: (p.exits || []).map(e => [e.t, e.px, e.why])});
     if (SM.log.length > 500) SM.log.pop();
     delete SM.pos[s]; SM.cool[s] = now();
     raise('smc', s, 'close' + now(), `SMC PAPER ${p.side === 'L' ? 'long' : 'short'} ${p.b} closed ${fmtMoney(p.realized, 1)} (${R >= 0 ? '+' : ''}${R.toFixed(2)}R) — ${why}`, p.realized >= 0 ? 1 : -1, 0, true);

@@ -104,6 +104,8 @@ table.t td.sym{font-family:var(--sans);font-weight:700}
 .chips{display:flex;gap:6px;flex-wrap:wrap}
 .chip{padding:4px 10px;border-radius:999px;background:#111a31;border:1px solid var(--line);cursor:pointer;font:600 12px var(--sans)}
 .chip:hover{border-color:var(--acc)}
+.chip.on{background:rgba(197,240,90,.16);border-color:#c5f05a;color:#c5f05a}
+.rvpick:hover{background:rgba(255,255,255,.05)}
 .grid2{display:grid;grid-template-columns:1.35fr 1fr;gap:16px}
 .card2{background:#0a1020;border:1px solid var(--line);border-radius:12px;padding:14px}
 .card2 h3{margin:0 0 10px;font-size:12px;letter-spacing:.1em;color:var(--dim);font-weight:700}
@@ -136,7 +138,7 @@ canvas.chart{width:100%;height:260px;display:block;border-radius:10px;background
   <div class="st" id="sOi">OI history —</div>
   <div class="st" id="sSync" style="cursor:pointer;white-space:nowrap" title="Share this account across computers"></div>
   <div class="sp"></div>
-  <div class="help"><kbd>WASD</kbd> move · <kbd>Mouse</kbd> look · <kbd>E</kbd> open desk · <kbd>1</kbd>–<kbd>6</kbd> jump to agent · <kbd>C</kbd> check a coin · <kbd>Esc</kbd> release</div>
+  <div class="help"><kbd>WASD</kbd> move · <kbd>Mouse</kbd> look · <kbd>E</kbd> open desk · <kbd>1</kbd>–<kbd>6</kbd> agents · <kbd>C</kbd> coin check · <kbd>V</kbd> review wall · <kbd>Esc</kbd> release</div>
   <div class="st" id="clock">--:--:--</div>
 </div>
 <div id="netbar"></div>
@@ -155,7 +157,7 @@ canvas.chart{width:100%;height:260px;display:block;border-radius:10px;background
     <div id="netwarn"></div>
     <div class="row">
       <button class="btn" id="enter">Enter the floor</button>
-      <div class="keys"><span><span class="kbd">WASD</span> move</span><span><span class="kbd">Shift</span> run</span><span><span class="kbd">E</span> talk to agent</span><span><span class="kbd">1–6</span> open a desk</span><span><span class="kbd">C</span> check any coin</span><span><span class="kbd">Esc</span> free mouse</span></div>
+      <div class="keys"><span><span class="kbd">WASD</span> move</span><span><span class="kbd">Shift</span> run</span><span><span class="kbd">E</span> talk to agent</span><span><span class="kbd">1–6</span> open a desk</span><span><span class="kbd">C</span> check any coin</span><span><span class="kbd">V</span> review wall</span><span><span class="kbd">Esc</span> free mouse</span></div>
     </div>
     <div class="disc">Data: Aster public futures API (fapi.asterdex.com), read-only, no keys. Agents are rule-based signal monitors, not financial advice. Small caps are thin and fast — size and stops are on you.</div>
   </div>
@@ -937,7 +939,7 @@ function ptClose(s, frac, why) {
     const R = p.risk ? p.realized / p.risk : 0;
     PT.log.unshift({s, b: p.b, side: p.side, t0: p.t, t1: now(), entry: p.entry, exit: fill, qty: p.qty0, notional: p.qty0 * p.entry, pnl: p.realized,
       R, fees: p.fees, funding: p.funding || 0, why: p.why, tag: p.tag, exitWhy: why, stop0: p.stop0, maxR: p.maxR || 0,
-      st: p.st || '', sc: p.sc, dist: p.dist, les: p.les || [], rvId: p.rvId || 0, unlK: p.unlK || 'none', unl: p.unl || '', strat: p.strat || 'rev'});
+      st: p.st || '', sc: p.sc, dist: p.dist, les: p.les || [], rvId: p.rvId || 0, unlK: p.unlK || 'none', unl: p.unl || '', strat: p.strat || 'rev', tp1R: p.tp1R, tpR: p.tpR, ex: (p.exits || []).map(e => [e.t, e.px, e.why])});
     if (PT.log.length > 500) PT.log.pop();
     delete PT.pos[s]; PT.cool[s] = now();
     raise('trader', s, 'close' + now(), `PAPER ${p.side === 'L' ? 'long' : 'short'} ${p.b} closed ${fmtMoney(p.realized, 1)} (${R >= 0 ? '+' : ''}${R.toFixed(2)}R) — ${why}`, p.realized >= 0 ? 1 : -1, 0, true);
@@ -1212,7 +1214,7 @@ function smClose(s, frac, why) {
   if (frac >= 1 || p.qty <= p.qty0 * 1e-6) {
     const R = p.risk ? p.realized / p.risk : 0;
     SM.log.unshift({s, b: p.b, side: p.side, t0: p.t, t1: now(), entry: p.entry, exit: fill, qty: p.qty0, notional: p.qty0 * p.entry, pnl: p.realized, R, fees: p.fees,
-      funding: p.funding || 0, why: p.why, exitWhy: why, stop0: p.stop0, maxR: p.maxR || 0, sc: p.sc, rr: p.rr, zoneKind: p.zoneKind, target: p.target, unlK: p.unlK || 'none', strat: 'smc'});
+      funding: p.funding || 0, why: p.why, exitWhy: why, stop0: p.stop0, maxR: p.maxR || 0, sc: p.sc, rr: p.rr, zoneKind: p.zoneKind, target: p.target, zone: p.zone ? {lo: p.zone.lo, hi: p.zone.hi, kind: p.zone.kind} : null, sweep: p.sweep, lvl: p.lvl, unlK: p.unlK || 'none', strat: 'smc', ex: (p.exits || []).map(e => [e.t, e.px, e.why])});
     if (SM.log.length > 500) SM.log.pop();
     delete SM.pos[s]; SM.cool[s] = now();
     raise('smc', s, 'close' + now(), `SMC PAPER ${p.side === 'L' ? 'long' : 'short'} ${p.b} closed ${fmtMoney(p.realized, 1)} (${R >= 0 ? '+' : ''}${R.toFixed(2)}R) — ${why}`, p.realized >= 0 ? 1 : -1, 0, true);
@@ -1415,7 +1417,7 @@ TICKER.tex.wrapS = THREE.RepeatWrapping;
   const m = new THREE.Mesh(new THREE.PlaneGeometry(13, 0.26), new THREE.MeshBasicMaterial({map: TICKER.tex, toneMapped: false, fog: false}));
   m.position.set(0, 0.72, -RZ + 0.16); scene.add(m);
 }
-/* ---- west wall: neon sign + rules poster ---- */
+/* ---- west wall: neon sign + review wall (Reviewer's verdicts on the chart, rules in force) ---- */
 {
   const T = canvasTex(1024, 256), c = T.ctx;
   const neon = () => { c.clearRect(0, 0, 1024, 256);
@@ -1423,17 +1425,17 @@ TICKER.tex.wrapS = THREE.RepeatWrapping;
   c.fillStyle = '#cfe0ff'; c.fillText('ASTER', 40, 128); const w = c.measureText('ASTER ').width; c.fillStyle = '#6aa8ff'; c.fillText('DESK', 40 + w, 128);
   T.tex.needsUpdate = true; }; neon(); fontRedraws.push(neon);
   const m = new THREE.Mesh(new THREE.PlaneGeometry(4, 1), new THREE.MeshBasicMaterial({map: T.tex, transparent: true, toneMapped: false}));
-  m.rotation.y = Math.PI / 2; m.position.set(-RX + 0.02, 3.1, -4); scene.add(m);
-  const R = canvasTex(700, 900), r = R.ctx;
-  const poster = () => {
-  r.fillStyle = '#0b1122'; r.fillRect(0, 0, 700, 900); r.strokeStyle = '#ffb547'; r.lineWidth = 6; r.strokeRect(12, 12, 676, 876);
-  r.fillStyle = '#ffb547'; r.font = '800 54px Inter, sans-serif'; r.fillText('HOUSE RULES', 50, 100);
-  r.font = '500 30px Inter, sans-serif'; r.fillStyle = '#dbe4fb';
-  const rules = ['Entry, stop and size are set', 'before the click.', '', 'Risk a small, fixed % per trade.', '', 'Small caps: thin books, wide', 'slippage, violent wicks.', '', 'Signals are probabilities,', 'not promises.', '', 'No revenge trades.', '', 'Flat is a position.'];
-  rules.forEach((l, i) => r.fillText(l, 50, 180 + i * 46));
-  R.tex.needsUpdate = true; }; poster(); fontRedraws.push(poster);
-  const p = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 1.8), new THREE.MeshBasicMaterial({map: R.tex}));
-  p.rotation.y = Math.PI / 2; p.position.set(-RX + 0.02, 1.9, 3.5); scene.add(p);
+  m.rotation.y = Math.PI / 2; m.position.set(-RX + 0.02, 3.1, -6.6); scene.add(m);
+}
+const RWALL_W = 12, RWALL_H = 2.7, RWALL_Z = 2.6;
+const RWALL = canvasTex(3200, Math.round(3200 * RWALL_H / RWALL_W));
+{
+  const fr = mat(0x05070d, {metalness: .7, roughness: .3});
+  const b = new THREE.Mesh(new THREE.BoxGeometry(0.12, RWALL_H + 0.36, RWALL_W + 0.36), fr); b.position.set(-RX + 0.08, 2.3, RWALL_Z); scene.add(b);
+  for (const y of [2.3 + RWALL_H / 2 + 0.19, 2.3 - RWALL_H / 2 - 0.19]) box(0.14, 0.04, RWALL_W + 0.36, glow(0xc5f05a), -RX + 0.1, y, RWALL_Z);
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(RWALL_W, RWALL_H), new THREE.MeshBasicMaterial({map: RWALL.tex, toneMapped: false, fog: false}));
+  m.rotation.y = Math.PI / 2; m.position.set(-RX + 0.15, 2.3, RWALL_Z); scene.add(m);
+  const wl = new THREE.PointLight(0xc5f05a, 0.35, 9, 2); wl.position.set(-RX + 2.5, 2.4, RWALL_Z); scene.add(wl);
 }
 /* ---- decor: plants, sofa, server rack ---- */
 function plant(x, z) {
@@ -1898,6 +1900,7 @@ function renderPanel() {
   if (id === 'scout' && tab === 'set') bindSettings();
   body.querySelectorAll('canvas[data-spark]').forEach(drawSpark);
   body.querySelectorAll('canvas[data-smc]').forEach(drawSmcChart);
+  body.querySelectorAll('canvas[data-rvchart]').forEach(cv => { try { drawRvCanvas(cv); } catch (e) { console.warn('rvchart', e.message); } });
   body.querySelectorAll('canvas.cmpchart').forEach(cv => { const r = cv.getBoundingClientRect(), dpr = Math.min(devicePixelRatio || 1, 2); cv.width = r.width * dpr; cv.height = r.height * dpr; const c = cv.getContext('2d'); c.scale(dpr, dpr); drawCmp(c, 0, 0, r.width, r.height, 11); });
   body.querySelectorAll('canvas.ptchart').forEach(cv => { const r = cv.getBoundingClientRect(), dpr = Math.min(devicePixelRatio || 1, 2); cv.width = r.width * dpr; cv.height = r.height * dpr; const c = cv.getContext('2d'); c.scale(dpr, dpr); drawEq(c, 0, 0, r.width, r.height, 11); });
   const cv = body.querySelector('canvas.chart');
@@ -1988,6 +1991,7 @@ addEventListener('keydown', e => {
   const a = AGENTS.find(x => x.key === e.key);
   if (a) { const d = desks.find(x => x.a.id === a.id); teleportTo(d); openPanel(a.id); e.preventDefault(); return; }
   if (e.key === 'c' || e.key === 'C') { openPanel('check'); e.preventDefault(); return; }
+  if (e.key === 'v' || e.key === 'V') { if (PS.open) closePanel(); P.x = -RX + 6.5; P.z = RWALL_Z; P.yaw = Math.PI / 2; P.pitch = 0.04; e.preventDefault(); return; } // review wall
   if ((e.key === 'e' || e.key === 'E') && !PS.open && target) { openPanel(target.a.id); return; }
   if (PS.open) return;
   keys[e.code] = true;
@@ -2042,7 +2046,7 @@ function frame(t) {
   TICKER.tex.offset.x = (TICKER.tex.offset.x + dt * 0.018) % 1;
   // periodic redraws
   acc.board += dt; acc.desk += dt; acc.ticker += dt; acc.hud += dt; acc.panel += dt;
-  if (acc.board > 2) { acc.board = 0; drawBoard(); drawWall(); }
+  if (acc.board > 2) { acc.board = 0; drawBoard(); drawWall(); try { drawReviewWall(); } catch (e) { console.warn('review wall', e.message); } }
   if (acc.desk > 0.3) { acc.desk = 0; const d = desks[deskIdx++ % desks.length]; try { drawScreens(d); } catch (e) { console.warn('screen', d.a.id, e.message); } }
   if (acc.ticker > 15) { acc.ticker = 0; drawTicker(); }
   if (acc.hud > 1) { acc.hud = 0; topbar(); }
@@ -2061,7 +2065,7 @@ $('#enter').onclick = () => {
 camera.position.set(P.x, 1.66, P.z);
 // Reviewer/SMC code loads after this point: draw what we can now, then redraw every desk once all code is loaded.
 const drawAllScreens = () => desks.forEach(d => { try { drawScreens(d); } catch (e) { console.warn('screen', d.a.id, e.message); } });
-drawBoard(); drawAllScreens(); drawTicker(); drawWall(); setTimeout(drawAllScreens, 0);
+drawBoard(); drawAllScreens(); drawTicker(); drawWall(); setTimeout(() => { drawAllScreens(); try { drawReviewWall(); } catch (e) { console.warn('review wall', e.message); } }, 0);
 startEngine();
 requestAnimationFrame(frame);
 // If nothing arrives, explain why (most often: opened inside a preview window that blocks the internet)
@@ -2075,7 +2079,7 @@ setTimeout(function netCheck() {
   setTimeout(netCheck, 5000);
 }, 8000);
 setInterval(() => { if (S.meta.size && (S.wsOk || S.restOk)) { $('#netwarn').style.display = 'none'; $('#netbar').style.display = 'none'; } }, 3000);
-(document.fonts && document.fonts.ready || Promise.resolve()).then(() => { fontRedraws.forEach(f => f()); drawBoard(); drawTicker(); drawWall(); });
+(document.fonts && document.fonts.ready || Promise.resolve()).then(() => { fontRedraws.forEach(f => f()); drawBoard(); drawTicker(); drawWall(); try { drawReviewWall(); } catch (_) {} });
 
 /* ================= DAY TRACKER VIEW ================= */
 function trackerHTML() {
@@ -2398,7 +2402,7 @@ function traderHTML(tab) {
   }
   if (tab === 'rules') {
     const f = (key, label, step, min, max) => `<label>${label}<input type="number" data-ptcfg="${key}" step="${step}" min="${min}" max="${max}" value="${PT.cfg[key]}"></label>`;
-    return status + `<div class="grid2"><div class="card2"><h3>HOW THE TRADER TRADES · TWO STRATEGIES</h3>
+    return status + `<div style="margin-bottom:14px">${rulesCardHTML('pt')}</div><div class="grid2"><div class="card2"><h3>HOW THE TRADER TRADES · TWO STRATEGIES</h3>
       <div class="chk"><span class="i" style="color:${PT.cfg.stratRev ? UP : DIM}">R</span><span><b>Reversal${PT.cfg.stratRev ? '' : ' (off)'}</b>: fade a top-5 mover once its move is ending (steps 1–6 below).</span></div>
       <div class="chk"><span class="i" style="color:${PT.cfg.stratMom ? UP : DIM}">M</span><span><b>Momentum${PT.cfg.stratMom ? '' : ' (off)'}</b>: trade <b>with</b> a top-10 mover while its move is still being driven, meaning ${PT.cfg.momMinScore}/8 momentum signs (fresh high/low, a sloping EMA, money flow, taker pressure, expanding volume, no funding crowding, OI building, RSI strong but not exhausted). Skips moves already more than ${PT.cfg.momMaxExt}% from the 15m EMA, and coins already showing reversal signs. Risk ${PT.cfg.momRiskPct}% per trade, at most ${PT.cfg.momMaxPos} momentum positions. Stop beyond the last 2-hour swing or the EMA. Same partial, trailing stop and target as reversals. Exits when momentum fades or reversal signs form, or after ${PT.cfg.momHoldH} h.</span></div>
       <div class="dim" style="font-size:11px;letter-spacing:.08em;margin:10px 0 2px">REVERSAL RULES</div>
@@ -2458,10 +2462,11 @@ function wrapText(c, text, x, y, maxW, lh, maxLines) {
   const words = String(text).split(' '); let line = '', n = 0;
   for (const w of words) {
     const t = line ? line + ' ' + w : w;
-    if (c.measureText(t).width > maxW && line) { c.fillText(n === maxLines - 1 ? line + '…' : line, x, y + n * lh); n++; line = w; if (n >= maxLines) return; }
+    if (c.measureText(t).width > maxW && line) { c.fillText(n === maxLines - 1 ? line + '…' : line, x, y + n * lh); n++; line = w; if (n >= maxLines) return n; }
     else line = t;
   }
-  if (line && n < maxLines) c.fillText(line, x, y + n * lh);
+  if (line && n < maxLines) { c.fillText(line, x, y + n * lh); n++; }
+  return n;
 }
 function drawPosChart(c, s, p, x, y, w, h) {
   const k = S.kl.get(s), live = ptPx(s);
@@ -2786,7 +2791,7 @@ function rvTick() {
 }
 
 /* ================= REVIEWER: screens + panel ================= */
-TABS.rev = [['rev', 'Latest review'], ['grades', 'Trade grades'], ['hist', 'History & settings']];
+TABS.rev = [['rev', 'Latest review'], ['chart', 'On the chart'], ['rules', 'Rules in force'], ['grades', 'Trade grades'], ['hist', 'History & settings']];
 const GRADE_C = {A: UP, B: '#7fe3b8', C: DIM, D: WARN, F: DN, '—': DIM};
 const RV_ST = {pending: ['Waiting for the Trader to read it', WARN], accepted: ['Trader accepted all changes', UP], adjusted: ['Trader accepted with adjustments', '#4dd2ff']};
 function drawReviewerScreens(d) {
@@ -2833,6 +2838,8 @@ function reviewerHTML(tab) {
     <span class="dim" style="font-size:12px">${RV.auto ? `auto-review every ${RV.every} closed trades (${fresh} since the last one)` : 'auto-review off'} · ${nT} trades graded</span>
     <span style="margin-left:auto;display:flex;gap:8px"><button class="btn sm" data-rv="run">Run review now</button><button class="btn sm ghost" data-rv="toggle">${RV.on ? 'Turn adjustments off' : 'Turn adjustments on'}</button></span></div>
     ${RV._msg ? `<p class="note" style="color:${WARN}">${esc(RV._msg)}</p>` : ''}`;
+  if (tab === 'chart') return head + rvChartHTML();
+  if (tab === 'rules') return head + rulesBothHTML();
   if (tab === 'grades') {
     if (!PT.log.length) return head + '<div class="empty">No closed trades yet. Each trade is graded as soon as it closes: A/B for working trades, C for scratches and clean planned losses, D for avoidable mistakes, F for losses beyond the plan.</div>';
     return head + `<table class="t"><thead><tr><th>Closed</th><th>Coin</th><th>Side</th><th>Grade</th><th>R</th><th>Best R</th><th>Signs</th><th>Stage</th><th style="text-align:left">Reviewer's note</th><th style="text-align:left">Lessons in force</th></tr></thead><tbody>${PT.log.slice(0, 150).map(x => { const g = x.g || rvGrade(x); return `<tr data-sym="${x.s}"><td class="dim">${new Date(x.t1).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'})}</td><td class="sym">${esc(x.b)}</td><td class="${x.side === 'L' ? 'up' : 'dn'}">${x.side === 'L' ? 'LONG' : 'SHORT'}${x.strat === 'mom' ? '<br><span class="tag" style="color:#7fe3b8">momentum</span>' : ''}</td><td><b style="color:${GRADE_C[g.g]};font-size:15px">${g.g}</b></td><td class="${cls(x.R)}">${fmtR(x.R)}</td><td class="dim">${(x.maxR || 0).toFixed(1)}</td><td class="dim">${fin(x.sc) ? x.sc + '/8' : '—'}</td><td class="dim">${rvStage(x) === 'done' ? 'Reversed' : 'Forming'}</td><td style="text-align:left;white-space:normal;min-width:240px;font-family:var(--sans);font-size:12px">${esc(g.note)}${x.post && x.post.chk ? `<br><span class="${x.post.hit ? 'dn' : 'dim'}">${x.post.hit ? 'After the stop, price went on to hit +1.5R' : 'After the stop, price did not recover to +1.5R'}</span>` : ''}</td><td style="text-align:left;white-space:normal;min-width:160px;font-family:var(--sans);font-size:11px" class="dim">${x.les && x.les.length ? esc(x.les.join(' · ')) : '—'}</td></tr>`; }).join('')}</tbody></table>`;
@@ -2987,7 +2994,7 @@ function smcHTML(tab) {
   }
   if (tab === 'rules') {
     const f = (key, label, step, min, max) => `<label>${label}<input type="number" data-smcfg="${key}" step="${step}" min="${min}" max="${max}" value="${SM.cfg[key]}"></label>`;
-    return smcStatus() + `<div class="grid2"><div class="card2"><h3>HOW THE SMC TRADER TRADES</h3>
+    return smcStatus() + `<div style="margin-bottom:14px">${rulesCardHTML('sm')}</div><div class="grid2"><div class="card2"><h3>HOW THE SMC TRADER TRADES</h3>
       <div class="chk"><span class="i up">1</span><span><b>Same coins as the Trader</b>: the tracked top-5 gainers and losers. Either direction, whichever setup the chart shows.</span></div>
       <div class="chk"><span class="i up">2</span><span><b>Liquidity sweep</b>: a 15m wick takes out a prior swing low (sell-side stops) or swing high (buy-side stops) and closes back inside, within the last 8 hours.</span></div>
       <div class="chk"><span class="i up">3</span><span><b>Market structure shift</b>: after the sweep, a candle closes through the last opposite swing (CHoCH).</span></div>
@@ -3051,6 +3058,348 @@ document.getElementById('panel').addEventListener('change', e => {
   if (syBlock()) { i.value = SM.cfg[i.dataset.smcfg]; return; }
   const v = +i.value; if (fin(v)) { SM.cfg[i.dataset.smcfg] = v; smSave(); }
 });
+
+/* ================= REVIEWER ON THE CHART + RULES IN FORCE ================= */
+// Every closed trade, drawn on its own candles with the Reviewer's verdict: numbered ✓ (done right) and ✗ (done wrong)
+// tags sit on the chart where each thing happened (entry, best point, partial, exit). Shown on the review wall
+// (west wall, replaces the old House Rules poster) and on the Reviewer's "On the chart" tab.
+// Also: the rules each trader is using right now, with the Reviewer's changes marked.
+
+const RVK = new Map();                            // candles per closed trade
+const RVS = {key: null, acct: 'all'};             // panel selection
+const RWS = {i: 0, t: 0, key: null};              // wall rotation
+const isManual = x => /closed by you/.test(x.exitWhy || '');
+const tradeKey = (a, x) => a + '|' + x.s + '|' + x.t1;
+const fmtNum = v => String(+(+v).toFixed(2));
+
+/* ---- which trades: both accounts, newest first ---- */
+function rvTrades(which = 'all') {
+  const A = [];
+  if (which !== 'sm') for (const x of PT.log) A.push(['pt', x]);
+  if (which !== 'pt' && typeof SM !== 'undefined') for (const x of SM.log) A.push(['sm', x]);
+  return A.sort((a, b) => b[1].t1 - a[1].t1);
+}
+const stratName = (a, x) => a === 'sm' ? 'SMC Trader' : x.strat === 'mom' ? 'Trader · Momentum' : 'Trader · Reversal';
+
+/* ---- candles around a closed trade (fetched once, cached) ---- */
+function rvBars(x) {
+  const k = x.s + '|' + x.t0 + '|' + x.t1; let e = RVK.get(k);
+  if (e && (e.st !== 'err' || now() - e.t < 60e3)) {
+    // trades that closed recently: refresh once later so the bars after the exit fill in
+    if (e.st === 'ok' && now() - x.t1 < 3 * 3600e3 && now() - e.t > 10 * 60e3) e = null; else return e;
+  }
+  const dur = Math.max(x.t1 - x.t0, 10 * 60e3);
+  const IV = [['5m', 5], ['15m', 15], ['1h', 60], ['4h', 240]].find(([, m]) => dur / (m * 60e3) <= 55) || ['4h', 240];
+  const ms = IV[1] * 60e3, pre = 30, post = 14, start = Math.floor(x.t0 / ms) * ms - pre * ms, end = Math.min(now(), x.t1 + post * ms);
+  e = {st: 'load', t: now(), iv: IV[0], ms, bars: null}; RVK.set(k, e);
+  api(`/fapi/v1/klines?symbol=${x.s}&interval=${IV[0]}&startTime=${start}&endTime=${end}&limit=500`)
+    .then(a => { e.bars = a.map(b => [+b[0], +b[1], +b[2], +b[3], +b[4]]); e.st = 'ok'; e.t = now(); rvRedraw(); })
+    .catch(() => { e.st = 'err'; e.t = now(); });
+  return e;
+}
+function rvRedraw() {
+  document.querySelectorAll('canvas[data-rvchart]').forEach(drawRvCanvas);
+  try { drawReviewWall(); } catch (_) {}
+}
+
+/* ---- what went right / wrong, and where on the chart ---- */
+// at: where the tag goes on the chart: 'entry' | 'best' | 'tp1' | 'exit'
+function rvExplain(x, acct) {
+  const G = [], B = [], ok = (t, at) => G.push({t, at}), bad = (t, at) => B.push({t, at});
+  const ex = x.exitWhy || '', held = (x.t1 - x.t0) / 60e3, smc = acct === 'sm', mom = x.strat === 'mom', R = x.R, mx = x.maxR || 0;
+  const partial = (x.ex || []).find(e => /took half/.test(e[2] || '')) || (/trailing|breakeven/.test(ex) ? [null, null, 'half'] : null);
+  // entry quality
+  if (smc) {
+    if (fin(x.sc)) { if (x.sc >= 5) ok(`Strong setup: ${x.sc}/6 confluences`, 'entry'); else if (R < 0) bad(`Weak setup: only ${x.sc}/6 confluences`, 'entry'); else ok(`Entered on ${x.sc}/6 confluences`, 'entry'); }
+    if (x.zoneKind) { if (x.zoneKind === 'FVG') ok('Entered in a fair value gap (the cleaner zone)', 'entry'); else if (R < 0) bad('Order block entry: no gap, a weaker zone', 'entry'); }
+    if (fin(x.rr)) ok(`Planned ${x.rr.toFixed(1)}R to the next liquidity pool`, 'entry');
+  } else if (mom) {
+    if (fin(x.sc)) { if (x.sc >= 7) ok(`Strong momentum: ${x.sc}/8 signs`, 'entry'); else if (R < 0) bad(`Momentum was borderline: ${x.sc}/8 signs`, 'entry'); else ok(`Entered on ${x.sc}/8 momentum signs`, 'entry'); }
+  } else {
+    if (fin(x.sc)) { if (x.sc >= 7) ok(`Strong signal: ${x.sc}/8 reversal signs`, 'entry'); else if (R < 0 && x.sc <= 5) bad(`Borderline signal: ${x.sc}/8 reversal signs`, 'entry'); else ok(`Entered on ${x.sc}/8 reversal signs`, 'entry'); }
+    const done = x.st ? String(x.st).startsWith('done') : /Reversed/.test(x.why || '');
+    if (done) ok('Waited for "Reversed" confirmation', 'entry');
+    else if (R < 0) bad('Entered at "Reversal forming", before it was confirmed', 'entry');
+  }
+  // direction
+  if (mx >= 1) ok(`Direction was right: reached +${mx.toFixed(1)}R`, 'best');
+  else if (mx < 0.3 && R < 0) bad(`Never worked: best was only +${Math.max(0, mx).toFixed(1)}R`, 'entry');
+  // unlocks
+  if (x.unlK === 'ahead') { if (x.side === 'S') (R > 0 ? ok : bad)(R > 0 ? 'Shorted into an upcoming unlock: supply pressure helped' : 'Shorted into an upcoming unlock, but it did not pay', 'entry'); else (R > 0 ? ok : bad)(R > 0 ? 'Long with a big unlock ahead worked this time' : 'Bought with a big unlock ahead', 'entry'); }
+  if (x.unlK === 'after' && R < 0) bad('Traded right after a big unlock, when bounces are common', 'entry');
+  // profit handling
+  if (partial) ok('Banked half at the first target, stop to breakeven', 'tp1');
+  if (mx >= 1 && R < 0.2) bad(`Gave back the profit: was +${mx.toFixed(1)}R, closed ${fmtR(R)}`, 'exit');
+  else if (mx >= 1.5 && R >= 0.3 && mx - R > 1) bad(`Gave back ${(mx - R).toFixed(1)}R from the best point`, 'exit');
+  // exits
+  if (/target/.test(ex)) ok('Full target reached', 'exit');
+  if (/trailing/.test(ex) && R > 0.3) ok(`Trailing stop locked in ${fmtR(R)}`, 'exit');
+  if (/breakeven/.test(ex) && partial) ok('Rest stopped at breakeven: no loss after the partial', 'exit');
+  if (/stop loss/.test(ex)) {
+    if (held < 45) bad(`Stopped out after ${Math.max(1, Math.round(held))} min: stop inside the noise, or entry too early`, 'exit');
+    if (x.post && x.post.chk) { if (x.post.hit) bad('After the stop, price went on to +1.5R: right idea, stop too tight', 'exit'); else ok('After the stop, price kept going against the trade: the stop did its job', 'exit'); }
+    if (R >= -1.15) ok(`Loss held to ${fmtR(R)}, the planned 1R`, 'exit');
+  }
+  if (R < -1.3) bad(`Lost ${fmtR(R)}, more than the planned 1R (slippage or a gap through the stop)`, 'exit');
+  if (/faded|forming against/.test(ex)) { if (R > -0.75) ok(`Cut early when the signals faded: ${fmtR(R)} instead of a full −1R`, 'exit'); else bad(`Signals faded but the exit still cost ${fmtR(R)}`, 'exit'); }
+  if (/time stop/.test(ex)) { if (Math.abs(R) < 0.3) bad(`Dead money: went nowhere for ${(held / 60).toFixed(0)}h`, 'exit'); else (R > 0 ? ok : bad)(`Closed at the time stop, ${fmtR(R)}`, 'exit'); }
+  if (/unlock/.test(ex)) ok('Closed before a token unlock', 'exit');
+  if (/closed by you/.test(ex)) G.push({t: 'Closed by you (not graded, not used for rule changes)', at: 'exit'});
+  // costs
+  const fund = x.funding || 0, cost = (x.fees || 0) + Math.max(0, -fund), gross = Math.abs(x.pnl) + cost;
+  if (gross > 0 && cost / gross > 0.35 && Math.abs(R) < 1) bad(`Fees and funding (${fmtMoney(cost)}) ate most of the move`, 'exit');
+  else if (fund < 0 && -fund > 0.2 * Math.abs(x.pnl)) bad(`Paid ${fmtMoney(-fund)} in funding while holding`, 'exit');
+  const items = [...G.map(o => Object.assign(o, {ok: true})), ...B.map(o => Object.assign(o, {ok: false}))];
+  items.forEach((o, i) => { o.n = i + 1; });
+  return {items, grade: rvGrade(x), les: rvLessonsFor(x, acct)};
+}
+// which Reviewer rules now in force came from trades like this one
+function rvLessonsFor(x, acct) {
+  if (acct === 'sm') return [];
+  const I = rvItems(ptLessons()), ks = [], ex = x.exitWhy || '';
+  if (x.strat === 'mom') ks.push('mom');
+  else {
+    ks.push('score', 'risk', 'side' + x.side, 'tag:' + x.tag, 'pref:' + x.tag);
+    if (!(x.st ? String(x.st).startsWith('done') : /Reversed/.test(x.why || ''))) ks.push('conf');
+    if ((x.maxR || 0) >= 1 && x.R < 0.2) ks.push('tp1R');
+    if (/target/.test(ex) || x.R > 0.3) ks.push('tpR');
+    if (/stop loss/.test(ex)) ks.push('stopBuf');
+    if (/time stop/.test(ex)) ks.push('holdH');
+  }
+  if (x.side === 'L' && x.unlK === 'ahead') ks.push('unl');
+  ks.push('vol', 'fund');
+  return [...new Set(ks)].filter(k => I[k]).map(k => I[k]);
+}
+
+/* ---- the chart ---- */
+// f = scale (1 for the panel, ~2.2 for the wall)
+function drawTradeChart(c, x, acct, X0, Y0, w, h, f, E) {
+  c.save(); c.beginPath(); c.rect(X0, Y0, w, h); c.clip();
+  c.fillStyle = '#060a14'; c.fillRect(X0, Y0, w, h);
+  const e = rvBars(x);
+  if (!e.bars || e.bars.length < 4) {
+    c.fillStyle = DIM; c.font = `500 ${13 * f}px ${FS}`; c.fillText(e.st === 'err' ? 'Could not load candles for this trade.' : 'Loading candles…', X0 + 12 * f, Y0 + h / 2); c.restore(); return;
+  }
+  const Bs = e.bars, padR = 104 * f, pw = w - padR - 8 * f, T0 = Bs[0][0], T1 = Bs[Bs.length - 1][0] + e.ms;
+  const X = t => X0 + 6 * f + (clamp(t, T0, T1) - T0) / (T1 - T0) * pw;
+  const L = x.side === 'L', sg = L ? 1 : -1, d = Math.abs(x.entry - x.stop0) || x.entry * 0.01;
+  const tp1R = x.tp1R || (acct === 'sm' ? SM.cfg.tp1R : PT.cfg.tp1R);
+  const tgt = acct === 'sm' ? x.target : x.entry + sg * (x.tpR || PT.cfg.tpR) * d;
+  const tp1 = x.entry + sg * tp1R * d, best = x.entry + sg * Math.max(0, x.maxR || 0) * d;
+  const lv = [x.entry, x.stop0, x.exit, tp1, best].concat(fin(tgt) && Math.abs(tgt - x.entry) < d * 6 ? [tgt] : []).filter(fin);
+  let lo = Math.min(...Bs.map(b => b[3]), ...lv), hi = Math.max(...Bs.map(b => b[2]), ...lv); const sp = hi - lo || hi * 0.01; lo -= sp * 0.07; hi += sp * 0.07;
+  const Y = v => Y0 + 10 * f + (hi - clamp(v, lo, hi)) / (hi - lo) * (h - 34 * f);
+  const xa = X(x.t0), xb = Math.max(X(x.t1), xa + 2);
+  // time in the trade
+  c.fillStyle = 'rgba(255,209,102,.08)'; c.fillRect(xa, Y0, xb - xa, h - 22 * f);
+  // SMC zone it entered from
+  if (x.zone && fin(x.zone.lo)) { const zx = Math.max(X0 + 6 * f, xa - 8 * (pw / Bs.length)); c.fillStyle = L ? 'rgba(46,229,157,.15)' : 'rgba(255,92,122,.15)'; c.fillRect(zx, Y(x.zone.hi), xa - zx + 4, Y(x.zone.lo) - Y(x.zone.hi)); c.fillStyle = L ? UP : DN; c.font = `700 ${10 * f}px ${FS}`; c.fillText(x.zone.kind || 'zone', zx + 3 * f, Y(x.zone.hi) - 3 * f); }
+  // candles
+  const bw = pw / Bs.length;
+  for (const b of Bs) {
+    const cx = X(b[0] + e.ms / 2), up = b[4] >= b[1];
+    c.strokeStyle = c.fillStyle = up ? 'rgba(46,229,157,.85)' : 'rgba(255,92,122,.85)'; c.lineWidth = Math.max(1, f * 0.9);
+    c.beginPath(); c.moveTo(cx, Y(b[2])); c.lineTo(cx, Y(b[3])); c.stroke();
+    const y1 = Y(Math.max(b[1], b[4])), y2 = Y(Math.min(b[1], b[4])); c.fillRect(cx - bw * 0.32, y1, Math.max(1, bw * 0.64), Math.max(1, y2 - y1));
+  }
+  // levels, from the entry onwards
+  const right = X0 + 6 * f + pw;
+  const used = [];
+  const lvl = (v, col, label, dash) => {
+    if (!fin(v) || v < lo || v > hi) return; const yy = Y(v); let ly = yy;
+    for (let k = 0; k < 6 && used.some(u => Math.abs(u - ly) < 12 * f); k++) ly += 12 * f; used.push(ly);
+    c.strokeStyle = col; c.lineWidth = 1.3 * f; c.setLineDash((dash || []).map(q => q * f)); c.beginPath(); c.moveTo(xa, yy); c.lineTo(right, yy); c.stroke(); c.setLineDash([]);
+    c.fillStyle = col; c.font = `600 ${10.5 * f}px ${FM}`; c.textBaseline = 'middle'; c.fillText(label, right + 5 * f, ly); c.textBaseline = 'alphabetic';
+  };
+  lvl(x.stop0, DN, 'stop −1R', []);
+  lvl(x.entry, '#ffd166', 'entry', [4, 4]);
+  lvl(tgt, UP, `target ${acct === 'sm' && fin(x.rr) ? x.rr.toFixed(1) : fmtNum(x.tpR || PT.cfg.tpR)}R`, [7, 5]);
+  lvl(tp1, 'rgba(46,229,157,.7)', `half +${fmtNum(tp1R)}R`, [3, 5]);
+  if ((x.maxR || 0) > 0.25) lvl(best, '#9ab0ff', `best +${x.maxR.toFixed(1)}R`, [2, 4]);
+  // markers: entry ▲/▼, partial ◆, exit ●
+  const tri = (px, py, up, col) => { const s = 7 * f; c.fillStyle = col; c.beginPath(); if (up) { c.moveTo(px, py - s); c.lineTo(px - s, py + s * 0.7); c.lineTo(px + s, py + s * 0.7); } else { c.moveTo(px, py + s); c.lineTo(px - s, py - s * 0.7); c.lineTo(px + s, py - s * 0.7); } c.closePath(); c.fill(); c.strokeStyle = '#04070f'; c.lineWidth = 1.5; c.stroke(); };
+  tri(xa, Y(x.entry), L, '#ffd166');
+  const parts = (x.ex || []).slice(0, -1);
+  for (const p of parts) { const px = X(p[0]), py = Y(p[1]), s = 6 * f; c.fillStyle = UP; c.beginPath(); c.moveTo(px, py - s); c.lineTo(px + s, py); c.lineTo(px, py + s); c.lineTo(px - s, py); c.closePath(); c.fill(); }
+  c.fillStyle = x.R >= 0 ? UP : DN; c.beginPath(); c.arc(xb, Y(x.exit), 6.5 * f, 0, 7); c.fill(); c.strokeStyle = '#04070f'; c.lineWidth = 1.5; c.stroke();
+  // best point (the bar in the trade with the most favourable extreme)
+  let tb = x.t0; { let bv = L ? -Infinity : Infinity; for (const b of Bs) if (b[0] + e.ms > x.t0 && b[0] <= x.t1) { const v = L ? b[2] : b[3]; if (L ? v > bv : v < bv) { bv = v; tb = b[0] + e.ms / 2; } } }
+  // ✓ / ✗ tags at the spot each verdict refers to
+  if (E) {
+    const at = {entry: [xa, Y(x.entry), L ? 1 : -1], best: [X(tb), Y(best), L ? -1 : 1], tp1: parts.length ? [X(parts[0][0]), Y(parts[0][1]), L ? -1 : 1] : [(xa + xb) / 2, Y(tp1), L ? -1 : 1], exit: [xb, Y(x.exit), x.R >= 0 === L ? -1 : 1]};
+    const grp = {}; for (const it of E.items) (grp[it.at] = grp[it.at] || []).push(it);
+    c.font = `800 ${11 * f}px ${FS}`; c.textBaseline = 'middle';
+    for (const k in grp) {
+      const [ax, ay, dir] = at[k] || at.exit, its = grp[k], ph = 17 * f, gap = 3 * f;
+      const ws = its.map(it => c.measureText((it.ok ? '✓' : '✗') + it.n).width + 10 * f), tw = ws.reduce((a, b) => a + b + gap, -gap);
+      let px = clamp(ax - tw / 2, X0 + 4 * f, right - tw - 2 * f), py = ay + dir * 16 * f - (dir < 0 ? ph : 0);
+      py = clamp(py, Y0 + 2 * f, Y0 + h - 22 * f - ph);
+      its.forEach((it, i) => {
+        c.fillStyle = it.ok ? 'rgba(46,229,157,.92)' : 'rgba(255,92,122,.95)'; rr(c, px, py, ws[i], ph, 5 * f); c.fill();
+        c.fillStyle = '#04070f'; c.fillText((it.ok ? '✓' : '✗') + it.n, px + 5 * f, py + ph / 2 + 0.5 * f); px += ws[i] + gap;
+      });
+    }
+    c.textBaseline = 'alphabetic';
+  }
+  // time axis
+  c.fillStyle = DIM; c.font = `500 ${10 * f}px ${FM}`;
+  const tl = t => new Date(t).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'});
+  c.fillText(`${e.iv} candles · in ${tl(x.t0)}`, X0 + 8 * f, Y0 + h - 7 * f);
+  c.textAlign = 'right'; c.fillText(`out ${tl(x.t1)} · held ${held(x)}`, right, Y0 + h - 7 * f); c.textAlign = 'left';
+  c.restore();
+}
+function held(x) { const m = (x.t1 - x.t0) / 60e3; return m < 90 ? Math.max(1, Math.round(m)) + ' min' : (m / 60).toFixed(1) + ' h'; }
+
+/* ---- review wall (west wall) ---- */
+function drawReviewWall() {
+  if (typeof RWALL === 'undefined') return;
+  const T = RWALL, c = T.ctx, W = T.W, H = T.H, LIME = '#c5f05a', split = 1990;
+  c.fillStyle = '#04070f'; c.fillRect(0, 0, W, H);
+  c.fillStyle = '#0d1328'; c.fillRect(0, 0, W, 80); c.fillStyle = LIME; c.fillRect(0, 78, W, 3);
+  c.textBaseline = 'middle'; c.font = `800 40px ${FS}`; c.fillStyle = LIME; c.fillText('REVIEWER · TRADES ON THE CHART', 28, 40);
+  c.fillStyle = '#ffd166'; c.fillText('RULES IN FORCE NOW', split + 26, 40);
+  c.fillStyle = 'rgba(197,240,90,.3)'; c.fillRect(split, 90, 2, H - 100);
+  // left: rotate through the last trades every 25 s
+  const all = rvTrades().filter(([, x]) => !isManual(x)).slice(0, 8);
+  if (now() - RWS.t > 25e3) { RWS.t = now(); RWS.i = (RWS.i + 1) % Math.max(1, all.length); }
+  if (!all.length) {
+    c.font = `800 48px ${FS}`; c.fillStyle = TXT; c.fillText('No closed trades yet', 40, 200);
+    c.font = `500 28px ${FS}`; c.fillStyle = DIM; c.fillText('When a trade closes, the Reviewer grades it and marks what went right (✓)', 40, 260); c.fillText('and what went wrong (✗) on its chart, here and on the Reviewer\'s desk (5).', 40, 300);
+  } else {
+    const [a, x] = all[RWS.i % all.length], E = rvExplain(x, a), g = E.grade;
+    c.font = `800 50px ${FS}`; c.fillStyle = TXT; c.fillText(x.b, 30, 132); let cx = 40 + c.measureText(x.b).width;
+    c.font = `800 26px ${FS}`; c.fillStyle = x.side === 'L' ? UP : DN; c.fillText(x.side === 'L' ? 'LONG' : 'SHORT', cx, 134); cx += c.measureText('SHORT').width + 22;
+    c.fillStyle = a === 'sm' ? SMCOL : '#ffd166'; c.fillText(stratName(a, x).toUpperCase(), cx, 134); cx += c.measureText(stratName(a, x).toUpperCase()).width + 30;
+    c.font = `800 40px ${FM}`; c.fillStyle = tone(x.R); c.fillText(fmtR(x.R), cx, 132); cx += c.measureText(fmtR(x.R)).width + 16;
+    c.font = `700 28px ${FM}`; c.fillText(fmtMoney(x.pnl, 1), cx, 134);
+    c.textAlign = 'right'; c.font = `500 22px ${FS}`; c.fillStyle = DIM; c.fillText(`closed ${ago(x.t1)} ago · trade ${RWS.i % all.length + 1} of ${all.length} · changes every 25 s`, split - 30, 134); c.textAlign = 'left';
+    // grade badge
+    c.fillStyle = GRADE_C[g.g] || DIM; rr(c, 30, 166, 64, 64, 12); c.fill(); c.fillStyle = '#04070f'; c.font = `800 46px ${FS}`; c.textAlign = 'center'; c.fillText(g.g, 62, 200); c.textAlign = 'left';
+    c.font = `600 26px ${FS}`; c.fillStyle = TXT; wrapText(c, 'Reviewer: ' + g.note, 112, 186, split - 150, 30, 2);
+    const cy = 248, ch = H - cy - 14, cw = 1150;
+    drawTradeChart(c, x, a, 24, cy, cw, ch, 2.1, E);
+    // ✓ / ✗ list
+    let y = cy + 26; const lx = 24 + cw + 26, lw = split - lx - 22;
+    const sect = (title, col, list) => {
+      if (!list.length) return; c.font = `800 22px ${FS}`; c.fillStyle = col; c.fillText(title, lx, y); y += 34;
+      for (const it of list) {
+        if (y > H - 30) return;
+        c.fillStyle = it.ok ? UP : DN; rr(c, lx, y - 14, 50, 28, 7); c.fill(); c.fillStyle = '#04070f'; c.font = `800 19px ${FS}`; c.fillText((it.ok ? '✓' : '✗') + it.n, lx + 7, y + 1);
+        c.font = `500 21px ${FS}`; c.fillStyle = '#cfd8ee'; const n = wrapText(c, it.t, lx + 62, y + 1, lw - 62, 25, 2); y += 25 * (n || 1) + 12;
+      }
+      y += 8;
+    };
+    sect('DONE RIGHT', UP, E.items.filter(i => i.ok)); sect('DONE WRONG', DN, E.items.filter(i => !i.ok));
+    if (E.les.length && y < H - 70) { c.font = `800 22px ${FS}`; c.fillStyle = LIME; c.fillText('RULE NOW IN FORCE BECAUSE OF TRADES LIKE THIS', lx, y); y += 32; c.font = `600 21px ${FS}`; c.fillStyle = TXT; for (const l of E.les) { if (y > H - 30) break; const n = wrapText(c, '› ' + l, lx, y, lw, 25, 2); y += 25 * (n || 1) + 6; } }
+    else if (a === 'sm' && y < H - 40) { c.font = `500 19px ${FS}`; c.fillStyle = DIM; wrapText(c, 'Graded for comparison only. The SMC Trader\'s rules stay fixed (no Reviewer).', lx, y, lw, 24, 2); }
+  }
+  // right: rules in force, one column per trader
+  const RN = rulesNow(), colW = (W - split - 40) / 2;
+  [RN.pt, RN.sm].forEach((K, ci) => {
+    const x0 = split + 24 + ci * (colW + 8), cw = colW - 14; let y = 122;
+    c.font = `800 30px ${FS}`; c.fillStyle = K.col; c.fillText(K.name.toUpperCase(), x0, y);
+    y += 32; c.font = `600 18px ${FS}`; c.fillStyle = K.changed ? LIME : DIM; wrapText(c, K.st, x0, y, cw, 22, 2); y += 34;
+    for (const [gname, rows] of K.groups) {
+      if (y > H - 40) break;
+      c.font = `800 17px ${FS}`; c.fillStyle = DIM; c.fillText(gname.toUpperCase(), x0, y); y += 26;
+      for (const r of rows) {
+        if (y > H - 26) break;
+        c.fillStyle = r.was ? LIME : 'rgba(219,228,251,.55)'; c.beginPath(); c.arc(x0 + 6, y - 6, 4.5, 0, 7); c.fill();
+        c.font = `${r.was ? 700 : 500} 19px ${FS}`; c.fillStyle = r.was ? LIME : TXT;
+        const n = wrapText(c, r.t + (r.was ? `  (Reviewer · was ${r.was})` : ''), x0 + 18, y, cw - 18, 23, 3); y += 23 * (n || 1) + 6;
+      }
+      y += 8;
+    }
+  });
+  c.textBaseline = 'alphabetic';
+  T.tex.needsUpdate = true;
+}
+
+/* ---- rules each trader is using right now ---- */
+// was = your baseline setting when the Reviewer changed the rule (empty = unchanged)
+function rulesNow() {
+  const c = PT.cfg, A = ptLessons(), RS = ptRules('S', '', A), RL = ptRules('L', '', A), M = ptRules('L', '', A, 'mom');
+  const r = (t, was) => ({t, was: was || ''}), pc = v => fmtNum(v) + '%';
+  const rev = [], mom = [], acct = [];
+  if (c.stratRev) {
+    rev.push(r(`Fade top-5 movers: short gainers, buy losers, at ${RS.needConf ? '"Reversed" only' : '"Reversal forming" or "Reversed"'}`, RS.needConf ? 'forming or reversed' : ''));
+    rev.push(r(RS.minScore === RL.minScore ? `Needs ${RS.minScore}/8 reversal signs` : `Shorts need ${RS.minScore}/8 signs, longs ${RL.minScore}/8`, RS.minScore !== c.minScore || RL.minScore !== c.minScore ? c.minScore + '/8' : ''));
+    rev.push(r(Math.abs(RS.riskPct - RL.riskPct) < 1e-9 ? `Risk ${pc(RS.riskPct)} of equity per trade` : `Risk ${pc(RS.riskPct)} on shorts, ${pc(RL.riskPct)} on longs`, Math.abs(RS.riskPct - c.riskPct) > 1e-9 || Math.abs(RL.riskPct - c.riskPct) > 1e-9 ? pc(c.riskPct) : ''));
+    rev.push(r(`Stop ${pc(RS.stopBuf)} beyond the 6h swing; skip if over ${c.maxStopPct}% away`, RS.stopBuf !== c.stopBuf ? pc(c.stopBuf) : ''));
+    rev.push(r(`Half off at +${fmtNum(RS.tp1R)}R, then breakeven and an EMA20 trail`, RS.tp1R !== c.tp1R ? `+${c.tp1R}R` : ''));
+    rev.push(r(`Full target +${fmtNum(RS.tpR)}R`, RS.tpR !== c.tpR ? `+${c.tpR}R` : ''));
+    rev.push(r(`Out after ${RS.holdH}h, or once the signs fade`, RS.holdH !== c.holdH ? c.holdH + 'h' : ''));
+    if (A && A.avoid && A.avoid.length) rev.push(r(`Skips "${A.avoid.join('", "')}" setups`, 'allowed'));
+    if (A && A.prefer && A.prefer.length) rev.push(r(`Takes "${A.prefer.join('", "')}" setups first`, 'no priority'));
+  }
+  if (c.stratMom) {
+    mom.push(r('Trade with strong top-10 movers: long gainers, short losers'));
+    mom.push(r(`Needs ${M.minScore}/8 momentum signs`, M.minScore !== c.momMinScore ? c.momMinScore + '/8' : ''));
+    mom.push(r(`Risk ${pc(M.riskPct)} per trade, at most ${c.momMaxPos} at once`, Math.abs(M.riskPct - c.momRiskPct) > 1e-9 ? pc(c.momRiskPct) : ''));
+    mom.push(r(`Skips moves over ${c.momMaxExt}% from the 15m EMA20, or with reversal signs forming`));
+    mom.push(r(`Stop beyond the 2h swing or EMA20; out when momentum fades, a reversal forms, or after ${M.holdH}h`));
+  }
+  acct.push(r(`Max ${c.maxPos} positions, ${c.maxLev}× leverage; stops for the day at −${c.dailyLossPct}%`));
+  acct.push(r(`Coins with ${fmtUsd(RS.minVol)}+ daily volume; waits 2h before re-trading a coin`, RS.minVol !== c.minVol ? fmtUsd(c.minVol) : ''));
+  acct.push(c.unlGuard ? r(`No longs within ${RL.unlDays} days before a big unlock (≥${c.unlMinPct}% of supply); longs closed 12h before; no new shorts 24h after`, RL.unlDays !== c.unlDays ? c.unlDays + ' days' : '') : r('Token unlock guard: off'));
+  if (RS.fundGuard) acct.push(r('Skips entries that would pay ≥0.05%/4h funding', 'not checked'));
+  acct.push(r(`Fees ${c.feePct}% + slippage ${c.slipPct}% per side; funding charged`));
+  const changed = [...rev, ...mom, ...acct].some(x => x.was);
+  const st = !RV.on ? 'Reviewer adjustments are OFF: your settings only' : RV.pending ? `Reading review #${RV.pending} before the next entry` : A ? (changed ? `Includes the Reviewer's changes (review #${A.id || '?'}), highlighted` : `Review #${A.id || '?'} read: no changes, your settings`) : 'No Reviewer changes yet: your settings';
+  const pt = {name: 'Trader', col: '#ffd166', st, changed, groups: [['Reversal' + (c.stratRev ? '' : ' · off'), rev], ['Momentum' + (c.stratMom ? '' : ' · off'), mom], ['Every trade', acct]].filter(g => g[1].length || / off/.test(g[0]))};
+  const s = SM.cfg;
+  const sm = {name: 'SMC Trader', col: SMCOL, st: SM.on ? 'Fixed rules, no Reviewer, so it stays a clean comparison' : 'Trading is OFF', changed: false, groups: [
+    ['Setup (15m, either direction)', [r('Liquidity sweep, then a structure shift (CHoCH)'), r('Enters on the first pullback into the fair value gap, else the order block'), r(`Needs ${s.minScore}/6 confluences`)]],
+    ['Risk & exits', [r(`Stop ${pc(s.stopBuf)} beyond the sweep; skip if under 0.6% or over ${s.maxStopPct}% away`), r(`Target: the next liquidity pool at least ${fmtNum(s.minRR)}R away, capped at ${fmtNum(s.maxRR)}R`), r(`Half off at +${fmtNum(s.tp1R)}R, breakeven, then trail behind new 15m swings`), r(`Out at the target or after ${s.holdH}h`)]],
+    ['Every trade', [r(`Risk ${pc(s.riskPct)} per trade; max ${s.maxPos} positions, ${s.maxLev}× leverage; stops for the day at −${s.dailyLossPct}%`), r(`Coins with ${fmtUsd(s.minVol)}+ daily volume; token unlock guard ${s.unlGuard ? 'on' : 'off'}`), r(`Fees ${s.feePct}% + slippage ${s.slipPct}% per side; funding charged`)]]]};
+  return {pt, sm};
+}
+function rulesCardHTML(which) {
+  const K = rulesNow()[which];
+  return `<div class="card2" style="border-left:4px solid ${K.col}"><h3 style="color:${K.col}">${esc(K.name.toUpperCase())} · RULES IN FORCE NOW</h3>
+    <div style="font-size:12px;margin:-2px 0 8px;color:${K.changed ? '#c5f05a' : 'var(--dim)'}">${esc(K.st)}</div>
+    ${K.groups.map(([g, rows]) => `<div class="dim" style="font-size:11px;letter-spacing:.08em;margin:8px 0 2px">${esc(g.toUpperCase())}</div>${rows.map(r => `<div class="chk" style="padding:3px 0"><span class="i" style="color:${r.was ? '#c5f05a' : 'var(--dim)'}">${r.was ? 'R' : '•'}</span><span${r.was ? ' style="color:#c5f05a"' : ''}>${esc(r.t)}${r.was ? ` <span style="font-size:11px;opacity:.85">(changed by the Reviewer · your setting: ${esc(r.was)})</span>` : ''}</span></div>`).join('')}`).join('')}</div>`;
+}
+function rulesBothHTML() {
+  return `<p class="note">What each trader is doing <b>right now</b>. Rules marked <b style="color:#c5f05a">R</b> were changed by the Reviewer from your settings. The SMC Trader has no Reviewer, so its rules only change if you change its settings.</p><div class="grid2">${rulesCardHTML('pt')}${rulesCardHTML('sm')}</div>`;
+}
+
+/* ---- Reviewer panel: "On the chart" tab ---- */
+function rvChartHTML() {
+  const L = rvTrades(RVS.acct);
+  const filt = `<div style="display:flex;gap:6px;margin-bottom:10px">${[['all', 'Both traders'], ['pt', 'Trader'], ['sm', 'SMC Trader']].map(([k, l]) => `<span class="chip ${RVS.acct === k ? 'on' : ''}" data-rvacct="${k}">${l}</span>`).join('')}</div>`;
+  if (!L.length) return filt + '<div class="empty">No closed trades yet. When a trade closes, it shows up here on its own chart, with what the trader did right (✓) and wrong (✗) marked where it happened.</div>';
+  let sel = L.find(([a, x]) => tradeKey(a, x) === RVS.key); if (!sel) { sel = L[0]; RVS.key = tradeKey(...sel); }
+  const [a, x] = sel, E = rvExplain(x, a), g = E.grade;
+  const list = L.slice(0, 60).map(([a2, y]) => { const gg = rvGrade(y), k = tradeKey(a2, y); return `<div class="rvpick${k === RVS.key ? ' on' : ''}" data-rvpick="${esc(k)}" style="display:flex;gap:8px;align-items:center;padding:6px 8px;border-radius:7px;cursor:pointer;${k === RVS.key ? 'background:rgba(197,240,90,.12);' : ''}"><b style="color:${GRADE_C[gg.g]};width:14px">${gg.g}</b><b style="min-width:60px">${esc(y.b)}</b><span class="${y.side === 'L' ? 'up' : 'dn'}" style="font-size:11px">${y.side === 'L' ? 'LONG' : 'SHORT'}</span><span style="font-size:11px;color:${a2 === 'sm' ? SMCOL : '#ffd166'}">${a2 === 'sm' ? 'SMC' : y.strat === 'mom' ? 'MOM' : 'REV'}</span><span class="mono ${cls(y.R)}" style="margin-left:auto">${fmtR(y.R)}</span><span class="dim" style="font-size:11px;width:44px;text-align:right">${ago(y.t1)}</span></div>`; }).join('');
+  const item = it => `<div class="chk" style="padding:4px 0"><span class="i" style="background:${it.ok ? UP : DN};color:#04070f;border-radius:5px;padding:0 5px;font-weight:800;min-width:30px;text-align:center">${it.ok ? '✓' : '✗'}${it.n}</span><span>${esc(it.t)}</span></div>`;
+  const G = E.items.filter(i => i.ok), B = E.items.filter(i => !i.ok);
+  return filt + `<div class="grid2" style="grid-template-columns:260px 1fr;gap:14px">
+    <div class="card2" style="padding:8px;max-height:640px;overflow:auto">${list}</div>
+    <div><div class="card2" style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+      <span style="background:${GRADE_C[g.g]};color:#04070f;font-weight:800;font-size:26px;border-radius:9px;width:44px;height:44px;display:flex;align-items:center;justify-content:center">${g.g}</span>
+      <div><div style="font-size:19px;font-weight:800">${esc(x.b)} <span class="${x.side === 'L' ? 'up' : 'dn'}" style="font-size:13px">${x.side === 'L' ? 'LONG' : 'SHORT'}</span> <span style="font-size:13px;color:${a === 'sm' ? SMCOL : '#ffd166'}">${esc(stratName(a, x))}</span> <span class="mono ${cls(x.R)}">${fmtR(x.R)} · ${fmtMoney(x.pnl, 1)}</span></div>
+      <div style="font-size:13px;margin-top:2px">${esc(g.note)}</div></div>
+      <span class="dim" style="margin-left:auto;font-size:12px">${new Date(x.t0).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'})} → ${new Date(x.t1).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})} · held ${held(x)}</span></div>
+    <canvas data-rvchart="${esc(RVS.key)}" style="width:100%;height:360px;display:block;border-radius:8px;border:1px solid var(--line);margin-top:10px"></canvas>
+    <div class="dim" style="font-size:11px;margin-top:4px">▲/▼ entry · ◆ half taken · ● exit · shaded = time in the trade · numbered tags match the lists below</div>
+    <div class="grid2" style="margin-top:10px"><div class="card2"><h3 style="color:${UP}">DONE RIGHT</h3>${G.map(item).join('') || '<span class="dim" style="font-size:13px">Nothing stood out.</span>'}</div>
+    <div class="card2"><h3 style="color:${DN}">DONE WRONG</h3>${B.map(item).join('') || '<span class="dim" style="font-size:13px">Nothing. A clean trade by the rules.</span>'}</div></div>
+    <div class="card2" style="margin-top:12px;border-left:4px solid #c5f05a"><h3 style="color:#c5f05a">WHAT THE REVIEWER CHANGED</h3>${a === 'sm' ? '<span class="dim" style="font-size:13px">Graded for comparison only. The SMC Trader\'s rules stay fixed (no Reviewer).</span>' : E.les.length ? E.les.map(l => `<div class="chk"><span class="i" style="color:#c5f05a">›</span><span>${esc(l)}</span></div>`).join('') + '<div class="dim" style="font-size:12px;margin-top:4px">These rules are in force now, partly because of trades like this one.</div>' : `<span class="dim" style="font-size:13px">No rule change from trades like this yet. The Reviewer needs a minimum sample before it changes anything (3 trades for a setup, 4 for a side, 6 overall).</span>`}
+    <div class="dim" style="font-size:12px;margin-top:6px">Entry reason: ${esc(x.why || '—')}<br>Exit: ${esc(x.exitWhy || '—')}</div></div></div></div>`;
+}
+function drawRvCanvas(cv) {
+  const k = cv.dataset.rvchart, hit = rvTrades().find(([a, x]) => tradeKey(a, x) === k); if (!hit) return;
+  const r = cv.getBoundingClientRect(); if (!r.width) return;
+  const dpr = Math.min(devicePixelRatio || 1, 2); cv.width = r.width * dpr; cv.height = r.height * dpr;
+  const c = cv.getContext('2d'); c.scale(dpr, dpr);
+  drawTradeChart(c, hit[1], hit[0], 0, 0, r.width, r.height, 1, rvExplain(hit[1], hit[0]));
+}
+document.getElementById('panel').addEventListener('click', e => {
+  const p = e.target.closest('[data-rvpick]'), f = e.target.closest('[data-rvacct]'); if (!p && !f) return; e.stopPropagation();
+  if (p) RVS.key = p.dataset.rvpick; if (f) { RVS.acct = f.dataset.rvacct; RVS.key = null; }
+  renderPanel();
+}, true);
 
 /* ================= SYNC: one shared account across computers, stored in a private GitHub repo ================= */
 // The file lives on a branch called "state" that always has exactly one commit (overwritten on each save),
