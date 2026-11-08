@@ -8,7 +8,7 @@ const AGENTS = [
   {id:'scout', key:'1', name:'GainerLoser', role:'Movers, Patterns & Unlocks', color:'#4dd2ff', blurb:'Top gainers & losers, pattern tags, all-day trend tracking, token unlock calendar'},
   {id:'ivy',   key:'2', name:'OpenInterest', role:'Open Interest Watch',     color:'#b48cff', blurb:'Sudden OI spikes and drops, and what they mean with price'},
   {id:'flo',   key:'3', name:'Flow',     role:'Money Flow & Positioning',    color:'#2ee59d', blurb:'Net taker flow, buy/sell pressure, funding crowding, whales, liquidations'},
-  {id:'trader', key:'4', name:'Trader',  role:'Paper Trading Desk',          color:'#ffd166', blurb:'Trades the reversal signals on a $1,000 paper account'},
+  {id:'trader', key:'4', name:'Trader',  role:'Paper Trading Desk',          color:'#ffd166', blurb:'Trades reversal and momentum signals on a $1,000 paper account'},
   {id:'rev',   key:'5', name:'Reviewer', role:'Trade Review & Rules',        color:'#c5f05a', blurb:'Grades every trade and tunes the Trader\'s rules'},
 ];
 const AG = Object.fromEntries(AGENTS.map(a => [a.id, a]));
@@ -511,6 +511,51 @@ function trackManual(s, on) {
   trkSave(); recomputeUniverse(); nextRun.set('h1:' + s, 0); nextRun.set('kl:' + s, 0); nextRun.set('oi:' + s, 0);
 }
 // runs every ~15s: adds new top-5 entrants, re-tags, reads trend, logs state changes, raises alerts
+/* ---- MOMENTUM READ: is the move still being driven (trade WITH it) — the mirror image of the reversal read ---- */
+S.moC = new Map(); const MO_PREV = new Map();
+const MSTATES = {
+  wait: {code: -1, l: 'Loading', s: '…', c: DIM},
+  none: {code: 0, l: 'No momentum', s: '— NONE', c: DIM},
+  buildG: {code: 1, l: 'Momentum building ↑', s: '↑ BUILDING', c: '#7fe3b8'}, buildL: {code: 1, l: 'Momentum building ↓', s: '↓ BUILDING', c: '#ff9db0'},
+  strongG: {code: 2, l: 'Strong momentum ↑', s: '↑ STRONG', c: UP}, strongL: {code: 2, l: 'Strong momentum ↓', s: '↓ STRONG', c: DN},
+};
+function momRead(s) {
+  const k = S.kl.get(s), side = sideOf(s);
+  if (!k || k.bars.length < 24) return {state: MSTATES.wait, key: 'wait', side, checks: [], score: 0, known: 0, ext: null};
+  const B = k.bars, n = B.length, live = (S.tk.get(s) || {}).last || B[n - 1][4];
+  const hiOf = a => Math.max(...a.map(b => b[2])), loOf = a => Math.min(...a.map(b => b[3]));
+  const c3 = B.slice(n - 4), prev = B.slice(n - 12, n - 4);
+  const cl = B.map(b => b[4]); cl[n - 1] = live; const E = emaArr(cl, 20), e = E[n - 1], eSlope = E[n - 1] / E[n - 5] - 1;
+  const net = a => a.reduce((x, b) => x + 2 * b[6] - b[5], 0), n1 = net(c3);
+  const q = c3.reduce((x, b) => x + b[5], 0), tb = c3.reduce((x, b) => x + b[6], 0), bs = q - tb > 0 ? tb / (q - tb) : null;
+  const vPrev = B.slice(n - 16, n - 4).reduce((x, b) => x + b[5], 0) / 3, vx = vPrev > 0 ? q / vPrev : null;
+  const fr = f4(s), rg = regime(mget(s)), hs = h1Stats(s), R = hs ? hs.rsi : [];
+  const rNow = R.length ? R[R.length - 1] : null, rPrev = R.length > 1 ? R[R.length - 2] : null;
+  const fromHi = live / hiOf(B) - 1, fromLo = live / loOf(B) - 1, ext = live / e - 1;
+  const P = (ok, label, d) => ({ok, label, d});
+  const checks = side === 'G' ? [
+    P(hiOf(c3) > hiOf(prev) * 1.005 && fromHi > -0.03, 'Fresh high on 15m (within 3% of the 24h high)', `last 1h high ${fmtPx(hiOf(c3))} vs ${fmtPx(hiOf(prev))} · ${fmtPct(fromHi * 100)} from high`),
+    P(live > e && eSlope > 0, 'Above a rising 15m EMA20', `EMA ${fmtPx(e)} · slope ${fmtPct(eSlope * 100, 2)}/h`),
+    P(n1 > 0, 'Net flow positive last 1h', fmtUsd(n1, 1)),
+    P(fin(bs) ? bs > 1.1 : null, 'Buyers more aggressive (B/S > 1.1)', fmtRatio(bs)),
+    P(fin(vx) ? vx >= 1.3 : null, 'Volume expanding (last 1h ≥ 1.3× prior hours)', fin(vx) ? vx.toFixed(2) + '×' : '—'),
+    P(fin(fr) ? fr < 0.0005 : null, 'Longs not crowded (funding < 0.05%/4h)', fin(fr) ? fmtFund(fr) + '/4h' : '—'),
+    P(rg ? rg.k === 'upup' : null, 'OI rising with price (new longs)', rg ? rg.label : 'building OI history'),
+    P(fin(rNow) ? rNow >= 55 && rNow <= 82 && rNow >= rPrev - 1 : null, 'RSI 1h strong, not exhausted (55–82)', fin(rNow) ? rNow.toFixed(0) : '—'),
+  ] : [
+    P(loOf(c3) < loOf(prev) * 0.995 && fromLo < 0.03, 'Fresh low on 15m (within 3% of the 24h low)', `last 1h low ${fmtPx(loOf(c3))} vs ${fmtPx(loOf(prev))} · ${fmtPct(fromLo * 100)} from low`),
+    P(live < e && eSlope < 0, 'Below a falling 15m EMA20', `EMA ${fmtPx(e)} · slope ${fmtPct(eSlope * 100, 2)}/h`),
+    P(n1 < 0, 'Net flow negative last 1h', fmtUsd(n1, 1)),
+    P(fin(bs) ? bs < 0.9 : null, 'Sellers more aggressive (B/S < 0.9)', fmtRatio(bs)),
+    P(fin(vx) ? vx >= 1.3 : null, 'Volume expanding (last 1h ≥ 1.3× prior hours)', fin(vx) ? vx.toFixed(2) + '×' : '—'),
+    P(fin(fr) ? fr > -0.0003 : null, 'Shorts not crowded (funding > −0.03%/4h)', fin(fr) ? fmtFund(fr) + '/4h' : '—'),
+    P(rg ? rg.k === 'dnup' : null, 'OI rising as price falls (new shorts)', rg ? rg.label : 'building OI history'),
+    P(fin(rNow) ? rNow >= 18 && rNow <= 45 && rNow <= rPrev + 1 : null, 'RSI 1h weak, not washed out (18–45)', fin(rNow) ? rNow.toFixed(0) : '—'),
+  ];
+  const score = checks.filter(c => c.ok === true).length, known = checks.filter(c => c.ok !== null).length;
+  const key = score >= 6 ? (side === 'G' ? 'strongG' : 'strongL') : score >= 4 ? (side === 'G' ? 'buildG' : 'buildL') : 'none';
+  return {state: MSTATES[key], key, side, checks, score, known, ext, ema: e, live, fromHi, fromLo};
+}
 function trkUpdate() {
   const t = now(), g5 = S.gainers.slice(0, 5), l5 = S.losers.slice(0, 5);
   for (const [list, side] of [[g5, 'G'], [l5, 'L']]) list.forEach((s, i) => {
@@ -522,7 +567,13 @@ function trkUpdate() {
     }
     e.lastTop = t; e.rank = i + 1; e.bestRank = Math.min(e.bestRank || 9, i + 1);
   });
-  for (const s of h1set()) { S.tagC.set(s, tagFor(s)); S.trC.set(s, trendRead(s)); }
+  for (const s of h1set()) {
+    S.tagC.set(s, tagFor(s)); S.trC.set(s, trendRead(s));
+    const mo = momRead(s); S.moC.set(s, mo);
+    const was = MO_PREV.get(s); MO_PREV.set(s, mo.state.code);
+    if (warm && mo.state.code === 2 && was != null && was < 2 && (S.trk[s] || S.gainers.slice(0, 10).includes(s) || S.losers.slice(0, 10).includes(s)))
+      raise('scout', s, 'mo' + mo.key, `${base(s)}: ${mo.state.l} (${mo.score}/8 momentum signs): ${mo.checks.filter(c => c.ok).map(c => c.label.split(' (')[0].toLowerCase()).slice(0, 3).join(', ')}`, mo.side === 'G' ? 1 : -1, 60 * 60e3);
+  }
   for (const s of Object.keys(S.trk)) {
     const e = S.trk[s];
     if (!g5.includes(s) && !l5.includes(s)) e.rank = null;
@@ -607,7 +658,7 @@ if (typeof window !== 'undefined' && typeof setInterval === 'function') { unlLoa
 // Trades the reversal signals from the day tracker. No real orders are ever sent: fills are simulated at live
 // Aster prices with taker fee, slippage and funding charged, so the results are a fair test of the rules.
 const PT_DEF = {v: 1, start: 1000, cash: 1000, pos: {}, log: [], eqs: [], day: null, cool: {}, on: true, paused: null, created: 0,
-  cfg: {riskPct: 1, maxPos: 3, maxLev: 2, minScore: 5, dailyLossPct: 3, feePct: 0.04, slipPct: 0.10, holdH: 12, minVol: 300000, maxStopPct: 15, tp1R: 1.5, tpR: 3, stopBuf: 0.5, unlGuard: true, unlDays: 3, unlMinPct: 2}, cands: []};
+  cfg: {riskPct: 1, maxPos: 3, maxLev: 2, minScore: 5, dailyLossPct: 3, feePct: 0.04, slipPct: 0.10, holdH: 12, minVol: 300000, maxStopPct: 15, tp1R: 1.5, tpR: 3, stopBuf: 0.5, unlGuard: true, unlDays: 3, unlMinPct: 2, stratRev: 1, stratMom: 1, momMinScore: 6, momRiskPct: 0.75, momMaxPos: 2, momHoldH: 6, momMaxExt: 8}, cands: []};
 let PT = (() => {
   const saved = LS.get('awx_pt', null);
   const p = Object.assign(JSON.parse(JSON.stringify(PT_DEF)), saved || {});
@@ -632,9 +683,20 @@ function ptExposure() { let n = 0; for (const s in PT.pos) n += PT.pos[s].qty * 
 function ptFill(px, side, opening) { const sl = PT.cfg.slipPct / 100, buy = (side === 'L') === opening; return px * (buy ? 1 + sl : 1 - sl); }
 // The rules the Trader uses right now: your settings, plus whatever the Reviewer changed and the Trader accepted.
 function ptLessons() { return (RV.on && RV.active) ? RV.active : null; }
-function ptRules(side, tag, A = ptLessons()) {
-  const c = PT.cfg, r = {minScore: c.minScore, riskPct: c.riskPct, minVol: c.minVol, holdH: c.holdH, tp1R: c.tp1R, tpR: c.tpR, stopBuf: c.stopBuf, unlDays: c.unlDays, needConf: false, fundGuard: false, avoid: false, prefer: false, les: []};
+// strat 'rev' = reversal (fade the move), 'mom' = momentum (trade with it). Most Reviewer lessons are learned from and applied to reversal trades; momentum has its own.
+function ptRules(side, tag, A = ptLessons(), strat = 'rev') {
+  const c = PT.cfg, mom = strat === 'mom';
+  const r = {strat, minScore: mom ? c.momMinScore : c.minScore, riskPct: mom ? c.momRiskPct : c.riskPct, minVol: c.minVol, holdH: mom ? c.momHoldH : c.holdH, tp1R: c.tp1R, tpR: c.tpR, stopBuf: c.stopBuf, unlDays: c.unlDays, needConf: false, fundGuard: false, avoid: false, prefer: false, les: []};
   if (!A) return r;
+  if (mom) {
+    const m = A.mom || {score: 0, mul: 1};
+    if (m.score) { r.minScore = Math.min(8, r.minScore + m.score); r.les.push(`momentum needs ${r.minScore}/8`); }
+    if (m.mul && m.mul !== 1) { r.riskPct *= m.mul; r.les.push(`momentum risk ${r.riskPct.toFixed(2)}%`); }
+    if (A.volMul && A.volMul !== 1) { r.minVol = c.minVol * A.volMul; r.les.push(`min volume ${fmtUsd(r.minVol)}`); }
+    if (A.unlDays && A.unlDays > c.unlDays) { r.unlDays = A.unlDays; r.les.push(`no longs within ${A.unlDays}d of a big unlock`); }
+    if (A.fundGuard) { r.fundGuard = true; r.les.push('avoids paying funding'); }
+    return r;
+  }
   const sd = (A.side && A.side[side]) || {score: 0, mul: 1}, nm = side === 'L' ? 'longs' : 'shorts';
   r.minScore = Math.min(8, c.minScore + (A.score || 0) + (sd.score || 0));
   if (r.minScore !== c.minScore) r.les.push(`needs ${r.minScore}/8 signs`);
@@ -668,6 +730,20 @@ function ptGate(trkSide, key, score, tag, s, A = ptLessons()) {
   }
   return null;
 }
+// Momentum candidate check (null = qualifies). trkSide 'G' = up on the day → LONG with the move; 'L' → SHORT.
+function ptGateMom(trkSide, mo, tr, tag, s, A = ptLessons()) {
+  const R = ptRules(trkSide === 'G' ? 'L' : 'S', tag, A, 'mom');
+  if (mo.score < R.minScore) return `only ${mo.score}/8 momentum signs (needs ${R.minScore})`;
+  if (tr && tr.state && tr.state.code >= 2) return 'reversal signs already forming against the move';
+  if (fin(mo.ext) && Math.abs(mo.ext) * 100 > PT.cfg.momMaxExt) return `too stretched: ${fmtPct(mo.ext * 100)} from the 15m EMA (max ${PT.cfg.momMaxExt}%)`;
+  if (R.fundGuard && s) { const fr = f4(s); if (fin(fr) && (trkSide === 'G' ? fr >= 5e-4 : fr <= -5e-4)) return 'Reviewer: funding is against this side'; }
+  if (PT.cfg.unlGuard && s) {
+    const u = unlCtx(s);
+    if (trkSide === 'G' && u.phase === 'ahead' && u.big && u.days <= R.unlDays) return `token unlock ${unlWhen(u)} (${unlSizeTxt(u.e)}): no longs into new supply`;
+    if (trkSide === 'L' && u.phase === 'after' && u.big && u.hours <= 24) return `unlock was ${unlWhen(u)}: no fresh shorts for 24 h`;
+  }
+  return null;
+}
 function ptR(p, px) { const d = Math.abs(p.entry - p.stop0); return d ? (p.side === 'L' ? px - p.entry : p.entry - px) / d : 0; }
 
 function ptClose(s, frac, why) {
@@ -679,7 +755,7 @@ function ptClose(s, frac, why) {
     const R = p.risk ? p.realized / p.risk : 0;
     PT.log.unshift({s, b: p.b, side: p.side, t0: p.t, t1: now(), entry: p.entry, exit: fill, qty: p.qty0, notional: p.qty0 * p.entry, pnl: p.realized,
       R, fees: p.fees, funding: p.funding || 0, why: p.why, tag: p.tag, exitWhy: why, stop0: p.stop0, maxR: p.maxR || 0,
-      st: p.st || '', sc: p.sc, dist: p.dist, les: p.les || [], rvId: p.rvId || 0, unlK: p.unlK || 'none', unl: p.unl || ''});
+      st: p.st || '', sc: p.sc, dist: p.dist, les: p.les || [], rvId: p.rvId || 0, unlK: p.unlK || 'none', unl: p.unl || '', strat: p.strat || 'rev'});
     if (PT.log.length > 500) PT.log.pop();
     delete PT.pos[s]; PT.cool[s] = now();
     raise('trader', s, 'close' + now(), `PAPER ${p.side === 'L' ? 'long' : 'short'} ${p.b} closed ${fmtMoney(p.realized, 1)} (${R >= 0 ? '+' : ''}${R.toFixed(2)}R) — ${why}`, p.realized >= 0 ? 1 : -1, 0, true);
@@ -690,14 +766,20 @@ function ptClose(s, frac, why) {
 }
 
 function ptTryEnter(c) {
-  const {s, e, tr, tk} = c, k = S.kl.get(s); if (!k || k.bars.length < 24) return false;
-  const B = k.bars, n = B.length, px = tk.last, side = e.side === 'G' ? 'S' : 'L';
-  const tg = S.tagC.get(s), R = ptRules(side, tg ? tg.l : ''), bf = R.stopBuf / 100;
+  const {s, tk} = c, mom = c.strat === 'mom', tr = mom ? c.mo : c.tr, k = S.kl.get(s); if (!k || k.bars.length < 24) return false;
+  const B = k.bars, n = B.length, px = tk.last, side = mom ? (c.side === 'G' ? 'L' : 'S') : (c.side === 'G' ? 'S' : 'L');
+  const tg = S.tagC.get(s), R = ptRules(side, tg ? tg.l : '', ptLessons(), mom ? 'mom' : 'rev'), bf = R.stopBuf / 100;
   const hi = a => Math.max(...a.map(b => b[2])), lo = a => Math.min(...a.map(b => b[3]));
-  const w6 = B.slice(n - 24), w3 = B.slice(n - 12);
-  // stop just beyond the swing extreme the reversal is turning from (6h, else 3h)
-  let stop = side === 'S' ? hi(w6) * (1 + bf) : lo(w6) * (1 - bf);
-  if (Math.abs(stop - px) / px > PT.cfg.maxStopPct / 100) stop = side === 'S' ? hi(w3) * (1 + bf) : lo(w3) * (1 - bf);
+  const w6 = B.slice(n - 24), w3 = B.slice(n - 12), w2 = B.slice(n - 8);
+  let stop;
+  if (mom) {
+    // momentum: stop beyond the last 2h swing or the 15m EMA20, whichever gives the move more room
+    stop = side === 'L' ? Math.min(lo(w2), tr.ema) * (1 - bf) : Math.max(hi(w2), tr.ema) * (1 + bf);
+  } else {
+    // reversal: stop just beyond the swing extreme the reversal is turning from (6h, else 3h)
+    stop = side === 'S' ? hi(w6) * (1 + bf) : lo(w6) * (1 - bf);
+    if (Math.abs(stop - px) / px > PT.cfg.maxStopPct / 100) stop = side === 'S' ? hi(w3) * (1 + bf) : lo(w3) * (1 - bf);
+  }
   let dist = Math.abs(stop - px) / px;
   if (dist > PT.cfg.maxStopPct / 100) { c.skip = `stop would be ${(dist * 100).toFixed(0)}% away`; return false; }
   if (dist < 0.02) { stop = side === 'S' ? px * 1.02 : px * 0.98; dist = 0.02; }
@@ -709,12 +791,12 @@ function ptTryEnter(c) {
   qty = Math.min(qty, perPosCap / fill, Math.max(0, roomLeft) / fill);
   if (qty * fill < 10) { c.skip = 'not enough room under the leverage cap'; return false; }
   const fee = qty * fill * PT.cfg.feePct / 100; PT.cash -= fee;
-  const why = `${tr.state.l} ${tr.score}/8 — ${tr.checks.filter(x => x.ok).map(x => x.label.split(' (')[0].toLowerCase()).slice(0, 4).join(', ')}`;
+  const why = `${mom ? 'Momentum' : 'Reversal'} · ${tr.state.l} ${tr.score}/8 — ${tr.checks.filter(x => x.ok).map(x => x.label.split(' (')[0].toLowerCase()).slice(0, 4).join(', ')}`;
   const A = ptLessons();
   const uc = unlCtx(s);
-  PT.pos[s] = {unlK: uc.phase && uc.big ? uc.phase : 'none', unl: uc.phase ? unlLabel(uc) : '', st: tr.key, sc: tr.score, dist: dist * 100, les: R.les, rvId: A ? A.id || 0 : 0, tp1R: R.tp1R, tpR: R.tpR, hold: R.holdH, side, b: base(s), qty, qty0: qty, entry: fill, stop, stop0: stop, t: now(), risk: qty * Math.abs(fill - stop), realized: -fee, fees: fee,
+  PT.pos[s] = {strat: mom ? 'mom' : 'rev', unlK: uc.phase && uc.big ? uc.phase : 'none', unl: uc.phase ? unlLabel(uc) : '', st: tr.key, sc: tr.score, dist: dist * 100, les: R.les, rvId: A ? A.id || 0 : 0, tp1R: R.tp1R, tpR: R.tpR, hold: R.holdH, side, b: base(s), qty, qty0: qty, entry: fill, stop, stop0: stop, t: now(), risk: qty * Math.abs(fill - stop), realized: -fee, fees: fee,
     funding: 0, why, tag: tg ? tg.l : '', nf: null, be: false, tp1: false, maxR: 0, exits: []};
-  raise('trader', s, 'open' + now(), `PAPER ${side === 'L' ? 'LONG' : 'SHORT'} ${base(s)} @ ${fmtPx(fill)} · stop ${fmtPx(stop)} (${(dist * 100).toFixed(1)}%) · size ${fmtMoney(qty * fill)} · risk ${fmtMoney(qty * Math.abs(fill - stop))}${R.les.length ? ' · lessons: ' + R.les.join(', ') : ''}`, side === 'L' ? 1 : -1, 0, true);
+  raise('trader', s, 'open' + now(), `PAPER ${mom ? 'MOMENTUM ' : ''}${side === 'L' ? 'LONG' : 'SHORT'} ${base(s)} @ ${fmtPx(fill)} · stop ${fmtPx(stop)} (${(dist * 100).toFixed(1)}%) · size ${fmtMoney(qty * fill)} · risk ${fmtMoney(qty * Math.abs(fill - stop))}${R.les.length ? ' · lessons: ' + R.les.join(', ') : ''}`, side === 'L' ? 1 : -1, 0, true);
   ptSave(); return true;
 }
 
@@ -740,7 +822,11 @@ function ptManage(t, only) {
     if (L && PT.cfg.unlGuard) { const u = unlCtx(s, t); if (u.phase === 'ahead' && u.big && u.hours <= 12) { ptClose(s, 1, `closed ahead of the ${u.e.b} token unlock (${unlWhen(u)}, ${unlSizeTxt(u.e)})`); continue; } }
     const tr = S.trC.get(s);
     if (p.tp1 && tr && fin(tr.ema)) { const ts = L ? tr.ema * 0.995 : tr.ema * 1.005; if (L ? ts > p.stop : ts < p.stop) p.stop = ts; }
-    if (tr && tr.key !== 'wait' && tr.state.code === 0 && t - p.t > 30 * 60e3) { ptClose(s, 1, 'reversal signals faded, trend resumed'); continue; }
+    if (p.strat === 'mom') {
+      const mo = S.moC.get(s);
+      if (t - p.t > 30 * 60e3 && tr && tr.key !== 'wait' && tr.state.code >= 2) { ptClose(s, 1, 'reversal signs forming against the move'); continue; }
+      if (t - p.t > 30 * 60e3 && mo && mo.key !== 'wait' && mo.state.code === 0) { ptClose(s, 1, 'momentum faded'); continue; }
+    } else if (tr && tr.key !== 'wait' && tr.state.code === 0 && t - p.t > 30 * 60e3) { ptClose(s, 1, 'reversal signals faded, trend resumed'); continue; }
     if (t - p.t > hold * 3600e3) { ptClose(s, 1, `time stop (${hold}h)`); continue; }
   }
 }
@@ -759,12 +845,12 @@ function ptTick() {
   const reading = typeof trReadPending === 'function' ? trReadPending() : null;
   if (PT.on && !PT.paused) {
     const cands = [];
-    for (const s of Object.keys(S.trk)) {
+    for (const s of PT.cfg.stratRev ? Object.keys(S.trk) : []) {
       const e = S.trk[s], tr = S.trC.get(s), tk = S.tk.get(s);
       if (!tr || tr.key === 'wait' || tr.state.code < 2) continue;
       const tg = S.tagC.get(s), tag = tg ? tg.l : '', R = ptRules(e.side === 'G' ? 'S' : 'L', tag);
       const uc = PT.cfg.unlGuard ? unlCtx(s) : {};
-      const c = {s, e, tr, tk, b: base(s), tag, pref: R.prefer || (e.side === 'G' && uc.phase === 'ahead' && uc.big && uc.days <= 7)};
+      const c = {s, side: e.side, strat: 'rev', tr, tk, b: base(s), tag, pref: R.prefer || (e.side === 'G' && uc.phase === 'ahead' && uc.big && uc.days <= 7)};
       const gate = ptGate(e.side, tr.key, tr.score, tag, s);
       if (PT.pos[s]) c.skip = 'already in a position';
       else if (PT.cool[s] && t - PT.cool[s] < 2 * 3600e3) c.skip = 'cooling down after a recent trade';
@@ -776,14 +862,32 @@ function ptTick() {
       const lc = PT.cands.filter(x => x.s === s).pop();
       if (!lc || t - lc.t > 15 * 60e3 || lc.key !== tr.key) PT.cands.push({t, s, b: base(s), side: e.side, key: tr.key, score: tr.score, tag});
     }
+    // momentum: strong moves among the top-10 movers and tracked coins, traded in the direction of the move
+    for (const s of PT.cfg.stratMom ? h1set() : []) {
+      const mo = S.moC.get(s), tr = S.trC.get(s), tk = S.tk.get(s);
+      if (!mo || mo.key === 'wait' || mo.state.code < 2) continue;
+      const tg = S.tagC.get(s), tag = tg ? tg.l : '';
+      const c = {s, side: mo.side, strat: 'mom', mo, tr, tk, b: base(s), tag, pref: false};
+      const gate = ptGateMom(mo.side, mo, tr, tag, s), R = ptRules(mo.side === 'G' ? 'L' : 'S', tag, ptLessons(), 'mom');
+      if (PT.pos[s]) c.skip = 'already in a position';
+      else if (PT.cool[s] && t - PT.cool[s] < 2 * 3600e3) c.skip = 'cooling down after a recent trade';
+      else if (reading) c.skip = reading;
+      else if (gate) c.skip = gate;
+      else if (!tk || tk.qv < R.minVol) c.skip = `24h volume under ${fmtUsd(R.minVol)}`;
+      cands.push(c);
+      const lc = PT.cands.filter(x => x.s === s && x.strat === 'mom').pop();
+      if (!lc || t - lc.t > 15 * 60e3) PT.cands.push({t, s, b: base(s), side: mo.side, strat: 'mom', key: mo.key, score: mo.score, tag, ext: mo.ext, rev: tr ? tr.state.code : 0});
+    }
     PT.cands = PT.cands.filter(x => t - x.t < 24 * 3600e3).slice(-400);
-    cands.sort((a, b) => (b.pref - a.pref) || (b.tr.score - a.tr.score));
+    cands.sort((a, b) => (b.pref - a.pref) || ((b.mo || b.tr).score - (a.mo || a.tr).score));
     for (const c of cands) {
       if (c.skip) continue;
       if (Object.keys(PT.pos).length >= PT.cfg.maxPos) { c.skip = `max ${PT.cfg.maxPos} positions open`; continue; }
+      if (c.strat === 'mom' && Object.values(PT.pos).filter(p => p.strat === 'mom').length >= PT.cfg.momMaxPos) { c.skip = `max ${PT.cfg.momMaxPos} momentum positions open`; continue; }
+      if (PT.pos[c.s]) { c.skip = 'already in a position'; continue; }
       if (ptTryEnter(c)) c.took = true;
     }
-    PT.lastScan.cands = cands.map(c => ({b: c.b, side: c.e.side, state: c.tr.state.l, score: c.tr.score, took: !!c.took, skip: c.skip || ''}));
+    PT.lastScan.cands = cands.map(c => ({b: c.b, side: c.side, strat: c.strat, state: (c.mo || c.tr).state.l, score: (c.mo || c.tr).score, took: !!c.took, skip: c.skip || ''}));
   }
   const last = PT.eqs[PT.eqs.length - 1];
   if (!last || t - last[0] >= 5 * 60e3) { PT.eqs.push([t, +ptEquity().toFixed(2)]); if (PT.eqs.length > 3000) PT.eqs.shift(); }
@@ -808,10 +912,10 @@ const rvMean = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
 const fmtR = r => fin(r) ? (r >= 0 ? '+' : '') + r.toFixed(2) + 'R' : '—';
 const rvManual = x => /closed by you/.test(x.exitWhy || '');
 const rvStage = x => x.st ? (String(x.st).startsWith('done') ? 'done' : 'rev') : (/Reversed/.test(x.why || '') ? 'done' : 'rev');
-const rvExitKind = x => { const e = x.exitWhy || ''; return /closed by you/.test(e) ? 'Closed by you' : /target/.test(e) ? 'Hit target' : /trailing/.test(e) ? 'Trailing stop' : /breakeven/.test(e) ? 'Breakeven stop' : /stop loss/.test(e) ? 'Stop loss' : /faded/.test(e) ? 'Signals faded' : /time stop/.test(e) ? 'Time stop' : 'Other'; };
+const rvExitKind = x => { const e = x.exitWhy || ''; return /unlock/.test(e) ? 'Closed before unlock' : /forming against/.test(e) ? 'Reversal against momentum' : /closed by you/.test(e) ? 'Closed by you' : /target/.test(e) ? 'Hit target' : /trailing/.test(e) ? 'Trailing stop' : /breakeven/.test(e) ? 'Breakeven stop' : /stop loss/.test(e) ? 'Stop loss' : /faded/.test(e) ? 'Signals faded' : /time stop/.test(e) ? 'Time stop' : 'Other'; };
 function rvAgg(a) { const R = a.map(x => x.R); return {n: a.length, avgR: rvMean(R), win: a.length ? a.filter(x => x.R > 0).length / a.length * 100 : null, sum: R.reduce((p, q) => p + q, 0)}; }
 function rvGroup(T, fn) { const m = {}; for (const x of T) { const k = fn(x); if (!k) continue; (m[k] = m[k] || []).push(x); } return Object.fromEntries(Object.entries(m).map(([k, a]) => [k, rvAgg(a)])); }
-function rvBlank() { return {score: 0, riskMul: 1, tp1R: null, tpR: null, stopBuf: null, holdH: null, volMul: 1, side: {L: {score: 0, mul: 1}, S: {score: 0, mul: 1}}, avoid: [], prefer: [], needConf: false, fundGuard: false, unlDays: null}; }
+function rvBlank() { return {score: 0, riskMul: 1, tp1R: null, tpR: null, stopBuf: null, holdH: null, volMul: 1, side: {L: {score: 0, mul: 1}, S: {score: 0, mul: 1}}, avoid: [], prefer: [], needConf: false, fundGuard: false, unlDays: null, mom: {score: 0, mul: 1}}; }
 
 /* ---- per-trade grade (process, not just outcome) ---- */
 function rvGrade(x) {
@@ -822,7 +926,7 @@ function rvGrade(x) {
   if (R < -1.3) return {g: 'F', note: `Lost ${(-R).toFixed(1)}R, more than the planned 1R (slippage or a gap through the stop)`};
   if (x.maxR >= 1) return {g: 'D', note: `Was +${x.maxR.toFixed(1)}R, finished ${fmtR(R)}. Profit wasn't protected.`};
   if (/stop loss/.test(ex) && held < 45) return {g: 'D', note: `Stopped out after ${Math.max(1, Math.round(held))} min: entry too early or stop too tight`};
-  if (/faded/.test(ex) && R < -0.2) return {g: 'D', note: 'Reversal signs faded soon after entry: entered before confirmation'};
+  if (/faded|forming against/.test(ex) && R < -0.2) return {g: 'D', note: x.strat === 'mom' ? 'Momentum died soon after entry: chased a move that was already ending' : 'Reversal signs faded soon after entry: entered before confirmation'};
   if (R > -0.3) return {g: 'C', note: /time stop/.test(ex) ? 'Went nowhere until the time stop' : 'Scratch'};
   return {g: 'C', note: 'Clean loss inside the plan (about 1R). Following the rules is fine.'};
 }
@@ -838,19 +942,21 @@ function rvPostCheck(x) {
 }
 
 /* ---- the review: find what's working and what isn't, propose rule changes ---- */
-function rvAnalyze(T) {
-  const p = rvBlank(), why = {}, base = PT.cfg, O = rvAgg(T);
-  const wins = T.filter(x => x.pnl > 0), losses = T.filter(x => x.pnl <= 0);
+function rvAnalyze(TA) {
+  // most rules are learned from reversal trades only; momentum trades get their own rule below
+  const T = TA.filter(x => (x.strat || 'rev') === 'rev'), TM = TA.filter(x => x.strat === 'mom');
+  const p = rvBlank(), why = {}, base = PT.cfg, O = rvAgg(T), OA = rvAgg(TA);
+  const wins = TA.filter(x => x.pnl > 0), losses = TA.filter(x => x.pnl <= 0);
   const gw = wins.reduce((a, x) => a + x.pnl, 0), gl = -losses.reduce((a, x) => a + x.pnl, 0);
-  const fees = T.reduce((a, x) => a + x.fees, 0), fund = T.reduce((a, x) => a + (x.funding || 0), 0);
-  const G = {side: rvGroup(T, x => x.side === 'L' ? 'Longs (buying losers)' : 'Shorts (fading gainers)'), tag: rvGroup(T, x => x.tag || 'untagged'),
+  const fees = TA.reduce((a, x) => a + x.fees, 0), fund = TA.reduce((a, x) => a + (x.funding || 0), 0);
+  const G = {strat: rvGroup(TA, x => x.strat === 'mom' ? 'Momentum (with the move)' : 'Reversal (against the move)'), side: rvGroup(TA, x => (x.strat === 'mom' ? 'Momentum ' : 'Reversal ') + (x.side === 'L' ? 'longs' : 'shorts')), tag: rvGroup(T, x => x.tag || 'untagged'),
     stage: rvGroup(T, x => rvStage(x) === 'done' ? 'Entered at "Reversed"' : 'Entered at "Reversal forming"'), exit: rvGroup(T, rvExitKind),
     score: rvGroup(T, x => fin(x.sc) ? x.sc + '/8 signs' : null),
-    unl: rvGroup(T, x => !x.unlK ? null : (x.side === 'L' ? 'Long' : 'Short') + (x.unlK === 'ahead' ? ', big unlock ahead' : x.unlK === 'after' ? ', just after a big unlock' : ', no unlock nearby'))};
+    unl: rvGroup(TA, x => !x.unlK ? null : (x.side === 'L' ? 'Long' : 'Short') + (x.unlK === 'ahead' ? ', big unlock ahead' : x.unlK === 'after' ? ', just after a big unlock' : ', no unlock nearby'))};
   // 1 · overall edge
   if (O.n >= 6 && O.avgR < -0.25) {
     p.score = O.n >= 10 && O.avgR < -0.5 ? 2 : 1; p.riskMul = p.score === 2 ? 0.5 : 0.75;
-    why.score = why.risk = `Average result ${fmtR(O.avgR)} over ${O.n} trades. The edge is negative, so be pickier and smaller until it recovers.`;
+    why.score = why.risk = `Reversal trades averaged ${fmtR(O.avgR)} over ${O.n} trades. The edge is negative, so be pickier and smaller until it recovers.`;
   }
   // 2 · one side losing
   const sd = rvGroup(T, x => x.side);
@@ -898,20 +1004,28 @@ function rvAnalyze(T) {
     if (v < base.holdH) { p.holdH = v; why.holdH = `${ts.length} trades sat until the ${base.holdH}h time stop and averaged ${fmtR(rvMean(ts.map(x => x.R)))}: dead money.`; }
   }
   // 9 · fees eating the wins
-  if (O.n >= 6 && gw > 0 && fees / gw >= 0.35) { p.volMul = 2; why.vol = `Fees were ${fmtMoney(fees)}, ${(fees / gw * 100).toFixed(0)}% of gross wins. Trade more liquid coins.`; }
+  if (OA.n >= 6 && gw > 0 && fees / gw >= 0.35) { p.volMul = 2; why.vol = `Fees were ${fmtMoney(fees)}, ${(fees / gw * 100).toFixed(0)}% of gross wins. Trade more liquid coins.`; }
   // 10 · longs bought in the run-up to an unlock (beyond the current guard window) keep losing → widen the window
-  const lu = T.filter(x => x.side === 'L' && x.unlK === 'ahead');
+  const lu = TA.filter(x => x.side === 'L' && x.unlK === 'ahead');
   if (lu.length >= 3 && rvMean(lu.map(x => x.R)) <= -0.4 && base.unlDays < 7) { p.unlDays = 7; why.unl = `${lu.length} longs opened with a big unlock less than 2 weeks away averaged ${fmtR(rvMean(lu.map(x => x.R)))}. Supply overhang hurts longs earlier than ${base.unlDays} days out.`; }
+  // 12 · momentum: its own edge check
+  const OM = rvAgg(TM);
+  if (OM.n >= 5 && OM.avgR < -0.25) {
+    p.mom = OM.n >= 8 && OM.avgR < -0.6 ? {score: 2, mul: 0.5} : {score: 1, mul: 0.75};
+    why.mom = `Momentum trades averaged ${fmtR(OM.avgR)} over ${OM.n} trades, ${OM.win.toFixed(0)}% winners. Demand stronger moves and trade them smaller.`;
+  }
   // 11 · paying funding
-  const fpaid = -T.filter(x => (x.funding || 0) < 0).reduce((a, x) => a + x.funding, 0);
-  if (O.n >= 4 && gl > 0 && fpaid / gl >= 0.2) { p.fundGuard = true; why.fund = `Funding paid ${fmtMoney(fpaid)}, ${(fpaid / gl * 100).toFixed(0)}% of all losses.`; }
+  const fpaid = -TA.filter(x => (x.funding || 0) < 0).reduce((a, x) => a + x.funding, 0);
+  if (OA.n >= 4 && gl > 0 && fpaid / gl >= 0.2) { p.fundGuard = true; why.fund = `Funding paid ${fmtMoney(fpaid)}, ${(fpaid / gl * 100).toFixed(0)}% of all losses.`; }
   // findings: strengths and weaknesses in plain words
   const F = [];
-  F.push({t: O.avgR >= 0 ? 'good' : 'bad', d: `${O.n} trades: ${O.win.toFixed(0)}% winners, average ${fmtR(O.avgR)}, profit factor ${gl ? (gw / gl).toFixed(2) : '∞'}.`});
+  F.push({t: OA.avgR >= 0 ? 'good' : 'bad', d: `${OA.n} trades: ${OA.win.toFixed(0)}% winners, average ${fmtR(OA.avgR)}, profit factor ${gl ? (gw / gl).toFixed(2) : '∞'}.`});
+  const OMf = rvAgg(TM);
+  if (O.n && OMf.n) F.push({t: 'info', d: `Reversal: ${O.n} trades, ${fmtR(O.avgR)} avg, ${O.win.toFixed(0)}% win · Momentum: ${OMf.n} trades, ${fmtR(OMf.avgR)} avg, ${OMf.win.toFixed(0)}% win.`});
   const rank = Object.entries(G.tag).filter(([, a]) => a.n >= 2).sort((a, b) => b[1].avgR - a[1].avgR);
   if (rank.length) F.push({t: rank[0][1].avgR >= 0 ? 'good' : 'bad', d: `Best setup: "${rank[0][0]}" (${rank[0][1].n} trades, ${fmtR(rank[0][1].avgR)}).`});
   if (rank.length > 1) F.push({t: rank[rank.length - 1][1].avgR < 0 ? 'bad' : 'good', d: `Weakest setup: "${rank[rank.length - 1][0]}" (${rank[rank.length - 1][1].n} trades, ${fmtR(rank[rank.length - 1][1].avgR)}).`});
-  const su = T.filter(x => x.side === 'S' && x.unlK === 'ahead');
+  const su = TA.filter(x => x.side === 'S' && x.unlK === 'ahead');
   if (su.length >= 2) F.push({t: rvMean(su.map(x => x.R)) >= 0 ? 'good' : 'bad', d: `Shorts into an upcoming unlock: ${su.length} trades, avg ${fmtR(rvMean(su.map(x => x.R)))}.`});
   if (lu.length) F.push({t: rvMean(lu.map(x => x.R)) >= 0 ? 'good' : 'bad', d: `Longs with a big unlock ahead: ${lu.length} trades, avg ${fmtR(rvMean(lu.map(x => x.R)))}.`});
   if (gb.length) F.push({t: 'bad', d: `${gb.length} trade${gb.length > 1 ? 's were' : ' was'} +1R or better and ended flat or red.`});
@@ -919,7 +1033,7 @@ function rvAnalyze(T) {
   if (back.length) F.push({t: 'bad', d: `${back.length} stopped trade${back.length > 1 ? 's' : ''} later reached +1.5R. Right idea, wrong stop.`});
   if (fees) F.push({t: gw && fees / gw > 0.25 ? 'bad' : 'info', d: `Fees ${fmtMoney(fees)}, funding ${fmtMoney(fund, 1)} net.`});
   if (!Object.keys(why).length) F.push({t: 'good', d: O.n < 6 ? 'Sample is still small. No change is justified yet, so keep collecting trades.' : 'Nothing in the numbers says to change the rules. Keep executing.'});
-  return {p, why, O, pf: gl ? gw / gl : null, fees, fund, G, F};
+  return {p, why, O: OA, pf: gl ? gw / gl : null, fees, fund, G, F};
 }
 // a proposal → readable rule lines, keyed so two proposals can be compared
 function rvItems(p) {
@@ -937,6 +1051,7 @@ function rvItems(p) {
   if (p.volMul !== 1) I.vol = `Min 24h volume ${fmtUsd(b.minVol * p.volMul)} (was ${fmtUsd(b.minVol)})`;
   if (p.fundGuard) I.fund = 'Skip entries where the position would pay ≥0.05%/4h funding';
   if (p.unlDays) I.unl = `No longs within ${p.unlDays} days before a big token unlock (was ${b.unlDays})`;
+  if (p.mom && (p.mom.score || p.mom.mul !== 1)) I.mom = `Momentum: need ${Math.min(8, b.momMinScore + p.mom.score)}/8 signs (was ${b.momMinScore}), size ×${p.mom.mul}`;
   return I;
 }
 function rvRun(manual) {
@@ -955,10 +1070,17 @@ function rvRun(manual) {
 }
 
 /* ---- the Trader reads the review before trading again ---- */
-function trSimulate(H, A) { return H.filter(c => !ptGate(c.side, c.key, c.score, c.tag, null, A)); }
+function trSimulate(H, A) {
+  return H.filter(c => c.strat === 'mom'
+    ? c.score >= ptRules(c.side === 'G' ? 'L' : 'S', c.tag, A, 'mom').minScore && !(c.rev >= 2) && !(fin(c.ext) && Math.abs(c.ext) * 100 > PT.cfg.momMaxExt)
+    : !ptGate(c.side, c.key, c.score, c.tag, null, A));
+}
 function trPlan(A) {
   const out = [];
-  for (const k of ['S', 'L']) { const R = ptRules(k, '', A); out.push(`${k === 'L' ? 'Longs (buy losers)' : 'Shorts (fade gainers)'}: need ${R.minScore}/8 signs, risk ${R.riskPct.toFixed(2)}% of equity per trade.`); }
+  if (PT.cfg.stratRev) for (const k of ['S', 'L']) { const R = ptRules(k, '', A); out.push(`Reversal ${k === 'L' ? 'longs (buy losers)' : 'shorts (fade gainers)'}: need ${R.minScore}/8 signs, risk ${R.riskPct.toFixed(2)}% of equity per trade.`); }
+  else out.push('Reversal trades: off.');
+  if (PT.cfg.stratMom) { const M = ptRules('L', '', A, 'mom'); out.push(`Momentum (trade with strong moves): need ${M.minScore}/8 momentum signs, risk ${M.riskPct.toFixed(2)}%, at most ${PT.cfg.momMaxPos} at once, nothing stretched over ${PT.cfg.momMaxExt}% from the EMA. Out when momentum fades, reversal signs form, or after ${M.holdH}h.`); }
+  else out.push('Momentum trades: off.');
   const R = ptRules('L', '', A), b = PT.cfg;
   if (R.needConf) out.push('Wait for "Reversed". No entries while the reversal is only forming.');
   if (A && A.avoid && A.avoid.length) out.push(`Skip setups tagged ${A.avoid.map(x => '"' + x + '"').join(', ')}.`);
@@ -979,6 +1101,8 @@ function trReview(rv) {
       notes.score = notes['side' + k] = {a: 'adjusted', note: 'Capped at 7/8 signs. 8/8 almost never happens, so that would stop all trading instead of filtering it.'};
     }
   }
+  // a2) same cap for momentum
+  if (p.mom && b.momMinScore + p.mom.score > 7) { p.mom.score = Math.max(0, 7 - b.momMinScore); notes.mom = {a: 'adjusted', note: 'Capped momentum at 7/8 signs so it can still trade.'}; }
   // b) only size back up once recent trades are positive
   const prevMul = prev ? prev.riskMul : 1, last3 = PT.log.filter(x => !rvManual(x)).slice(0, 3), s3 = last3.reduce((a, x) => a + x.R, 0);
   if (p.riskMul > prevMul && s3 < 0) { p.riskMul = prevMul; notes.risk = {a: 'held', note: `Keeping the smaller size for now. My last 3 trades are net ${fmtR(s3)}, so I'll size back up after they turn positive.`}; }
