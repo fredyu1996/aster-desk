@@ -9,6 +9,7 @@ const AGENTS = [
   {id:'ivy',   key:'2', name:'OpenInterest', role:'Open Interest Watch',     color:'#b48cff', blurb:'Sudden OI spikes and drops, and what they mean with price'},
   {id:'flo',   key:'3', name:'Flow',     role:'Money Flow & Positioning',    color:'#2ee59d', blurb:'Net taker flow, buy/sell pressure, funding crowding, whales, liquidations'},
   {id:'trader', key:'4', name:'Trader',  role:'Paper Trading Desk',          color:'#ffd166', blurb:'Trades reversal and momentum signals on a $1,000 paper account'},
+  {id:'smc',   key:'6', name:'SMC Trader', role:'Smart Money Paper Desk',  color:'#ff8ad8', blurb:'Trades liquidity sweeps, structure shifts and FVG / order-block pullbacks on the top-5 movers; its own $1,000 paper account'},
   {id:'rev',   key:'5', name:'Reviewer', role:'Trade Review & Rules',        color:'#c5f05a', blurb:'Grades every trade and tunes the Trader\'s rules'},
 ];
 const AG = Object.fromEntries(AGENTS.map(a => [a.id, a]));
@@ -893,6 +894,7 @@ function ptTick() {
   if (!last || t - last[0] >= 5 * 60e3) { PT.eqs.push([t, +ptEquity().toFixed(2)]); if (PT.eqs.length > 3000) PT.eqs.shift(); }
   ptSave();
   if (typeof rvTick === 'function') rvTick();
+  if (typeof smTick === 'function') smTick(); // the second paper trader (SMC), same data, its own account
 }
 function ptStats() {
   const L = PT.log, wins = L.filter(x => x.pnl > 0), eq = ptEquity();
@@ -900,6 +902,251 @@ function ptStats() {
   return {eq, pnl: eq - PT.start, pnlPct: (eq / PT.start - 1) * 100, today: PT.day ? eq - PT.day.eq0 : 0, n: L.length, win: L.length ? wins.length / L.length * 100 : null,
     avgR: L.length ? L.reduce((a, x) => a + x.R, 0) / L.length : null, best: L.length ? Math.max(...L.map(x => x.R)) : null, worst: L.length ? Math.min(...L.map(x => x.R)) : null,
     fees: L.reduce((a, x) => a + x.fees, 0) + Object.values(PT.pos).reduce((a, p) => a + p.fees, 0), dd: dd * 100, open: Object.keys(PT.pos).length};
+}
+
+/* ================= SMC TRADER: a second paper trader using Smart Money Concepts on the top-5 movers ================= */
+// Separate $1,000 paper account so it can be compared with the Trader on equal terms (same risk, fees, slippage,
+// unlock guard and coin universe). The setup, read from 15m candles with a 1h structure bias:
+//   1. liquidity sweep: a wick takes out a prior swing low (sell-side liquidity) or swing high (buy-side) and closes back inside
+//   2. market structure shift (CHoCH): a close beyond the last opposite swing after the sweep
+//   3. entry zone: the fair value gap (FVG) left by that displacement, or the order block (last opposite candle) if there is no gap
+//   4. entry on the first pullback into the zone; stop beyond the sweep extreme; target = the next liquidity pool (≥ 2R)
+const SM_DEF = {v: 1, start: 1000, cash: 1000, pos: {}, log: [], eqs: [], day: null, cool: {}, on: true, paused: null, created: 0, lastScan: null,
+  cfg: {riskPct: 1, maxPos: 3, maxLev: 2, minScore: 4, dailyLossPct: 3, feePct: 0.04, slipPct: 0.10, holdH: 12, minVol: 300000, maxStopPct: 15, minRR: 2, maxRR: 5, tp1R: 1.5, stopBuf: 0.3, unlGuard: 1}};
+let SM = (() => {
+  const saved = LS.get('awx_sm', null);
+  const p = Object.assign(JSON.parse(JSON.stringify(SM_DEF)), saved || {});
+  p.cfg = Object.assign({}, SM_DEF.cfg, (saved && saved.cfg) || {});
+  if (!p.created) p.created = now();
+  return p;
+})();
+function smSave() { LS.set('awx_sm', SM); }
+function smReset() { const cfg = SM.cfg; SM = JSON.parse(JSON.stringify(SM_DEF)); SM.cfg = cfg; SM.created = now(); smSave(); }
+S.smC = new Map();
+
+/* ---- chart reading ---- */
+// swing highs/lows (fractals): higher/lower than `L` bars on each side
+function smPivots(B, L = 2) {
+  const H = [], Lo = [];
+  for (let i = L; i < B.length - L; i++) {
+    let ph = true, pl = true;
+    for (let k = 1; k <= L; k++) { if (!(B[i][2] > B[i - k][2] && B[i][2] >= B[i + k][2])) ph = false; if (!(B[i][3] < B[i - k][3] && B[i][3] <= B[i + k][3])) pl = false; }
+    if (ph) H.push({i, px: B[i][2], t: B[i][0]}); if (pl) Lo.push({i, px: B[i][3], t: B[i][0]});
+  }
+  return {H, L: Lo};
+}
+// 1h market structure: the side of the last break of structure (close beyond a confirmed swing)
+function smBias(s) {
+  const h = S.h1.get(s); if (!h || h.bars.length < 20) return null;
+  const B = h.bars, P = smPivots(B, 2); let lastH = null, lastL = null, trend = null, hi = 0, li = 0;
+  for (let i = 0; i < B.length; i++) {
+    while (hi < P.H.length && P.H[hi].i + 2 <= i) lastH = P.H[hi++];
+    while (li < P.L.length && P.L[li].i + 2 <= i) lastL = P.L[li++];
+    const c = B[i][4];
+    if (lastH && c > lastH.px) { trend = 'bull'; lastH = null; } else if (lastL && c < lastL.px) { trend = 'bear'; lastL = null; }
+  }
+  return trend;
+}
+// one direction's most recent setup on 15m bars
+function smSetup(B, P, dir, live) {
+  const n = B.length, bull = dir === 'L';
+  for (let j = n - 1; j >= Math.max(n - 32, 3); j--) {
+    const pool = (bull ? P.L : P.H).filter(p => p.i + 2 <= j && p.i >= j - 48);
+    const hit = pool.filter(p => bull ? (B[j][3] < p.px && B[j][4] > p.px) : (B[j][2] > p.px && B[j][4] < p.px));
+    if (!hit.length) continue;
+    const swept = hit.reduce((a, b) => bull ? (b.px < a.px ? b : a) : (b.px > a.px ? b : a));
+    const opp = (bull ? P.H : P.L).filter(p => p.i < j && p.i + 2 <= j);
+    if (!opp.length) continue;
+    const lvl = opp[opp.length - 1];
+    let k = -1; for (let m = j + 1; m < n; m++) if (bull ? B[m][4] > lvl.px : B[m][4] < lvl.px) { k = m; break; }
+    const end = k < 0 ? n - 1 : k;
+    let ext = bull ? Infinity : -Infinity; for (let m = j; m <= end; m++) ext = bull ? Math.min(ext, B[m][3]) : Math.max(ext, B[m][2]);
+    const r = {dir, j, k, swept, lvl, ext, stage: k < 0 ? 'sweep' : 'mss', zone: null, taps: 0};
+    if (k < 0) { if (bull ? live < ext : live > ext) r.stage = 'none'; return r; }
+    // entry zone: the newest FVG in the displacement leg, else the order block
+    for (let i = Math.min(k + 1, n - 2); i >= j + 1; i--) {
+      if (bull ? B[i - 1][2] < B[i + 1][3] : B[i - 1][3] > B[i + 1][2]) { r.zone = bull ? {lo: B[i - 1][2], hi: B[i + 1][3], kind: 'FVG', i} : {lo: B[i + 1][2], hi: B[i - 1][3], kind: 'FVG', i}; break; }
+    }
+    if (!r.zone) for (let i = k - 1; i >= j; i--) {
+      const down = B[i][4] < B[i][1];
+      if (bull ? down : !down) { r.zone = bull ? {lo: B[i][3], hi: B[i][1], kind: 'OB', i} : {lo: B[i][1], hi: B[i][2], kind: 'OB', i}; break; }
+    }
+    if (!r.zone) { r.stage = 'nozone'; return r; }
+    // after the shift: broken (closed through the zone) / tapped before / in the zone now
+    for (let m = Math.max(k + 1, r.zone.i + 2); m < n; m++) {
+      if (bull ? B[m][4] < r.zone.lo : B[m][4] > r.zone.hi) { r.stage = 'invalid'; return r; }
+      if (m < n - 1 && (bull ? B[m][3] <= r.zone.hi : B[m][2] >= r.zone.lo)) r.taps++;
+    }
+    const inZone = bull ? live <= r.zone.hi * 1.002 && live >= r.zone.lo : live >= r.zone.lo * 0.998 && live <= r.zone.hi;
+    r.stage = inZone && !r.taps ? 'inzone' : r.taps ? 'spent' : 'mss';
+    return r;
+  }
+  return null;
+}
+const SMST = {
+  none: {l: 'No setup', c: DIM, code: 0}, sweep: {l: 'Liquidity swept, waiting for a structure shift', c: WARN, code: 1},
+  mss: {l: 'Structure shifted, waiting for the pullback into the zone', c: '#ffb547', code: 2}, inzone: {l: 'In the zone: entry', c: UP, code: 3},
+  spent: {l: 'Zone already used', c: DIM, code: 0}, nozone: {l: 'Shifted, but left no gap or order block to enter from', c: DIM, code: 0}, invalid: {l: 'Zone broken', c: DIM, code: 0}, wait: {l: 'Loading', c: DIM, code: -1},
+};
+function smcRead(s) {
+  const k = S.kl.get(s), tk = S.tk.get(s);
+  if (!k || k.bars.length < 40 || !tk) return {stage: 'wait', st: SMST.wait, checks: [], score: 0};
+  const B = k.bars, n = B.length, live = tk.last || B[n - 1][4], P = smPivots(B, 2), bias = smBias(s);
+  const cands = ['L', 'S'].map(d => smSetup(B, P, d, live)).filter(Boolean);
+  if (!cands.length) return {stage: 'none', st: SMST.none, checks: [], score: 0, bias, live};
+  const rank = r => (r.stage === 'inzone' ? 1e6 : r.stage === 'mss' ? 5e5 : r.stage === 'sweep' ? 2e5 : 0) + r.j;
+  const r = cands.sort((a, b) => rank(b) - rank(a))[0], bull = r.dir === 'L';
+  const hi24 = Math.max(...B.map(b => b[2])), lo24 = Math.min(...B.map(b => b[3])), pos = (live - lo24) / ((hi24 - lo24) || 1);
+  const stop = bull ? r.ext * (1 - SM.cfg.stopBuf / 100) : r.ext * (1 + SM.cfg.stopBuf / 100), risk = Math.abs(live - stop);
+  // target: the nearest liquidity pool (an untaken swing or the 24h extreme) that pays at least minRR
+  const pools = bull ? [...P.H.filter(p => p.px > live).map(p => p.px), hi24].sort((a, b) => a - b) : [...P.L.filter(p => p.px < live).map(p => p.px), lo24].sort((a, b) => b - a);
+  let target = null, rr = null;
+  for (const px of pools) { const q = Math.abs(px - live) / (risk || 1); if (q >= SM.cfg.minRR) { target = q > SM.cfg.maxRR ? live + (bull ? 1 : -1) * SM.cfg.maxRR * risk : px; rr = Math.min(q, SM.cfg.maxRR); break; } }
+  const vBefore = B.slice(Math.max(0, r.j - 24), r.j).reduce((a, b) => a + b[5], 0) / Math.max(1, Math.min(24, r.j));
+  const vLeg = Math.max(...B.slice(r.j, (r.k > 0 ? r.k : n - 1) + 1).map(b => b[5]));
+  const P_ = (ok, label, d) => ({ok, label, d});
+  const checks = [
+    P_(true, bull ? 'Sell-side liquidity swept (stop hunt below a swing low)' : 'Buy-side liquidity swept (stop hunt above a swing high)', `swing ${fmtPx(r.swept.px)} taken at ${hhmm(B[r.j][0])}, extreme ${fmtPx(r.ext)}`),
+    P_(r.k > 0, bull ? 'Market structure shift up (close above the last swing high)' : 'Market structure shift down (close below the last swing low)', r.k > 0 ? `broke ${fmtPx(r.lvl.px)} at ${hhmm(B[r.k][0])}` : `needs a close beyond ${fmtPx(r.lvl.px)}`),
+    P_(r.zone ? r.zone.kind === 'FVG' : null, 'Fair value gap left by the displacement (else order block)', r.zone ? `${r.zone.kind} ${fmtPx(r.zone.lo)}–${fmtPx(r.zone.hi)}` : '—'),
+    P_(bull ? pos <= 0.5 : pos >= 0.5, bull ? 'Entry in discount (lower half of the 24h range)' : 'Entry in premium (upper half of the 24h range)', `${Math.round(pos * 100)}% of the 24h range`),
+    P_(bias ? (bull ? bias === 'bull' : bias === 'bear') : null, `1h structure ${bull ? 'bullish' : 'bearish'} (bias aligned)`, bias ? `1h bias ${bias}` : 'loading 1h'),
+    P_(vBefore > 0 ? vLeg >= 1.5 * vBefore : null, 'Displacement on volume (≥ 1.5× average)', vBefore > 0 ? (vLeg / vBefore).toFixed(1) + '×' : '—'),
+  ];
+  const score = checks.filter(c => c.ok === true).length;
+  return {stage: r.stage, st: SMST[r.stage], dir: r.dir, setup: r, zone: r.zone, stop, target, rr, score, checks, bias, live, pos, risk, dist: risk / live};
+}
+
+/* ---- account ---- */
+function smUpnl(p, px) { return (p.side === 'L' ? 1 : -1) * (px - p.entry) * p.qty; }
+function smEquity() { let e = SM.cash; for (const s in SM.pos) { const px = ptPx(s); if (px) e += smUpnl(SM.pos[s], px); } return e; }
+function smExposure() { let n = 0; for (const s in SM.pos) n += SM.pos[s].qty * (ptPx(s) || SM.pos[s].entry); return n; }
+function smFill(px, side, opening) { const sl = SM.cfg.slipPct / 100, buy = (side === 'L') === opening; return px * (buy ? 1 + sl : 1 - sl); }
+function smR(p, px) { const d = Math.abs(p.entry - p.stop0); return d ? (p.side === 'L' ? px - p.entry : p.entry - px) / d : 0; }
+function smClose(s, frac, why) {
+  const p = SM.pos[s], px = ptPx(s); if (!p || !px) return;
+  const q = frac >= 1 ? p.qty : p.qty * frac, fill = smFill(px, p.side, false);
+  const pnl = (p.side === 'L' ? 1 : -1) * (fill - p.entry) * q, fee = q * fill * SM.cfg.feePct / 100;
+  SM.cash += pnl - fee; p.realized += pnl - fee; p.fees += fee; p.qty -= q; p.exits.push({t: now(), px: fill, q, why});
+  if (frac >= 1 || p.qty <= p.qty0 * 1e-6) {
+    const R = p.risk ? p.realized / p.risk : 0;
+    SM.log.unshift({s, b: p.b, side: p.side, t0: p.t, t1: now(), entry: p.entry, exit: fill, qty: p.qty0, notional: p.qty0 * p.entry, pnl: p.realized, R, fees: p.fees,
+      funding: p.funding || 0, why: p.why, exitWhy: why, stop0: p.stop0, maxR: p.maxR || 0, sc: p.sc, rr: p.rr, zoneKind: p.zoneKind, target: p.target, unlK: p.unlK || 'none', strat: 'smc'});
+    if (SM.log.length > 500) SM.log.pop();
+    delete SM.pos[s]; SM.cool[s] = now();
+    raise('smc', s, 'close' + now(), `SMC PAPER ${p.side === 'L' ? 'long' : 'short'} ${p.b} closed ${fmtMoney(p.realized, 1)} (${R >= 0 ? '+' : ''}${R.toFixed(2)}R) — ${why}`, p.realized >= 0 ? 1 : -1, 0, true);
+  } else raise('smc', s, 'part' + now(), `SMC PAPER ${p.b}: ${why} (${fmtMoney(pnl - fee, 1)} banked)`, 1, 0);
+}
+function smTryEnter(c) {
+  const {s, r, tk} = c, side = r.dir, px = tk.last;
+  const fill = smFill(px, side, true), stop = r.stop;
+  if (side === 'L' ? stop >= fill : stop <= fill) { c.skip = 'price already beyond the stop'; return false; }
+  const dist = Math.abs(fill - stop) / fill;
+  const eq = smEquity(), riskUsd = eq * SM.cfg.riskPct / 100;
+  let qty = riskUsd / Math.abs(fill - stop);
+  const perPosCap = eq * SM.cfg.maxLev / SM.cfg.maxPos, roomLeft = eq * SM.cfg.maxLev - smExposure();
+  qty = Math.min(qty, perPosCap / fill, Math.max(0, roomLeft) / fill);
+  if (qty * fill < 10) { c.skip = 'not enough room under the leverage cap'; return false; }
+  const fee = qty * fill * SM.cfg.feePct / 100; SM.cash -= fee;
+  const rr = Math.abs(r.target - fill) / Math.abs(fill - stop), uc = unlCtx(s);
+  const why = `${r.dir === 'L' ? 'Bullish' : 'Bearish'} SMC ${r.score}/6 — swept ${fmtPx(r.setup.swept.px)}, shift through ${fmtPx(r.setup.lvl.px)}, ${r.zone.kind} ${fmtPx(r.zone.lo)}–${fmtPx(r.zone.hi)}, target ${fmtPx(r.target)} (${rr.toFixed(1)}R)`;
+  SM.pos[s] = {side, b: base(s), qty, qty0: qty, entry: fill, stop, stop0: stop, target: r.target, rr, t: now(), risk: qty * Math.abs(fill - stop), realized: -fee, fees: fee, funding: 0,
+    why, sc: r.score, zoneKind: r.zone.kind, zone: r.zone, sweep: r.setup.ext, lvl: r.setup.lvl.px, unlK: uc.phase && uc.big ? uc.phase : 'none', nf: null, be: false, tp1: false, maxR: 0, exits: [], dist: dist * 100};
+  raise('smc', s, 'open' + now(), `SMC PAPER ${side === 'L' ? 'LONG' : 'SHORT'} ${base(s)} @ ${fmtPx(fill)} · stop ${fmtPx(stop)} (${(dist * 100).toFixed(1)}%) · target ${fmtPx(r.target)} (${rr.toFixed(1)}R) · ${r.zone.kind} entry, ${r.score}/6`, side === 'L' ? 1 : -1, 0, true);
+  smSave(); return true;
+}
+// manage positions; with `only` the cloud bot replays one coin's candles (stop / partial / target / time checks only)
+function smManage(t, only) {
+  for (const s of only ? [only] : Object.keys(SM.pos)) {
+    const p = SM.pos[s]; if (!p) continue; const px = ptPx(s); if (!px) continue;
+    const L = p.side === 'L';
+    const f = only ? null : S.fund.get(s);
+    if (f && fin(f.r)) {
+      if (!p.nf) p.nf = f.next;
+      else if (f.next && f.next > p.nf && t >= p.nf) { const amt = -(L ? 1 : -1) * f.r * p.qty * px; SM.cash += amt; p.realized += amt; p.funding = (p.funding || 0) + amt; p.nf = f.next; }
+    }
+    if (L ? px <= p.stop : px >= p.stop) { smClose(s, 1, p.be ? (p.trail ? 'trailing stop (under the last swing)' : 'stopped at breakeven') : 'stop loss hit (beyond the sweep)'); continue; }
+    const r = smR(p, px); p.maxR = Math.max(p.maxR || 0, r);
+    if (!p.tp1 && r >= SM.cfg.tp1R) { p.tp1 = true; smClose(s, 0.5, `took half at +${SM.cfg.tp1R}R`); p.stop = p.entry; p.be = true; if (!SM.pos[s]) continue; }
+    if (L ? px >= p.target : px <= p.target) { smClose(s, 1, `target reached (liquidity at ${fmtPx(p.target)})`); continue; }
+    if (t - p.t > SM.cfg.holdH * 3600e3) { smClose(s, 1, `time stop (${SM.cfg.holdH}h)`); continue; }
+    if (only) continue;
+    if (L && SM.cfg.unlGuard) { const u = unlCtx(s, t); if (u.phase === 'ahead' && u.big && u.hours <= 12) { smClose(s, 1, `closed ahead of the ${u.e.b} token unlock (${unlWhen(u)})`); continue; } }
+    // after the partial: trail behind each new confirmed 15m swing (structure-based trailing)
+    if (p.be) {
+      const k = S.kl.get(s);
+      if (k && k.bars.length > 10) {
+        const P = smPivots(k.bars, 2), sw = (L ? P.L : P.H).filter(q => q.t > p.t && q.i + 2 < k.bars.length).pop();
+        if (sw) { const ns = L ? sw.px * (1 - SM.cfg.stopBuf / 100) : sw.px * (1 + SM.cfg.stopBuf / 100); if (L ? ns > p.stop : ns < p.stop) { p.stop = ns; p.trail = true; } }
+      }
+    }
+  }
+}
+function smTick() {
+  if (!S.tk.size || !warm || syViewer()) return;
+  const t = now(), today = new Date(t).toDateString();
+  if (!SM.day || SM.day.d !== today) { SM.day = {d: today, eq0: smEquity()}; SM.paused = null; }
+  smManage(t);
+  const eq = smEquity();
+  if (!SM.paused && eq < SM.day.eq0 * (1 - SM.cfg.dailyLossPct / 100)) { SM.paused = 'daily loss limit'; raise('smc', 'ACCOUNT', 'pause', `SMC Trader: daily loss limit hit (${fmtMoney(eq - SM.day.eq0, 1)}). No new trades until tomorrow.`, -1, 0, true); }
+  const cands = [];
+  for (const s of Object.keys(S.trk)) {
+    const r = smcRead(s); S.smC.set(s, r);
+    if (r.stage !== 'inzone') continue;
+    const tk = S.tk.get(s), c = {s, r, tk, b: base(s), side: r.dir};
+    const u = unlCtx(s);
+    if (SM.pos[s]) c.skip = 'already in a position';
+    else if (SM.cool[s] && t - SM.cool[s] < 2 * 3600e3) c.skip = 'cooling down after a recent trade';
+    else if (r.score < SM.cfg.minScore) c.skip = `only ${r.score}/6 confluences (needs ${SM.cfg.minScore})`;
+    else if (!r.target) c.skip = `no liquidity target ≥ ${SM.cfg.minRR}R away`;
+    else if (r.dist > SM.cfg.maxStopPct / 100) c.skip = `stop would be ${(r.dist * 100).toFixed(0)}% away`;
+    else if (r.dist < 0.006) c.skip = 'stop too tight (< 0.6%) for fees and slippage';
+    else if (!tk || tk.qv < SM.cfg.minVol) c.skip = `24h volume under ${fmtUsd(SM.cfg.minVol)}`;
+    else if (SM.cfg.unlGuard && r.dir === 'L' && u.phase === 'ahead' && u.big && u.days <= PT.cfg.unlDays) c.skip = `token unlock ${unlWhen(u)}: no longs into new supply`;
+    else if (SM.cfg.unlGuard && r.dir === 'S' && u.phase === 'after' && u.big && u.hours <= 24) c.skip = `unlock was ${unlWhen(u)}: no fresh shorts for 24 h`;
+    cands.push(c);
+  }
+  for (const s of Object.keys(S.trk)) if (!S.smC.has(s)) S.smC.set(s, smcRead(s));
+  if (SM.on && !SM.paused) {
+    cands.sort((a, b) => b.r.score - a.r.score || b.r.rr - a.r.rr);
+    for (const c of cands) {
+      if (c.skip) continue;
+      if (Object.keys(SM.pos).length >= SM.cfg.maxPos) { c.skip = `max ${SM.cfg.maxPos} positions open`; continue; }
+      if (smTryEnter(c)) c.took = true;
+    }
+  }
+  SM.lastScan = {t, cands: cands.map(c => ({b: c.b, side: c.side, score: c.r.score, rr: c.r.rr, zone: c.r.zone.kind, took: !!c.took, skip: c.skip || (SM.on ? '' : 'trading is off')}))};
+  const last = SM.eqs[SM.eqs.length - 1];
+  if (!last || t - last[0] >= 5 * 60e3) { SM.eqs.push([t, +smEquity().toFixed(2)]); if (SM.eqs.length > 3000) SM.eqs.shift(); }
+  smSave();
+}
+
+/* ---- stability comparison (works for any account: PT or SM) ---- */
+function acctStats(A, eqNow) {
+  const L = [...A.log].reverse(), R = L.map(x => x.R), n = R.length, mean = n ? R.reduce((a, b) => a + b, 0) / n : null;
+  const sd = n > 1 ? Math.sqrt(R.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1)) : null;
+  const gw = L.filter(x => x.pnl > 0).reduce((a, x) => a + x.pnl, 0), gl = -L.filter(x => x.pnl <= 0).reduce((a, x) => a + x.pnl, 0);
+  let streak = 0, worstStreak = 0; for (const r of R) { streak = r <= 0 ? streak + 1 : 0; worstStreak = Math.max(worstStreak, streak); }
+  const pts = A.eqs.concat([[now(), eqNow]]);
+  let peak = A.start, dd = 0, under = 0, longest = 0, uStart = null;
+  for (let i = 0; i < pts.length; i++) {
+    const [t, v] = pts[i];
+    if (v >= peak) { peak = v; if (uStart != null) { longest = Math.max(longest, t - uStart); uStart = null; } }
+    else { if (uStart == null) uStart = t; if (i) under += t - pts[i - 1][0]; }
+    dd = Math.min(dd, v / peak - 1);
+  }
+  if (uStart != null) longest = Math.max(longest, now() - uStart);
+  const span = pts.length > 1 ? pts[pts.length - 1][0] - pts[0][0] : 0, ret = (eqNow / A.start - 1) * 100;
+  return {n, win: n ? R.filter(r => r > 0).length / n * 100 : null, avgR: mean, sdR: sd, cons: sd ? mean / sd : null, pf: gl ? gw / gl : (gw ? Infinity : null),
+    ret, dd: dd * 100, retDD: dd < 0 ? ret / (-dd * 100) : null, worst: n ? Math.min(...R) : null, streak: worstStreak, underPct: span ? under / span * 100 : 0, longestH: longest / 3600e3, days: span / 864e5};
+}
+function compareVerdict(a, b) {
+  const minN = 15;
+  if (a.n < minN || b.n < minN) return {t: `Too early to call: ${a.n} vs ${b.n} closed trades. Stability needs at least ${minN} trades each, ideally 30+ over a couple of weeks.`, who: null};
+  const tests = [['smaller max drawdown', a.dd > b.dd], ['steadier results per trade (lower R spread)', a.sdR < b.sdR], ['shorter worst losing streak', a.streak < b.streak], ['less time underwater', a.underPct < b.underPct], ['better return per unit of drawdown', (a.retDD || -9) > (b.retDD || -9)]];
+  const wa = tests.filter(x => x[1]).length, wb = tests.length - wa;
+  const who = wa > wb ? 'Trader' : wb > wa ? 'SMC Trader' : null;
+  return {t: who ? `${who} has been more stable so far: wins ${Math.max(wa, wb)} of ${tests.length} stability measures (${tests.filter(x => x[1] === (who === 'Trader')).map(x => x[0]).join(', ')}).` : 'Too close to call: each wins some stability measures.', who};
 }
 
 /* ================= REVIEWER: grades the Trader's closed trades and rewrites the rules ================= */

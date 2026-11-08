@@ -51,7 +51,7 @@ async function writeState(b, head, msg) {
 /* ---------- load the desk's own trading code into a sandbox ---------- */
 function loadCore(b) {
   const store = new Map();
-  for (const [k, v] of [['awx_pt', b && b.pt], ['awx_rv', b && b.rv], ['awx_trk', b && b.trk], ['awx_cfg', b && b.cfg]]) if (v) store.set(k, JSON.stringify(v));
+  for (const [k, v] of [['awx_pt', b && b.pt], ['awx_rv', b && b.rv], ['awx_sm', b && b.sm], ['awx_trk', b && b.trk], ['awx_cfg', b && b.cfg]]) if (v) store.set(k, JSON.stringify(v));
   const el = {addEventListener() {}, style: {setProperty() {}}, classList: {add() {}, remove() {}}, textContent: '', innerHTML: ''};
   const ctx = vm.createContext({console, fetch, URL, TextEncoder, TextDecoder, Date, Math, JSON, Promise, setTimeout, clearTimeout,
     setInterval: () => 0, navigator: {userAgent: 'node'},
@@ -85,35 +85,38 @@ async function main() {
   ctx.__one = async s => { await X('loadOI')(s); await X('loadKl')(s); await X('loadH1')(s); };
   await pool(coins, 4, s => ctx.__one(s));
 
-  // replay 1-minute candles since the last save for each open position
+  // replay 1-minute candles since the last save for each open position, for both paper traders
   let replayed = 0;
   const since = b && b.t ? b.t - 60e3 : Date.now() - 15 * 60e3;
-  for (const s of X('Object.keys(PT.pos)')) {
-    const p = X(`PT.pos[${JSON.stringify(s)}]`), from = Math.max(p.t, since);
-    if (Date.now() - from < 90e3) continue;
-    const iv = Date.now() - from > 990 * 60e3 ? '5m' : '1m', len = iv === '5m' ? 300e3 : 60e3;
-    const bars = await X('api')(`/fapi/v1/klines?symbol=${s}&interval=${iv}&startTime=${from}&limit=1000`);
-    ctx.__RP = {s, bars: bars.map(x => [+x[0], +x[1], +x[2], +x[3], +x[4]]).filter(x => x[0] + len <= Date.now()), len};
-    replayed += X(`(() => {
-      const {s, bars, len} = __RP; let n = 0;
-      for (const [t0, o, h, l, c] of bars) {
-        const p = PT.pos[s]; if (!p) break; n++;
-        CLOCK_OVR = t0 + len - 1;
-        const L = p.side === 'L', d = Math.abs(p.entry - p.stop0), dir = L ? 1 : -1;
-        // walk the candle: open, the adverse extreme, then the favourable one (assume the worst comes first)
-        const path = L ? [o, l, h, c] : [o, h, l, c];
-        let prev = o;
-        for (const x of path) {
-          const q = PT.pos[s]; if (!q) break;
-          const lv = [q.stop, q.tp1 ? null : q.entry + dir * (q.tp1R || 1.5) * d, q.entry + dir * (q.tpR || 3) * d].filter(v => v != null);
-          // stop at the exact level a move crossed (or the open, if it gapped past it); same for targets
-          const pts = lv.filter(v => (v - prev) * (v - x) <= 0 && v !== prev).sort((a, b) => Math.abs(a - prev) - Math.abs(b - prev));
-          for (const v of [...pts, x]) { if (!PT.pos[s]) break; PX_OVR = {[s]: v}; ptManage(CLOCK_OVR, s); }
-          prev = x;
+  for (const acct of [{pos: 'PT.pos', mng: 'ptManage', tp1: "q.tp1 ? null : q.entry + dir * (q.tp1R || 1.5) * d", tgt: "q.entry + dir * (q.tpR || 3) * d"},
+                      {pos: 'SM.pos', mng: 'smManage', tp1: "q.tp1 ? null : q.entry + dir * SM.cfg.tp1R * d", tgt: "q.target"}]) {
+    for (const s of X(`Object.keys(${acct.pos})`)) {
+      const p = X(`${acct.pos}[${JSON.stringify(s)}]`), from = Math.max(p.t, since);
+      if (Date.now() - from < 90e3) continue;
+      const iv = Date.now() - from > 990 * 60e3 ? '5m' : '1m', len = iv === '5m' ? 300e3 : 60e3;
+      const bars = await X('api')(`/fapi/v1/klines?symbol=${s}&interval=${iv}&startTime=${from}&limit=1000`);
+      ctx.__RP = {s, bars: bars.map(x => [+x[0], +x[1], +x[2], +x[3], +x[4]]).filter(x => x[0] + len <= Date.now()), len};
+      replayed += X(`(() => {
+        const {s, bars, len} = __RP; let n = 0;
+        for (const [t0, o, h, l, c] of bars) {
+          const p = ${acct.pos}[s]; if (!p) break; n++;
+          CLOCK_OVR = t0 + len - 1;
+          const L = p.side === 'L', d = Math.abs(p.entry - p.stop0), dir = L ? 1 : -1;
+          // walk the candle: open, the adverse extreme, then the favourable one (assume the worst comes first)
+          const path = L ? [o, l, h, c] : [o, h, l, c];
+          let prev = o;
+          for (const x of path) {
+            const q = ${acct.pos}[s]; if (!q) break;
+            const lv = [q.stop, ${acct.tp1}, ${acct.tgt}].filter(v => v != null && isFinite(v));
+            // fill at the exact level a move crossed (or the open, if it gapped past it)
+            const pts = lv.filter(v => (v - prev) * (v - x) <= 0 && v !== prev).sort((a, b) => Math.abs(a - prev) - Math.abs(b - prev));
+            for (const v of [...pts, x]) { if (!${acct.pos}[s]) break; PX_OVR = {[s]: v}; ${acct.mng}(CLOCK_OVR, s); }
+            prev = x;
+          }
         }
-      }
-      PX_OVR = null; CLOCK_OVR = 0; return n;
-    })()`);
+        PX_OVR = null; CLOCK_OVR = 0; return n;
+      })()`);
+    }
   }
 
   // a normal live cycle, exactly what the desk does every few seconds
@@ -122,16 +125,17 @@ async function main() {
   const cycle = () => X('if (RV.pending) { const r = RV.reviews.find(x => x.id === RV.pending); if (r) r.t -= 60e3; } ptTick();');
   cycle(); if (X('!!RV.pending')) cycle();
 
-  const keep = new Set(['trader', 'rev', 'scout']); // tracker, unlock warnings, trades and reviews
+  if (process.env.DEBUG_SMC) for (const [k, r] of X('[...S.smC.entries()]')) log('  SMC', k, r.stage, r.dir || '', r.score + '/6', r.zone ? r.zone.kind : '', r.rr ? r.rr.toFixed(1) + 'R' : '');
+  const keep = new Set(['trader', 'rev', 'scout', 'smc']); // tracker, unlock warnings, both traders' trades, reviews
   const fresh = X('S.alerts').filter(a => keep.has(a.agent)).map(a => ({t: a.t, agent: a.agent, s: a.s, text: a.text, dir: a.dir}));
   const oiOut = {}; for (const [s, a] of X('[...S.oi.entries()]')) { const k = a.filter(x => Date.now() - x[0] < 3 * 3600e3); if (k.length) oiOut[s] = k.length > 60 ? k.filter((_, i) => i % Math.ceil(k.length / 60) === 0 || i === k.length - 1) : k; }
   const cfg = Object.assign({}, X('CFG'));
   const out = {v: 1, t: Date.now(), lock: {dev: 'cloud', name: 'Cloud', t: Date.now()},
-    pt: X('PT'), rv: X('RV'), trk: X('S.trk'), cfg, oi: oiOut,
-    cloud: {t: Date.now(), runs: (prevCloud.runs || 0) + 1, dur: (Date.now() - T0) / 1000, eq: X('ptEquity()'), replayed, open: X('Object.keys(PT.pos).length'),
+    pt: X('PT'), rv: X('RV'), sm: X('SM'), trk: X('S.trk'), cfg, oi: oiOut,
+    cloud: {t: Date.now(), runs: (prevCloud.runs || 0) + 1, dur: (Date.now() - T0) / 1000, eq: X('ptEquity()'), smEq: X('smEquity()'), smOpen: X('Object.keys(SM.pos).length'), replayed, open: X('Object.keys(PT.pos).length'),
       alerts: [...fresh, ...(prevCloud.alerts || [])].slice(0, 60), err: ''}};
-  const sha = await writeState(out, head, `cloud · equity ${X('fmtMoney(ptEquity())')} · ${out.cloud.open} open`);
-  log(sha ? `saved: equity ${X('fmtMoney(ptEquity())')}, ${out.cloud.open} open, ${fresh.length} new events, ${replayed} candles replayed, ${out.cloud.dur.toFixed(1)} s`
+  const sha = await writeState(out, head, `cloud · Trader ${X('fmtMoney(ptEquity())')} · SMC ${X('fmtMoney(smEquity())')}`);
+  log(sha ? `saved: Trader ${X('fmtMoney(ptEquity())')} (${out.cloud.open} open), SMC ${X('fmtMoney(smEquity())')} (${out.cloud.smOpen} open), ${fresh.length} new events, ${replayed} candles replayed, ${out.cloud.dur.toFixed(1)} s`
           : 'a browser took over trading during this run; nothing saved');
 }
 
