@@ -27,6 +27,9 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);font:13px/1
 #topbar .st i.mid{background:var(--warn)}
 #topbar .sp{flex:1}
 #topbar .help{color:var(--dim)}
+#sSync{pointer-events:auto;border:1px solid rgba(77,210,255,.45);border-radius:999px;padding:3px 10px;background:rgba(77,210,255,.08)}
+#sSync:hover{background:rgba(77,210,255,.18)}
+#startSync{margin:6px 0 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:13px;padding:10px 12px;border:1px solid rgba(77,210,255,.35);border-radius:10px;background:rgba(77,210,255,.06)}
 #topbar kbd,.kbd{font-family:var(--mono);font-size:11px;padding:1px 5px;border:1px solid #33415f;border-bottom-width:2px;border-radius:4px;color:var(--txt);background:#0d1426}
 /* crosshair & prompt */
 #cross{position:fixed;left:50%;top:50%;width:6px;height:6px;margin:-3px 0 0 -3px;border-radius:50%;background:rgba(255,255,255,.7);box-shadow:0 0 0 2px rgba(0,0,0,.35);z-index:4;pointer-events:none}
@@ -153,6 +156,7 @@ canvas.chart{width:100%;height:260px;display:block;border-radius:10px;background
     <h1>ASTER <b>DESK</b></h1>
     <p class="lede">A walkable trading floor for Aster perps. Three agents watch the market live (movers and unlocks, open interest, money flow); the Trader paper-trades their reversal signals on a $1,000 simulated account and the Reviewer grades every trade and tunes the rules.</p>
     <div class="agents" id="agentCards"></div>
+    <div id="startSync"></div>
     <div id="boot">Booting…</div>
     <div id="netwarn"></div>
     <div class="row">
@@ -2062,8 +2066,17 @@ $('#enter').onclick = () => {
   started = true; $('#start').style.display = 'none';
   if (CFG.sound && !audioCtx) try { audioCtx = new AudioContext(); } catch (_) {}
   lockPointer();
-  setTimeout(() => sayFor('scout', 'Welcome to the floor. Walk up to any desk and press E, or hit 1 to 5.'), 600);
+  setTimeout(() => sayFor('scout', 'Welcome to the floor. Walk up to any desk and press E, or hit 1 to 6.'), 600);
 };
+// start screen: show whether this computer is on the shared account, with a button to connect it
+function startSyncHTML() {
+  const el = $('#startSync'); if (!el) return;
+  const on = typeof SY !== 'undefined' && SY.on;
+  el.innerHTML = on ? `<span style="color:#4dd2ff"><b>Shared account connected</b> on this computer (${esc(SY.repo)}).</span>`
+    : `<span><b style="color:var(--warn)">This computer isn't connected to your shared account.</b> It will show its own separate $1,000 paper account until you connect it (one time, with your data token).</span><button class="btn sm" id="startSyncBtn">Connect this computer</button>`;
+  const b = $('#startSyncBtn'); if (b) b.onclick = () => { started = true; $('#start').style.display = 'none'; openPanel('sync'); };
+}
+setTimeout(startSyncHTML, 0);
 camera.position.set(P.x, 1.66, P.z);
 // Reviewer/SMC code loads after this point: draw what we can now, then redraw every desk once all code is loaded.
 const drawAllScreens = () => desks.forEach(d => { try { drawScreens(d); } catch (e) { console.warn('screen', d.a.id, e.message); } });
