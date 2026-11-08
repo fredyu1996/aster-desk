@@ -842,7 +842,7 @@ if (typeof window !== 'undefined' && typeof setInterval === 'function') { unlLoa
 // Trades the reversal signals from the day tracker. No real orders are ever sent: fills are simulated at live
 // Aster prices with taker fee, slippage and funding charged, so the results are a fair test of the rules.
 const PT_DEF = {v: 1, start: 1000, cash: 1000, pos: {}, log: [], eqs: [], day: null, cool: {}, on: true, paused: null, created: 0,
-  cfg: {riskPct: 1, maxPos: 3, maxLev: 2, minScore: 5, dailyLossPct: 3, feePct: 0.04, slipPct: 0.10, holdH: 12, minVol: 300000, maxStopPct: 15, tp1R: 1.5, tpR: 3, stopBuf: 0.5, unlGuard: true, unlDays: 3, unlMinPct: 2, stratRev: 1, stratMom: 1, momMinScore: 6, momRiskPct: 0.75, momMaxPos: 2, momHoldH: 6, momMaxExt: 8}, cands: []};
+  cfg: {riskPct: 1, maxPos: 3, maxLev: 2, minScore: 5, dailyLossPct: 3, feePct: 0.04, slipPct: 0.10, holdH: 12, minVol: 300000, maxStopPct: 15, tp1R: 1.5, tpR: 3, stopBuf: 0.5, unlGuard: true, unlDays: 3, unlMinPct: 2, stratRev: 1, revLong: 0, stratMom: 1, momMinScore: 6, momRiskPct: 0.75, momMaxPos: 2, momHoldH: 6, momMaxExt: 8}, cands: []};
 let PT = (() => {
   const saved = LS.get('awx_pt', null);
   const p = Object.assign(JSON.parse(JSON.stringify(PT_DEF)), saved || {});
@@ -900,6 +900,7 @@ function ptRules(side, tag, A = ptLessons(), strat = 'rev') {
 }
 // Why a candidate would be skipped under a given set of lessons (null = it qualifies). Used for live entries and for the Trader's what-if check.
 function ptGate(trkSide, key, score, tag, s, A = ptLessons()) {
+  if (trkSide === 'L' && !PT.cfg.revLong) return 'reversal longs are off: only shorting gainers';
   const R = ptRules(trkSide === 'G' ? 'S' : 'L', tag, A);
   if (R.avoid) return `Reviewer: skip "${tag}" setups`;
   if (score < R.minScore) return `only ${score}/8 signs (needs ${R.minScore})`;
@@ -2403,10 +2404,10 @@ function traderHTML(tab) {
   if (tab === 'rules') {
     const f = (key, label, step, min, max) => `<label>${label}<input type="number" data-ptcfg="${key}" step="${step}" min="${min}" max="${max}" value="${PT.cfg[key]}"></label>`;
     return status + `<div style="margin-bottom:14px">${rulesCardHTML('pt')}</div><div class="grid2"><div class="card2"><h3>HOW THE TRADER TRADES · TWO STRATEGIES</h3>
-      <div class="chk"><span class="i" style="color:${PT.cfg.stratRev ? UP : DIM}">R</span><span><b>Reversal${PT.cfg.stratRev ? '' : ' (off)'}</b>: fade a top-5 mover once its move is ending (steps 1–6 below).</span></div>
+      <div class="chk"><span class="i" style="color:${PT.cfg.stratRev ? UP : DIM}">R</span><span><b>Reversal${PT.cfg.stratRev ? '' : ' (off)'}</b>: fade a top-5 mover once its move is ending (steps 1–6 below). ${PT.cfg.revLong ? 'Both sides: short gainers, buy losers.' : '<b>Shorts gainers only</b>; buying losers is switched off.'}</span></div>
       <div class="chk"><span class="i" style="color:${PT.cfg.stratMom ? UP : DIM}">M</span><span><b>Momentum${PT.cfg.stratMom ? '' : ' (off)'}</b>: trade <b>with</b> a top-10 mover while its move is still being driven, meaning ${PT.cfg.momMinScore}/8 momentum signs (fresh high/low, a sloping EMA, money flow, taker pressure, expanding volume, no funding crowding, OI building, RSI strong but not exhausted). Skips moves already more than ${PT.cfg.momMaxExt}% from the 15m EMA, and coins already showing reversal signs. Risk ${PT.cfg.momRiskPct}% per trade, at most ${PT.cfg.momMaxPos} momentum positions. Stop beyond the last 2-hour swing or the EMA. Same partial, trailing stop and target as reversals. Exits when momentum fades or reversal signs form, or after ${PT.cfg.momHoldH} h.</span></div>
       <div class="dim" style="font-size:11px;letter-spacing:.08em;margin:10px 0 2px">REVERSAL RULES</div>
-      <div class="chk"><span class="i up">1</span><span><b>Waits for a reversal signal from GainerLoser's day tracker</b>: a tracked top-5 coin at "Reversal forming" or "Reversed" with at least ${PT.cfg.minScore}/8 signs. Gainers are <b>shorted</b> (fading the top); losers are <b>bought</b> (catching the bottom).</span></div>
+      <div class="chk"><span class="i up">1</span><span><b>Waits for a reversal signal from GainerLoser's day tracker</b>: a tracked top-5 coin at "Reversal forming" or "Reversed" with at least ${PT.cfg.minScore}/8 signs. Gainers are <b>shorted</b> (fading the top)${PT.cfg.revLong ? '; losers are <b>bought</b> (catching the bottom)' : '. Losers are <b>not</b> bought (reversal longs are off)'}.</span></div>
       <div class="chk"><span class="i up">2</span><span><b>Stop</b> ${PT.cfg.stopBuf}% beyond the swing it's reversing from (the 6-hour high or low, else the 3-hour). Skips the trade if that stop is more than ${PT.cfg.maxStopPct}% away; minimum 2%.</span></div>
       <div class="chk"><span class="i up">3</span><span><b>Size</b> so a stop-out loses ${PT.cfg.riskPct}% of equity, capped at ${PT.cfg.maxLev}× total leverage and ${PT.cfg.maxPos} positions at once. Coins need ${fmtUsd(PT.cfg.minVol)}+ daily volume.</span></div>
       <div class="chk"><span class="i up">4</span><span><b>Takes half at +${PT.cfg.tp1R}R</b> and moves the stop to entry, then trails it with the 15m EMA20. <b>Closes all at +${PT.cfg.tpR}R.</b></span></div>
@@ -2424,6 +2425,7 @@ function traderHTML(tab) {
       ${f('stopBuf', 'Stop buffer beyond swing (%)', 0.1, 0, 5)}${f('feePct', 'Taker fee per side (%)', 0.005, 0, 1)}
       ${f('slipPct', 'Slippage per side (%)', 0.05, 0, 2)}
       <label>Reversal trades<select data-ptcfg="stratRev"><option value="1" ${PT.cfg.stratRev ? 'selected' : ''}>On</option><option value="0" ${PT.cfg.stratRev ? '' : 'selected'}>Off</option></select></label>
+      <label>Reversal longs (buy losers)<select data-ptcfg="revLong"><option value="0" ${PT.cfg.revLong ? '' : 'selected'}>Off: short gainers only</option><option value="1" ${PT.cfg.revLong ? 'selected' : ''}>On</option></select></label>
       <label>Momentum trades<select data-ptcfg="stratMom"><option value="1" ${PT.cfg.stratMom ? 'selected' : ''}>On</option><option value="0" ${PT.cfg.stratMom ? '' : 'selected'}>Off</option></select></label>
       ${f('momMinScore', 'Momentum: min signs (of 8)', 1, 4, 8)}${f('momRiskPct', 'Momentum: risk per trade (%)', 0.25, 0.25, 5)}
       ${f('momMaxPos', 'Momentum: max positions', 1, 0, 5)}${f('momHoldH', 'Momentum: max hold (hours)', 1, 1, 48)}
@@ -2723,7 +2725,7 @@ function trSimulate(H, A) {
 }
 function trPlan(A) {
   const out = [];
-  if (PT.cfg.stratRev) for (const k of ['S', 'L']) { const R = ptRules(k, '', A); out.push(`Reversal ${k === 'L' ? 'longs (buy losers)' : 'shorts (fade gainers)'}: need ${R.minScore}/8 signs, risk ${R.riskPct.toFixed(2)}% of equity per trade.`); }
+  if (PT.cfg.stratRev) for (const k of PT.cfg.revLong ? ['S', 'L'] : ['S']) { const R = ptRules(k, '', A); out.push(`Reversal ${k === 'L' ? 'longs (buy losers)' : 'shorts (fade gainers)'}: need ${R.minScore}/8 signs, risk ${R.riskPct.toFixed(2)}% of equity per trade.`); }
   else out.push('Reversal trades: off.');
   if (PT.cfg.stratMom) { const M = ptRules('L', '', A, 'mom'); out.push(`Momentum (trade with strong moves): need ${M.minScore}/8 momentum signs, risk ${M.riskPct.toFixed(2)}%, at most ${PT.cfg.momMaxPos} at once, nothing stretched over ${PT.cfg.momMaxExt}% from the EMA. Out when momentum fades, reversal signs form, or after ${M.holdH}h.`); }
   else out.push('Momentum trades: off.');
@@ -3322,9 +3324,10 @@ function rulesNow() {
   const r = (t, was) => ({t, was: was || ''}), pc = v => fmtNum(v) + '%';
   const rev = [], mom = [], acct = [];
   if (c.stratRev) {
-    rev.push(r(`Fade top-5 movers: short gainers, buy losers, at ${RS.needConf ? '"Reversed" only' : '"Reversal forming" or "Reversed"'}`, RS.needConf ? 'forming or reversed' : ''));
-    rev.push(r(RS.minScore === RL.minScore ? `Needs ${RS.minScore}/8 reversal signs` : `Shorts need ${RS.minScore}/8 signs, longs ${RL.minScore}/8`, RS.minScore !== c.minScore || RL.minScore !== c.minScore ? c.minScore + '/8' : ''));
-    rev.push(r(Math.abs(RS.riskPct - RL.riskPct) < 1e-9 ? `Risk ${pc(RS.riskPct)} of equity per trade` : `Risk ${pc(RS.riskPct)} on shorts, ${pc(RL.riskPct)} on longs`, Math.abs(RS.riskPct - c.riskPct) > 1e-9 || Math.abs(RL.riskPct - c.riskPct) > 1e-9 ? pc(c.riskPct) : ''));
+    const lg = !!c.revLong;
+    rev.push(r(`${lg ? 'Fade top-5 movers: short gainers, buy losers' : 'Short top-5 gainers only (buying losers is off)'}, at ${RS.needConf ? '"Reversed" only' : '"Reversal forming" or "Reversed"'}`, RS.needConf ? 'forming or reversed' : ''));
+    rev.push(r(!lg || RS.minScore === RL.minScore ? `Needs ${RS.minScore}/8 reversal signs` : `Shorts need ${RS.minScore}/8 signs, longs ${RL.minScore}/8`, RS.minScore !== c.minScore || (lg && RL.minScore !== c.minScore) ? c.minScore + '/8' : ''));
+    rev.push(r(!lg || Math.abs(RS.riskPct - RL.riskPct) < 1e-9 ? `Risk ${pc(RS.riskPct)} of equity per trade` : `Risk ${pc(RS.riskPct)} on shorts, ${pc(RL.riskPct)} on longs`, Math.abs(RS.riskPct - c.riskPct) > 1e-9 || (lg && Math.abs(RL.riskPct - c.riskPct) > 1e-9) ? pc(c.riskPct) : ''));
     rev.push(r(`Stop ${pc(RS.stopBuf)} beyond the 6h swing; skip if over ${c.maxStopPct}% away`, RS.stopBuf !== c.stopBuf ? pc(c.stopBuf) : ''));
     rev.push(r(`Half off at +${fmtNum(RS.tp1R)}R, then breakeven and an EMA20 trail`, RS.tp1R !== c.tp1R ? `+${c.tp1R}R` : ''));
     rev.push(r(`Full target +${fmtNum(RS.tpR)}R`, RS.tpR !== c.tpR ? `+${c.tpR}R` : ''));

@@ -659,7 +659,7 @@ if (typeof window !== 'undefined' && typeof setInterval === 'function') { unlLoa
 // Trades the reversal signals from the day tracker. No real orders are ever sent: fills are simulated at live
 // Aster prices with taker fee, slippage and funding charged, so the results are a fair test of the rules.
 const PT_DEF = {v: 1, start: 1000, cash: 1000, pos: {}, log: [], eqs: [], day: null, cool: {}, on: true, paused: null, created: 0,
-  cfg: {riskPct: 1, maxPos: 3, maxLev: 2, minScore: 5, dailyLossPct: 3, feePct: 0.04, slipPct: 0.10, holdH: 12, minVol: 300000, maxStopPct: 15, tp1R: 1.5, tpR: 3, stopBuf: 0.5, unlGuard: true, unlDays: 3, unlMinPct: 2, stratRev: 1, stratMom: 1, momMinScore: 6, momRiskPct: 0.75, momMaxPos: 2, momHoldH: 6, momMaxExt: 8}, cands: []};
+  cfg: {riskPct: 1, maxPos: 3, maxLev: 2, minScore: 5, dailyLossPct: 3, feePct: 0.04, slipPct: 0.10, holdH: 12, minVol: 300000, maxStopPct: 15, tp1R: 1.5, tpR: 3, stopBuf: 0.5, unlGuard: true, unlDays: 3, unlMinPct: 2, stratRev: 1, revLong: 0, stratMom: 1, momMinScore: 6, momRiskPct: 0.75, momMaxPos: 2, momHoldH: 6, momMaxExt: 8}, cands: []};
 let PT = (() => {
   const saved = LS.get('awx_pt', null);
   const p = Object.assign(JSON.parse(JSON.stringify(PT_DEF)), saved || {});
@@ -717,6 +717,7 @@ function ptRules(side, tag, A = ptLessons(), strat = 'rev') {
 }
 // Why a candidate would be skipped under a given set of lessons (null = it qualifies). Used for live entries and for the Trader's what-if check.
 function ptGate(trkSide, key, score, tag, s, A = ptLessons()) {
+  if (trkSide === 'L' && !PT.cfg.revLong) return 'reversal longs are off: only shorting gainers';
   const R = ptRules(trkSide === 'G' ? 'S' : 'L', tag, A);
   if (R.avoid) return `Reviewer: skip "${tag}" setups`;
   if (score < R.minScore) return `only ${score}/8 signs (needs ${R.minScore})`;
@@ -1324,7 +1325,7 @@ function trSimulate(H, A) {
 }
 function trPlan(A) {
   const out = [];
-  if (PT.cfg.stratRev) for (const k of ['S', 'L']) { const R = ptRules(k, '', A); out.push(`Reversal ${k === 'L' ? 'longs (buy losers)' : 'shorts (fade gainers)'}: need ${R.minScore}/8 signs, risk ${R.riskPct.toFixed(2)}% of equity per trade.`); }
+  if (PT.cfg.stratRev) for (const k of PT.cfg.revLong ? ['S', 'L'] : ['S']) { const R = ptRules(k, '', A); out.push(`Reversal ${k === 'L' ? 'longs (buy losers)' : 'shorts (fade gainers)'}: need ${R.minScore}/8 signs, risk ${R.riskPct.toFixed(2)}% of equity per trade.`); }
   else out.push('Reversal trades: off.');
   if (PT.cfg.stratMom) { const M = ptRules('L', '', A, 'mom'); out.push(`Momentum (trade with strong moves): need ${M.minScore}/8 momentum signs, risk ${M.riskPct.toFixed(2)}%, at most ${PT.cfg.momMaxPos} at once, nothing stretched over ${PT.cfg.momMaxExt}% from the EMA. Out when momentum fades, reversal signs form, or after ${M.holdH}h.`); }
   else out.push('Momentum trades: off.');
