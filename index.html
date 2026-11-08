@@ -3715,7 +3715,7 @@ sySave();
 const SY_BRANCH = 'state', SY_PUSH = 90e3, SY_POLL = 20e3;
 // a browser that stops saving for 5 min is gone; the cloud runs every ~5-15 min (GitHub schedules can lag), so give it 30
 const syStale = L => !L || now() - L.t > (L.dev === 'cloud' ? 30 : 5) * 60e3;
-const SYS = {role: 'off', head: null, lastPull: 0, lastPush: 0, lastCheck: 0, err: '', lock: null, busy: false, remoteT: 0, extra: {}, cloudSeen: 0};
+const SYS = {draft: {}, role: 'off', head: null, lastPull: 0, lastPush: 0, lastCheck: 0, err: '', lock: null, busy: false, remoteT: 0, extra: {}, cloudSeen: 0};
 const syViewer = () => SY.on && SYS.role === 'viewer';
 const syTrading = () => !SY.on || SYS.role === 'leader' || SYS.role === 'off';
 
@@ -3838,11 +3838,12 @@ function syncHTML() {
     <span style="margin-left:auto;display:flex;gap:8px">${R === 'viewer' ? '<button class="btn sm" data-sync="take">Take over trading here</button>' : ''}${R === 'leader' && SYS.extra.cloud ? '<button class="btn sm" data-sync="cloud">Hand trading back to the cloud</button>' : ''}${SY.on ? '<button class="btn sm ghost" data-sync="now">Sync now</button><button class="btn sm ghost" data-sync="off">Turn sync off</button>' : ''}</span></div>
   ${syCloudCard()}
   <div class="grid2"><div class="card2"><h3>CONNECT THIS COMPUTER</h3><div class="set" style="grid-template-columns:1fr">
-    <label>Private data repo (owner/name)<input id="syRepo" placeholder="fredyu1996/aster-desk-data" value="${esc(SY.repo)}"></label>
-    <label>GitHub access token (stays in this browser only)<input id="syTok" type="password" placeholder="${SY.token ? '•••••••• saved. Leave blank to keep' : 'github_pat_…'}" autocomplete="off"></label>
-    <label>Name for this computer<input id="syName" value="${esc(SY.name)}"></label></div>
+    <label>Private data repo (owner/name)<input id="syRepo" placeholder="fredyu1996/aster-desk-data" value="${esc(SYS.draft.repo != null ? SYS.draft.repo : SY.repo)}"></label>
+    <label>GitHub access token (stays in this browser only)<input id="syTok" type="password" value="${esc(SYS.draft.tok || '')}" placeholder="${SY.token ? '•••••••• saved. Leave blank to keep' : 'github_pat_…'}" autocomplete="off"></label>
+    <label>Name for this computer<input id="syName" value="${esc(SYS.draft.name != null ? SYS.draft.name : SY.name)}"></label></div>
     <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap"><button class="btn" data-sync="connect">${SY.on ? 'Save & reconnect' : 'Connect'}</button>
     ${SY.on ? `<button class="btn sm ghost" data-sync="upload">${SYS._arm ? 'Click again: overwrite the shared copy' : "Replace the shared copy with this computer's data"}</button>` : ''}</div>
+    ${SYS.err ? `<div style="margin-top:10px;color:${DN};font-size:13px;font-weight:600">${esc(SYS.err)}</div>` : ''}
     <p class="note" style="margin-top:10px">If the repo already has a shared account, connecting <b>loads it here</b>, replacing this computer's separate paper account. The first computer you connect creates the shared copy.</p></div>
   <div class="card2"><h3>HOW IT WORKS</h3>
     <div class="chk"><span class="i up">1</span><span>Your <b>paper account, trade log, Reviewer lessons, day tracker, watchlist and settings</b> are saved as one file in your private repo (branch <b>state</b>). Open-interest history isn't synced; each computer rebuilds it in about an hour.</span></div>
@@ -3856,11 +3857,12 @@ document.getElementById('panel').addEventListener('click', e => {
   const a = b.dataset.sync;
   try { document.activeElement.blur(); } catch (_) {}
   if (a === 'connect') {
-    const repo = ($('#syRepo').value || '').trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '').replace(/\/$/, ''), tok = ($('#syTok').value || '').trim(), name = ($('#syName').value || '').trim();
+    const D = SYS.draft, rv = D.repo != null ? D.repo : ($('#syRepo') || {}).value, tv = D.tok || ($('#syTok') || {}).value, nv = D.name != null ? D.name : ($('#syName') || {}).value;
+    const repo = (rv || '').trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '').replace(/\/$/, ''), tok = (tv || '').trim(), name = (nv || '').trim();
     if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) { SYS.err = 'Repo should look like owner/name'; SYS.role = 'error'; renderPanel(); return; }
     if (tok) SY.token = tok; if (name) SY.name = name.slice(0, 24); SY.repo = repo;
     if (!SY.token) { SYS.err = 'Paste a token first'; SYS.role = 'error'; renderPanel(); return; }
-    SY.on = true; sySave(); SYS.head = null; syConnect();
+    SY.on = true; sySave(); SYS.head = null; SYS.err = ''; SYS.draft = {}; syConnect();
   }
   if (a === 'take') syConnect('take');
   if (a === 'cloud') { SYS.handBack = true; SYS.lastPush = 0; syTick(); }
@@ -3872,6 +3874,12 @@ document.getElementById('panel').addEventListener('click', e => {
 document.getElementById('sSync').addEventListener('click', () => { if (typeof started !== 'undefined' && started) openPanel('sync'); else openPanel('sync'); });
 syChip();
 if (SY.on) setTimeout(() => syConnect(), 1500);
+
+// keep what's typed in the connect form (the panel refreshes every few seconds)
+document.getElementById('panel').addEventListener('input', e => {
+  const t = e.target; if (!t || !t.id) return;
+  if (t.id === 'syRepo') SYS.draft.repo = t.value; else if (t.id === 'syTok') SYS.draft.tok = t.value; else if (t.id === 'syName') SYS.draft.name = t.value;
+}, true);
 
 </script>
 </body>
