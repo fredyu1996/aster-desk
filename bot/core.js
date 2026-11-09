@@ -1371,43 +1371,119 @@ function rvAnalyze(TA) {
   return {p, why, O: OA, pf: gl ? gw / gl : null, fees, fund, G, F};
 }
 /* ---- your opinion, as the Reviewer weighs it ---- */
-// Your "what I'd have done" ticks become rule changes once 3+ of your reviews of a strategy (and at least a third of them)
-// say the same thing, unless the trades themselves clearly say otherwise. A point you disagreed with on 2+ trades (and on
-// at least half of the reviewed trades where it came up) stops counting: the Reviewer holds the rule change built on it.
-const YOU_MIN = 3;
+// Your written comments come first. The Reviewer reads each comment (English or Cantonese/Chinese phrases) for what you'd
+// have done, which of its points you think were wrong, and (SMC) which part of the setup you think was poor. A point taken
+// from a comment counts 1; a chip you ticked without saying it in the comment counts ½. A "what I'd have done" becomes a
+// rule change at 2 (two comments, or four chips) and at least a third of your reviews of that strategy, unless the trades
+// clearly say otherwise. Disagreeing with a point at 1.5+ (and on at least half the trades where it came up) holds the rule
+// change built on it. Your reading is shown under each comment, so you can check what the Reviewer understood.
+const YOU_MIN = 2, YOU_DIS = 1.5;
 const YOU_KEY_RULE = {forming: 'conf', quickstop: 'stopBuf', tight: 'stopBuf', giveback: 'tp1R', deadmoney: 'holdH', weak: 'score', never: 'score', costs: 'vol'};
+// [pattern, what it means]. Matched in order; a matched phrase is blanked so "closed too early" isn't also read as "entered too early".
+// a: what you'd have done · d: a Reviewer point you think was wrong · b: SMC part you think was poor (→ smc_<k>)
+const YOU_PHRASES = [
+  [/clos\w* too (early|soon)|exit\w* too (early|soon)|cut (it )?too (early|soon)|took (profit|it off) too (early|soon)|走得太早|太早(走|平倉|離場)|早咗走/, {a: 'hold'}],
+  [/hold(ing)? (it )?(longer|more)|let (it|the winner|winners) run|should (have|'ve) held|揸(耐|長|多陣)|應該揸/, {a: 'hold'}],
+  [/stop (was |is )?(fine|ok|okay|good|right|correct)|stop did its job|止蝕(冇問題|啱|正確|合理)/, {d: ['tight', 'quickstop']}],
+  [/forming (was |is )?(fine|ok|good)|didn'?t need to wait|no need to wait (for (the )?confirm\w*)?|唔使等(確認)?/, {d: ['forming']}],
+  [/(entered|entry|got in|in) too (early|soon)|too early|too soon|premature|jumped in|should (have|'ve) waited|wait(ed)? for (the )?(confirm\w*|reversed|a close|close)|太早(入|入場)?|等(埋|確認|佢確認|收)|心急/, {a: 'later'}],
+  [/midpoint|mid point|50 ?%|equilibrium|deeper (in|into)|(entered|entry|in) at the (edge|top|bottom|first touch)|中位|一半|入深啲/, {a: 'later', b: ['depth']}],
+  [/too late|entered late|late entry|chas(ed|ing)|missed the (move|entry)|太遲|追(咗|高|低|入)/, {a: 'earlier'}],
+  [/(shouldn'?t|should not|wouldn'?t|would not) (have )?(take|taken|enter|entered|trade|traded|done)|no trade|not a (valid |real |good )?setup|bad setup|stay(ed)? out|skip|唔(應該|好)?(入|做|開)|冇setup|不該/, {a: 'skip'}],
+  [/(take|took|bank|banked) (profit|half|it) (earlier|sooner)|should (have|'ve) (taken profit|banked|closed|exited)|exit(ed)? (earlier|sooner)|gave (it |the profit |profit )?back|早啲(走|平倉|食糊|鎖利)|應該(走|平倉|食糊)|蝕返/, {a: 'exitE'}],
+  [/stop (was |is )?(too )?(tight|close|near)|wider stop|stop (inside|in) the noise|wick(ed)? (me |it )?out|stopped (out )?by a wick|stop hunt\w*|止蝕太(近|窄|緊)|洗(咗)?(出|走)|俾人洗/, {a: 'wider'}],
+  [/stop (was |is )?(too )?(wide|far|loose)|tighter stop|止蝕太(遠|闊|鬆)/, {a: 'tighter'}],
+  [/(too )?(big|large|heavy) (size|position)|size (was )?(too big|too large)|smaller size|(reduce|cut|lower) (the )?size|太大注|細(注|倉)|落少啲/, {a: 'smaller'}],
+  [/bigger size|size up|(should|could) (have )?sized up|size (was )?too small|大注啲|落多啲/, {a: 'bigger'}],
+  [/against (the )?(1h|4h|1 hour|4 hour|higher|htf|bigger|main) ?(tf|timeframe|trend|structure)?|htf (was |is )?(against|bear|bull|down|up|falling|rising)|(1h|4h|higher timeframe|htf) (was |is )?(falling|dropping|down|rising|up|bearish|bullish)|逆(大)?(勢|趨勢)|(1h|4h|大級別|大時框|一小時|四小時).{0,4}(跌|升)緊?/, {b: ['htf']}],
+  [/(weak|bad|poor|no|not a( good| real)?|ugly|messy) (ob|order block)|(ob|order block) (was |is )?(weak|bad|poor|not good|messy)|ob(唔好|麻麻|差|唔靚)/, {b: ['ob']}],
+  [/(small|tiny|weak|bad|poor) (fvg|gap|imbalance)|(fvg|gap) (was |is )?(too )?(small|tiny|weak|bad|poor)|(no|weak) displacement|fvg(太細|唔好|麻麻|差)/, {b: ['gap']}],
+  [/(no|weak|fake|not a (real|clean)) (sweep|liquidity grab|grab)|sweep (was |is )?(weak|small|not clean)|didn'?t (sweep|take|grab) (the )?liquidity|冇(掃|洗)(到)?流動性/, {b: ['sweep']}],
+  [/(good|clean|nice|valid|strong) (fvg|gap|imbalance)|(fvg|gap) (was |is )?(good|clean|nice|fine)|靚(嘅)?fvg/, {d: ['smc_gap']}],
+  [/(good|clean|nice|valid|strong) (ob|order block)|(ob|order block) (was |is )?(good|clean|nice|fine)|靚(嘅)?ob/, {d: ['smc_ob']}],
+  [/(htf|higher timeframe|1h|4h) (was |is )?(fine|ok|with (me|it|us))|with the (htf|higher timeframe|trend)|順勢/, {d: ['smc_htf']}],
+  [/good trade|fine trade|nothing wrong|would (have )?(done|taken|take) the same|same trade|冇問題|做得好|正確/, {a: 'same'}]];
+function youRead(note) {
+  let t = ' ' + String(note || '').toLowerCase().replace(/[’']/g, "'") + ' ';
+  const a = new Set(), d = new Set(), b = new Set(), hits = [];
+  for (const [re, m] of YOU_PHRASES) {
+    const g = new RegExp(re.source, 'g'); let x;
+    while ((x = g.exec(t))) {
+      const pre = t.slice(Math.max(0, x.index - 10), x.index);
+      if (!/\b(not|no|never|didn'?t|don'?t|wasn'?t)\s+(\w+\s+)?$|唔$|不$|冇$/.test(pre) || /^(no|not|唔|冇|不)/.test(x[0])) {
+        if (m.a) a.add(m.a); for (const k of m.d || []) d.add(k); for (const k of m.b || []) b.add(k); hits.push(x[0].trim());
+      }
+      t = t.slice(0, x.index) + ' '.repeat(x[0].length) + t.slice(x.index + x[0].length); g.lastIndex = x.index + x[0].length;
+    }
+  }
+  if (a.size > 1) a.delete('same');
+  return {a: [...a], d: [...d], b: [...b], hits, any: a.size + d.size + b.size > 0};
+}
+// plain-language reading of a comment, for the form and the review wall
+const YOU_B_TXT = {htf: 'traded against the higher timeframe', ob: 'the order block was poor', gap: 'the FVG was poor', sweep: 'the sweep was weak', depth: 'entered at the zone\'s edge'};
+const YOU_D_TXT = {tight: 'the stop was fine', quickstop: 'the stop was fine', forming: 'entering at "forming" was fine', smc_gap: 'the FVG was good', smc_ob: 'the order block was good', smc_htf: 'the higher timeframe was fine'};
+const YOU_A_TXT = {same: 'same trade', skip: 'skip it', later: 'enter later', earlier: 'enter earlier', exitE: 'exit earlier', hold: 'hold longer', wider: 'wider stop', tighter: 'tighter stop', bigger: 'bigger size', smaller: 'smaller size'};
+function youReadTxt(c) {
+  if (!c || !c.any) return '';
+  return [...c.a.map(k => YOU_A_TXT[k]), ...[...new Set(c.d.map(k => YOU_D_TXT[k]))], ...c.b.map(k => YOU_B_TXT[k])].filter(Boolean).join(' · ');
+}
 function youTally(L) {
-  const R = L.map(x => [x, mineOf(x)]).filter(([, m]) => m && !m.excl), alt = {}, dis = {}, seen = {};
-  for (const [, m] of R) { for (const a of m.alt || []) alt[a] = (alt[a] || 0) + 1; for (const k of m.xk || []) dis[k] = (dis[k] || 0) + 1; for (const k of m.ik || []) seen[k] = (seen[k] || 0) + 1; }
-  return {n: R.length, alt, dis, seen, says: a => (alt[a] || 0) >= YOU_MIN && (alt[a] || 0) >= R.length / 3, rejects: k => (dis[k] || 0) >= 2 && (dis[k] || 0) >= (seen[k] || dis[k]) / 2};
+  const R = L.map(x => [x, mineOf(x)]).filter(([, m]) => m && !m.excl), alt = {}, dis = {}, disN = {}, seen = {}, bad = {}, cm = {}, ch = {}, q = {};
+  const put = (o, k, w) => { o[k] = (o[k] || 0) + w; };
+  let nc = 0;
+  for (const [, m] of R) {
+    const c = youRead(m.note), quote = String(m.note || '').trim().replace(/\s+/g, ' ');
+    if (c.any) nc++;
+    const A = new Set(c.a), D = new Set(c.d);
+    // comment = 1, chip not said in the comment = ½
+    for (const k of A) { put(alt, k, 1); put(cm, k, 1); q[k] = q[k] || quote; }
+    for (const k of m.alt || []) if (!A.has(k)) { put(alt, k, 0.5); put(ch, k, 1); }
+    for (const k of D) { put(dis, k, 1); put(disN, k, 1); put(seen, k, 1); q['d:' + k] = q['d:' + k] || quote; }
+    for (const k of m.xk || []) if (!D.has(k)) { put(dis, k, 0.5); put(disN, k, 1); }
+    for (const k of m.ik || []) if (!D.has(k)) put(seen, k, 1);
+    for (const k of c.b) { put(bad, k, 1); q['b:' + k] = q['b:' + k] || quote; }
+  }
+  const short = s => s.length > 70 ? s.slice(0, 67) + '…' : s;
+  // where a point came from, in words: your comments first
+  const src = (k, chipLab) => {
+    const c = cm[k] || 0, h = ch[k] || 0, parts = [];
+    if (c) parts.push(`your comment${c > 1 ? 's' : ''} on ${c} trade${c > 1 ? 's' : ''} ("${short(q[k])}")`);
+    if (h) parts.push(`"${chipLab}" ticked on ${h} more`);
+    return 'From ' + parts.join(' and ') + '.';
+  };
+  return {n: R.length, nc, alt, dis, seen, bad, q, src,
+    says: a => (alt[a] || 0) >= YOU_MIN && (alt[a] || 0) >= R.length / 3,
+    flags: k => (bad[k] || 0) >= YOU_MIN && (bad[k] || 0) >= R.length / 3,
+    rejects: k => (dis[k] || 0) >= YOU_DIS && (dis[k] || 0) >= (seen[k] || dis[k]) / 2,
+    disTxt: k => q['d:' + k] ? `you disagreed with that point, e.g. "${short(q['d:' + k])}"` : `you disagreed with that point on ${disN[k] || 0} trades`};
 }
 function rvYourCalls(T, TM, p, why, base, st) {
-  const Y = youTally(T), YM = youTally(TM), tag = (n, a) => `Your reviews: ${n} trade${n > 1 ? 's' : ''} marked "${a}".`;
+  const Y = youTally(T), YM = youTally(TM), tag = (k, a) => Y.src(k, a);
   if (Y.n) {
     // points you keep disagreeing with: hold the change that rests on them
     for (const k in YOU_KEY_RULE) if (Y.rejects(k)) {
       const r = YOU_KEY_RULE[k];
-      if (r === 'conf' && p.needConf) { p.needConf = false; why.youHold = (why.youHold ? why.youHold + ' ' : '') + `Held "enter only at Reversed": you disagreed with that point on ${Y.dis[k]} trades.`; }
-      if (r === 'stopBuf' && p.stopBuf) { delete p.stopBuf; why.youHold = (why.youHold ? why.youHold + ' ' : '') + `Held the wider stop: you disagreed on ${Y.dis[k]} trades.`; }
-      if (r === 'tp1R' && p.tp1R) { delete p.tp1R; why.youHold = (why.youHold ? why.youHold + ' ' : '') + `Held the earlier partial: you disagreed on ${Y.dis[k]} trades.`; }
-      if (r === 'holdH' && p.holdH) { delete p.holdH; why.youHold = (why.youHold ? why.youHold + ' ' : '') + `Held the shorter hold: you disagreed on ${Y.dis[k]} trades.`; }
-      if (r === 'score' && p.score && !why.youScore) { p.score = Math.max(0, p.score - 1); if (!p.score) p.riskMul = 1; why.youHold = (why.youHold ? why.youHold + ' ' : '') + `Eased the extra-signs rule: you disagreed on ${Y.dis[k]} trades.`; }
-      if (r === 'vol' && p.volMul !== 1) { p.volMul = 1; why.youHold = (why.youHold ? why.youHold + ' ' : '') + `Held the volume rule: you disagreed on ${Y.dis[k]} trades.`; }
+      if (r === 'conf' && p.needConf) { p.needConf = false; why.youHold = (why.youHold ? why.youHold + ' ' : '') + `Held "enter only at Reversed": ${Y.disTxt(k)}.`; }
+      if (r === 'stopBuf' && p.stopBuf) { delete p.stopBuf; why.youHold = (why.youHold ? why.youHold + ' ' : '') + `Held the wider stop: ${Y.disTxt(k)}.`; }
+      if (r === 'tp1R' && p.tp1R) { delete p.tp1R; why.youHold = (why.youHold ? why.youHold + ' ' : '') + `Held the earlier partial: ${Y.disTxt(k)}.`; }
+      if (r === 'holdH' && p.holdH) { delete p.holdH; why.youHold = (why.youHold ? why.youHold + ' ' : '') + `Held the shorter hold: ${Y.disTxt(k)}.`; }
+      if (r === 'score' && p.score && !why.youScore) { p.score = Math.max(0, p.score - 1); if (!p.score) p.riskMul = 1; why.youHold = (why.youHold ? why.youHold + ' ' : '') + `Eased the extra-signs rule: ${Y.disTxt(k)}.`; }
+      if (r === 'vol' && p.volMul !== 1) { p.volMul = 1; why.youHold = (why.youHold ? why.youHold + ' ' : '') + `Held the volume rule: ${Y.disTxt(k)}.`; }
     }
     // what you'd have done, unless the trades clearly disagree
     const fo = st.rev, dn = st.done;
-    if (Y.says('later') && !p.needConf && !(dn && fo && dn.n >= 3 && fo.n >= 3 && dn.avgR < fo.avgR - 0.3)) { p.needConf = true; why.conf = tag(Y.alt.later, 'enter later') + ' Enter only once the reversal is confirmed.'; }
-    if (Y.says('skip') && !p.score) { p.score = 1; why.score = tag(Y.alt.skip, 'skip it') + ' Be pickier: one more sign.'; why.youScore = 1; }
-    if (Y.says('exitE') && !p.tp1R && base.tp1R > 1.2) { p.tp1R = 1.2; why.tp1R = tag(Y.alt.exitE, 'exit earlier') + ' Bank half sooner.'; }
-    if (Y.says('hold') && !p.holdH) { p.holdH = Math.min(24, Math.round(base.holdH * 1.5)); why.holdH = tag(Y.alt.hold, 'hold longer') + ' Give trades more time.'; }
-    if (Y.says('wider') && !p.stopBuf) { p.stopBuf = Math.min(2, Math.max(1, base.stopBuf * 2)); why.stopBuf = tag(Y.alt.wider, 'wider stop'); }
-    else if (Y.says('tighter') && !p.stopBuf && base.stopBuf > 0.25) { p.stopBuf = Math.max(0.25, base.stopBuf / 2); why.stopBuf = tag(Y.alt.tighter, 'tighter stop'); }
-    if (Y.says('smaller') && p.riskMul > 0.75) { p.riskMul = 0.75; why.risk = tag(Y.alt.smaller, 'smaller size'); }
+    if (Y.says('later') && !p.needConf && !(dn && fo && dn.n >= 3 && fo.n >= 3 && dn.avgR < fo.avgR - 0.3)) { p.needConf = true; why.conf = tag('later', 'enter later') + ' Enter only once the reversal is confirmed.'; }
+    if (Y.says('skip') && !p.score) { p.score = 1; why.score = tag('skip', 'skip it') + ' Be pickier: one more sign.'; why.youScore = 1; }
+    if (Y.says('exitE') && !p.tp1R && base.tp1R > 1.2) { p.tp1R = 1.2; why.tp1R = tag('exitE', 'exit earlier') + ' Bank half sooner.'; }
+    if (Y.says('hold') && !p.holdH) { p.holdH = Math.min(24, Math.round(base.holdH * 1.5)); why.holdH = tag('hold', 'hold longer') + ' Give trades more time.'; }
+    if (Y.says('wider') && !p.stopBuf) { p.stopBuf = Math.min(2, Math.max(1, base.stopBuf * 2)); why.stopBuf = tag('wider', 'wider stop'); }
+    else if (Y.says('tighter') && !p.stopBuf && base.stopBuf > 0.25) { p.stopBuf = Math.max(0.25, base.stopBuf / 2); why.stopBuf = tag('tighter', 'tighter stop'); }
+    if (Y.says('smaller') && p.riskMul > 0.75) { p.riskMul = 0.75; why.risk = tag('smaller', 'smaller size'); }
   }
   if (YM.n) {
-    const sk = (YM.alt.skip || 0) + (YM.alt.later || 0);
-    if (sk >= YOU_MIN && sk >= YM.n / 3) { p.mom = p.mom || {score: 0, mul: 1}; if (!p.mom.score) { p.mom.score = 1; why.mom = `Your reviews: ${sk} momentum trades marked "skip it" or "enter later". Demand one more momentum sign.`; } }
-    if (YM.says('smaller')) { p.mom = p.mom || {score: 0, mul: 1}; if (p.mom.mul > 0.75) { p.mom.mul = 0.75; why.mom = (why.mom ? why.mom + ' ' : '') + `Your reviews: ${YM.alt.smaller} momentum trades marked "smaller size".`; } }
+    const sk = YM.says('skip') ? 'skip' : YM.says('later') ? 'later' : null;
+    if (sk) { p.mom = p.mom || {score: 0, mul: 1}; if (!p.mom.score) { p.mom.score = 1; why.mom = `Momentum: ${YM.src(sk, YOU_A_TXT[sk])} Demand one more momentum sign.`; } }
+    if (YM.says('smaller')) { p.mom = p.mom || {score: 0, mul: 1}; if (p.mom.mul > 0.75) { p.mom.mul = 0.75; why.mom = (why.mom ? why.mom + ' ' : '') + `Momentum size: ${YM.src('smaller', 'smaller size')}`; } }
   }
 }
 /* ---- the SMC Trader's own review, in SMC terms ---- */
@@ -1431,16 +1507,19 @@ function smLearn() {
   if (ok(hiQ, loQ)) { A.minQ = 70; W.minQ = `Quality B or better: ${hiQ.n} trades, ${fmtR(hiQ.avgR)}; below B: ${loQ.n}, ${fmtR(loQ.avgR)}. Raise the bar to 70/100.`; }
   const t = St.tf; if (t['15m'] && t['1h']) { if (ok(t['1h'], t['15m'])) { A.noTf = '15m'; W.noTf = `1h setups ${fmtR(t['1h'].avgR)} (${t['1h'].n}) vs 15m ${fmtR(t['15m'].avgR)} (${t['15m'].n}). Pause 15m setups.`; } else if (ok(t['15m'], t['1h'])) { A.noTf = '1h'; W.noTf = `15m setups ${fmtR(t['15m'].avgR)} (${t['15m'].n}) vs 1h ${fmtR(t['1h'].avgR)} (${t['1h'].n}). Pause 1h setups.`; } }
   const d = St.F.depth; if (d && ok(d.good, d.rest)) { A.needDepth = true; W.needDepth = `Entries at the zone's midpoint or deeper: ${fmtR(d.good.avgR)} (${d.good.n}) vs at the edge: ${fmtR(d.rest.avgR)} (${d.rest.n}). Wait for the midpoint.`; }
-  // your SMC reviews
+  // your SMC reviews: your comments first (what you'd have done, and which part of the setup you think was poor)
   const Y = youTally(L);
-  if (Y.says('skip') && !A.minQ) { A.minQ = Math.min(85, SM.cfg.minQ + 10); W.minQ = `Your reviews: ${Y.alt.skip} SMC trades marked "skip it". Raise the quality bar to ${A.minQ}/100.`; }
-  if (Y.says('later') && !A.needDepth) { A.needDepth = true; W.needDepth = `Your reviews: ${Y.alt.later} SMC trades marked "enter later". Wait for the zone's midpoint.`; }
-  if (Y.says('wider')) { A.stopBuf = Math.min(1.5, SM.cfg.stopBuf * 2); W.stopBuf = `Your reviews: ${Y.alt.wider} SMC trades marked "wider stop".`; }
-  if (Y.says('exitE') && SM.cfg.tp1R > 1.2) { A.tp1R = 1.2; W.tp1R = `Your reviews: ${Y.alt.exitE} SMC trades marked "exit earlier". Bank half at +1.2R.`; }
-  if (Y.says('smaller')) { A.riskMul = 0.75; W.riskMul = `Your reviews: ${Y.alt.smaller} SMC trades marked "smaller size".`; }
+  if (Y.flags('htf') && !A.needHTF) { A.needHTF = true; W.needHTF = `Your comments: traded against the higher timeframe on ${Y.bad.htf} trades ("${String(Y.q['b:htf']).slice(0, 70)}"). Only trade when the higher timeframe agrees.`; }
+  if (Y.flags('ob') && !A.fvgOnly) { A.fvgOnly = true; W.fvgOnly = `Your comments: the order block was poor on ${Y.bad.ob} trades ("${String(Y.q['b:ob']).slice(0, 70)}"). FVG entries only.`; }
+  if ((Y.flags('gap') || Y.flags('sweep')) && !A.minQ) { const k = Y.flags('gap') ? 'gap' : 'sweep'; A.minQ = Math.min(85, SM.cfg.minQ + 10); W.minQ = `Your comments: ${k === 'gap' ? 'a poor FVG' : 'a weak sweep'} on ${Y.bad[k]} trades ("${String(Y.q['b:' + k]).slice(0, 70)}"). Raise the quality bar to ${A.minQ}/100.`; }
+  if ((Y.flags('depth') || Y.says('later')) && !A.needDepth) { A.needDepth = true; W.needDepth = (Y.says('later') ? Y.src('later', 'enter later') : `Your comments on ${Y.bad.depth} trades ("${String(Y.q['b:depth']).slice(0, 70)}").`) + ' Wait for the zone\'s midpoint.'; }
+  if (Y.says('skip') && !A.minQ) { A.minQ = Math.min(85, SM.cfg.minQ + 10); W.minQ = `${Y.src('skip', 'skip it')} Raise the quality bar to ${A.minQ}/100.`; }
+  if (Y.says('wider')) { A.stopBuf = Math.min(1.5, SM.cfg.stopBuf * 2); W.stopBuf = `${Y.src('wider', 'wider stop')} Stop further beyond the sweep.`; }
+  if (Y.says('exitE') && SM.cfg.tp1R > 1.2) { A.tp1R = 1.2; W.tp1R = `${Y.src('exitE', 'exit earlier')} Bank half at +1.2R.`; }
+  if (Y.says('smaller')) { A.riskMul = 0.75; W.riskMul = `${Y.src('smaller', 'smaller size')} Size ×0.75.`; }
   for (const k of ['htf', 'depth', 'gap', 'ob']) if (Y.rejects('smc_' + k)) {
     const m = {htf: 'needHTF', depth: 'needDepth', gap: 'minQ', ob: 'fvgOnly'}[k];
-    if (A[m]) { delete A[m]; W.youHold = (W.youHold ? W.youHold + ' ' : '') + `Held "${SM_FACTOR[k]}" rule: you disagreed with that point on ${Y.dis['smc_' + k]} trades.`; }
+    if (A[m]) { delete A[m]; W.youHold = (W.youHold ? W.youHold + ' ' : '') + `Held "${SM_FACTOR[k]}" rule: ${Y.disTxt('smc_' + k)}.`; }
   }
   // tell the SMC Trader what changed
   const lab = {needHTF: 'Only trade when the higher timeframe agrees', fvgOnly: 'FVG entries only (no order blocks)', minQ: `Minimum setup quality ${A.minQ}/100`, noTf: `Pause ${A.noTf} setups`, needDepth: 'Enter at the zone\'s midpoint or deeper', stopBuf: `Stop ${A.stopBuf}% beyond the sweep`, tp1R: `Half at +${A.tp1R}R`, riskMul: `Size ×${A.riskMul}`};
