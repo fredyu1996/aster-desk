@@ -659,7 +659,7 @@ if (typeof window !== 'undefined' && typeof setInterval === 'function') { unlLoa
 // Trades the reversal signals from the day tracker. No real orders are ever sent: fills are simulated at live
 // Aster prices with taker fee, slippage and funding charged, so the results are a fair test of the rules.
 const PT_DEF = {v: 1, start: 1000, cash: 1000, pos: {}, log: [], eqs: [], day: null, cool: {}, on: true, paused: null, created: 0,
-  cfg: {riskPct: 1, maxPos: 3, maxLev: 2, minScore: 5, dailyLossPct: 3, feePct: 0.04, slipPct: 0.10, holdH: 12, minVol: 300000, maxStopPct: 15, tp1R: 1.5, tpR: 3, stopBuf: 0.5, unlGuard: true, unlDays: 3, unlMinPct: 2, stratRev: 1, revLong: 0, stratMom: 1, momMinScore: 6, momRiskPct: 0.75, momMaxPos: 2, momHoldH: 6, momMaxExt: 8}, cands: []};
+  cfg: {riskPct: 1, maxPos: 3, maxLev: 2, minScore: 5, dailyLossPct: 3, feePct: 0.04, slipPct: 0.10, holdH: 12, minVol: 300000, maxStopPct: 15, tp1R: 1.5, tpR: 3, stopBuf: 0.5, unlGuard: true, unlDays: 3, unlMinPct: 2, stratRev: 1, revLong: 0, useScreens: 1, stratMom: 1, momMinScore: 6, momRiskPct: 0.75, momMaxPos: 2, momHoldH: 6, momMaxExt: 8}, cands: []};
 let PT = (() => {
   const saved = LS.get('awx_pt', null);
   const p = Object.assign(JSON.parse(JSON.stringify(PT_DEF)), saved || {});
@@ -757,7 +757,7 @@ function ptClose(s, frac, why) {
     const R = p.risk ? p.realized / p.risk : 0;
     PT.log.unshift({s, b: p.b, side: p.side, t0: p.t, t1: now(), entry: p.entry, exit: fill, qty: p.qty0, notional: p.qty0 * p.entry, pnl: p.realized,
       R, fees: p.fees, funding: p.funding || 0, why: p.why, tag: p.tag, exitWhy: why, stop0: p.stop0, maxR: p.maxR || 0,
-      st: p.st || '', sc: p.sc, dist: p.dist, les: p.les || [], rvId: p.rvId || 0, unlK: p.unlK || 'none', unl: p.unl || '', strat: p.strat || 'rev', tp1R: p.tp1R, tpR: p.tpR, cx: p.cx, ex: (p.exits || []).map(e => [e.t, e.px, e.why])});
+      st: p.st || '', sc: p.sc, dist: p.dist, les: p.les || [], rvId: p.rvId || 0, unlK: p.unlK || 'none', unl: p.unl || '', strat: p.strat || 'rev', tp1R: p.tp1R, tpR: p.tpR, cx: p.cx, scr: p.scr || null, ex: (p.exits || []).map(e => [e.t, e.px, e.why])});
     if (PT.log.length > 500) PT.log.pop();
     delete PT.pos[s]; PT.cool[s] = now();
     raise('trader', s, 'close' + now(), `PAPER ${p.side === 'L' ? 'long' : 'short'} ${p.b} closed ${fmtMoney(p.realized, 1)} (${R >= 0 ? '+' : ''}${R.toFixed(2)}R) — ${why}`, p.realized >= 0 ? 1 : -1, 0, true);
@@ -796,7 +796,7 @@ function ptTryEnter(c) {
   const why = `${mom ? 'Momentum' : 'Reversal'} · ${tr.state.l} ${tr.score}/8 — ${tr.checks.filter(x => x.ok).map(x => x.label.split(' (')[0].toLowerCase()).slice(0, 4).join(', ')}`;
   const A = ptLessons();
   const uc = unlCtx(s);
-  PT.pos[s] = {cx: entryCtx(s, tr.checks), strat: mom ? 'mom' : 'rev', unlK: uc.phase && uc.big ? uc.phase : 'none', unl: uc.phase ? unlLabel(uc) : '', st: tr.key, sc: tr.score, dist: dist * 100, les: R.les, rvId: A ? A.id || 0 : 0, tp1R: R.tp1R, tpR: R.tpR, hold: R.holdH, side, b: base(s), qty, qty0: qty, entry: fill, stop, stop0: stop, t: now(), risk: qty * Math.abs(fill - stop), realized: -fee, fees: fee,
+  PT.pos[s] = {cx: entryCtx(s, tr.checks), scr: typeof scrRec === 'function' ? scrRec(c) : null, strat: mom ? 'mom' : 'rev', unlK: uc.phase && uc.big ? uc.phase : 'none', unl: uc.phase ? unlLabel(uc) : '', st: tr.key, sc: tr.score, dist: dist * 100, les: R.les, rvId: A ? A.id || 0 : 0, tp1R: R.tp1R, tpR: R.tpR, hold: R.holdH, side, b: base(s), qty, qty0: qty, entry: fill, stop, stop0: stop, t: now(), risk: qty * Math.abs(fill - stop), realized: -fee, fees: fee,
     funding: 0, why, tag: tg ? tg.l : '', nf: null, be: false, tp1: false, maxR: 0, exits: []};
   raise('trader', s, 'open' + now(), `PAPER ${mom ? 'MOMENTUM ' : ''}${side === 'L' ? 'LONG' : 'SHORT'} ${base(s)} @ ${fmtPx(fill)} · stop ${fmtPx(stop)} (${(dist * 100).toFixed(1)}%) · size ${fmtMoney(qty * fill)} · risk ${fmtMoney(qty * Math.abs(fill - stop))}${R.les.length ? ' · lessons: ' + R.les.join(', ') : ''}`, side === 'L' ? 1 : -1, 0, true);
   ptSave(); return true;
@@ -859,6 +859,8 @@ function ptTick() {
       else if (reading) c.skip = reading;
       else if (gate) c.skip = gate;
       else if (!tk || tk.qv < R.minVol) c.skip = `24h volume under ${fmtUsd(R.minVol)}`;
+      if (!c.skip && typeof screenGate === 'function') { const g = screenGate(s, c.strat); if (g && g.skip) c.skip = g.skip; else if (g) c.scr = g; }
+      c.fitR = c.scr ? c.scr.fit.hit.length / c.scr.fit.of : 0;
       cands.push(c);
       // remember what came up, so the Trader can check how new rules would have treated recent candidates
       const lc = PT.cands.filter(x => x.s === s).pop();
@@ -876,12 +878,14 @@ function ptTick() {
       else if (reading) c.skip = reading;
       else if (gate) c.skip = gate;
       else if (!tk || tk.qv < R.minVol) c.skip = `24h volume under ${fmtUsd(R.minVol)}`;
+      if (!c.skip && typeof screenGate === 'function') { const g = screenGate(s, c.strat); if (g && g.skip) c.skip = g.skip; else if (g) c.scr = g; }
+      c.fitR = c.scr ? c.scr.fit.hit.length / c.scr.fit.of : 0;
       cands.push(c);
       const lc = PT.cands.filter(x => x.s === s && x.strat === 'mom').pop();
       if (!lc || t - lc.t > 15 * 60e3) PT.cands.push({t, s, b: base(s), side: mo.side, strat: 'mom', key: mo.key, score: mo.score, tag, ext: mo.ext, rev: tr ? tr.state.code : 0});
     }
     PT.cands = PT.cands.filter(x => t - x.t < 24 * 3600e3).slice(-400);
-    cands.sort((a, b) => (b.pref - a.pref) || ((b.mo || b.tr).score - (a.mo || a.tr).score));
+    cands.sort((a, b) => (b.pref - a.pref) || (b.fitR - a.fitR) || ((b.mo || b.tr).score - (a.mo || a.tr).score));
     for (const c of cands) {
       if (c.skip) continue;
       if (Object.keys(PT.pos).length >= PT.cfg.maxPos) { c.skip = `max ${PT.cfg.maxPos} positions open`; continue; }
@@ -889,7 +893,7 @@ function ptTick() {
       if (PT.pos[c.s]) { c.skip = 'already in a position'; continue; }
       if (ptTryEnter(c)) c.took = true;
     }
-    PT.lastScan.cands = cands.map(c => ({b: c.b, side: c.side, strat: c.strat, state: (c.mo || c.tr).state.l, score: (c.mo || c.tr).score, took: !!c.took, skip: c.skip || ''}));
+    PT.lastScan.cands = cands.map(c => ({b: c.b, side: c.side, strat: c.strat, state: (c.mo || c.tr).state.l, score: (c.mo || c.tr).score, took: !!c.took, test: !!(c.took && c.scr && c.scr.test), skip: c.skip || ''}));
   }
   const last = PT.eqs[PT.eqs.length - 1];
   if (!last || t - last[0] >= 5 * 60e3) { PT.eqs.push([t, +ptEquity().toFixed(2)]); if (PT.eqs.length > 3000) PT.eqs.shift(); }
@@ -913,7 +917,7 @@ function ptStats() {
 //   3. entry zone: the fair value gap (FVG) left by that displacement, or the order block (last opposite candle) if there is no gap
 //   4. entry on the first pullback into the zone; stop beyond the sweep extreme; target = the next liquidity pool (≥ 2R)
 const SM_DEF = {v: 1, start: 1000, cash: 1000, pos: {}, log: [], eqs: [], day: null, cool: {}, on: true, paused: null, created: 0, lastScan: null,
-  cfg: {riskPct: 1, maxPos: 3, maxLev: 2, minScore: 4, dailyLossPct: 3, feePct: 0.04, slipPct: 0.10, holdH: 12, minVol: 300000, maxStopPct: 15, minRR: 2, maxRR: 5, tp1R: 1.5, stopBuf: 0.3, unlGuard: 1}};
+  cfg: {riskPct: 1, maxPos: 3, maxLev: 2, minScore: 4, dailyLossPct: 3, feePct: 0.04, slipPct: 0.10, holdH: 12, minVol: 300000, maxStopPct: 15, minRR: 2, maxRR: 5, tp1R: 1.5, stopBuf: 0.3, unlGuard: 1, useScreens: 1}};
 let SM = (() => {
   const saved = LS.get('awx_sm', null);
   const p = Object.assign(JSON.parse(JSON.stringify(SM_DEF)), saved || {});
@@ -1032,7 +1036,7 @@ function smClose(s, frac, why) {
   if (frac >= 1 || p.qty <= p.qty0 * 1e-6) {
     const R = p.risk ? p.realized / p.risk : 0;
     SM.log.unshift({s, b: p.b, side: p.side, t0: p.t, t1: now(), entry: p.entry, exit: fill, qty: p.qty0, notional: p.qty0 * p.entry, pnl: p.realized, R, fees: p.fees,
-      funding: p.funding || 0, why: p.why, exitWhy: why, stop0: p.stop0, maxR: p.maxR || 0, sc: p.sc, rr: p.rr, zoneKind: p.zoneKind, target: p.target, zone: p.zone ? {lo: p.zone.lo, hi: p.zone.hi, kind: p.zone.kind} : null, sweep: p.sweep, lvl: p.lvl, unlK: p.unlK || 'none', strat: 'smc', cx: p.cx, ex: (p.exits || []).map(e => [e.t, e.px, e.why])});
+      funding: p.funding || 0, why: p.why, exitWhy: why, stop0: p.stop0, maxR: p.maxR || 0, sc: p.sc, rr: p.rr, zoneKind: p.zoneKind, target: p.target, zone: p.zone ? {lo: p.zone.lo, hi: p.zone.hi, kind: p.zone.kind} : null, sweep: p.sweep, lvl: p.lvl, unlK: p.unlK || 'none', strat: 'smc', cx: p.cx, scr: p.scr || null, ex: (p.exits || []).map(e => [e.t, e.px, e.why])});
     if (SM.log.length > 500) SM.log.pop();
     delete SM.pos[s]; SM.cool[s] = now();
     raise('smc', s, 'close' + now(), `SMC PAPER ${p.side === 'L' ? 'long' : 'short'} ${p.b} closed ${fmtMoney(p.realized, 1)} (${R >= 0 ? '+' : ''}${R.toFixed(2)}R) — ${why}`, p.realized >= 0 ? 1 : -1, 0, true);
@@ -1051,7 +1055,7 @@ function smTryEnter(c) {
   const fee = qty * fill * SM.cfg.feePct / 100; SM.cash -= fee;
   const rr = Math.abs(r.target - fill) / Math.abs(fill - stop), uc = unlCtx(s);
   const why = `${r.dir === 'L' ? 'Bullish' : 'Bearish'} SMC ${r.score}/6 — swept ${fmtPx(r.setup.swept.px)}, shift through ${fmtPx(r.setup.lvl.px)}, ${r.zone.kind} ${fmtPx(r.zone.lo)}–${fmtPx(r.zone.hi)}, target ${fmtPx(r.target)} (${rr.toFixed(1)}R)`;
-  SM.pos[s] = {cx: entryCtx(s, r.checks), side, b: base(s), qty, qty0: qty, entry: fill, stop, stop0: stop, target: r.target, rr, t: now(), risk: qty * Math.abs(fill - stop), realized: -fee, fees: fee, funding: 0,
+  SM.pos[s] = {cx: entryCtx(s, r.checks), scr: typeof scrRec === 'function' ? scrRec(c) : null, side, b: base(s), qty, qty0: qty, entry: fill, stop, stop0: stop, target: r.target, rr, t: now(), risk: qty * Math.abs(fill - stop), realized: -fee, fees: fee, funding: 0,
     why, sc: r.score, zoneKind: r.zone.kind, zone: r.zone, sweep: r.setup.ext, lvl: r.setup.lvl.px, unlK: uc.phase && uc.big ? uc.phase : 'none', nf: null, be: false, tp1: false, maxR: 0, exits: [], dist: dist * 100};
   raise('smc', s, 'open' + now(), `SMC PAPER ${side === 'L' ? 'LONG' : 'SHORT'} ${base(s)} @ ${fmtPx(fill)} · stop ${fmtPx(stop)} (${(dist * 100).toFixed(1)}%) · target ${fmtPx(r.target)} (${rr.toFixed(1)}R) · ${r.zone.kind} entry, ${r.score}/6`, side === 'L' ? 1 : -1, 0, true);
   smSave(); return true;
@@ -1105,11 +1109,13 @@ function smTick() {
     else if (!tk || tk.qv < SM.cfg.minVol) c.skip = `24h volume under ${fmtUsd(SM.cfg.minVol)}`;
     else if (SM.cfg.unlGuard && r.dir === 'L' && u.phase === 'ahead' && u.big && u.days <= PT.cfg.unlDays) c.skip = `token unlock ${unlWhen(u)}: no longs into new supply`;
     else if (SM.cfg.unlGuard && r.dir === 'S' && u.phase === 'after' && u.big && u.hours <= 24) c.skip = `unlock was ${unlWhen(u)}: no fresh shorts for 24 h`;
+    if (!c.skip && typeof screenGate === 'function') { const g = screenGate(s, 'smc'); if (g && g.skip) c.skip = g.skip; else if (g) c.scr = g; }
+    c.fitR = c.scr ? c.scr.fit.hit.length / c.scr.fit.of : 0;
     cands.push(c);
   }
   for (const s of Object.keys(S.trk)) if (!S.smC.has(s)) S.smC.set(s, smcRead(s));
   if (SM.on && !SM.paused) {
-    cands.sort((a, b) => b.r.score - a.r.score || b.r.rr - a.r.rr);
+    cands.sort((a, b) => b.fitR - a.fitR || b.r.score - a.r.score || b.r.rr - a.r.rr);
     for (const c of cands) {
       if (c.skip) continue;
       if (Object.keys(SM.pos).length >= SM.cfg.maxPos) { c.skip = `max ${SM.cfg.maxPos} positions open`; continue; }
@@ -1528,6 +1534,7 @@ const CRIT_SIGNS = {
   mom: ['Fresh 15m high / low', 'Sloping 15m EMA20', 'Net flow with the move', 'Taker pressure with the move', 'Volume expanding', 'Funding not crowded', 'OI building with the move', '1h RSI strong, not exhausted'],
   smc: ['Liquidity swept', 'Structure shift', 'Fair value gap (not OB)', 'Discount / premium entry', '1h bias aligned', 'Displacement on volume']};
 const CRIT_STRAT = {rev: 'Reversal (Trader)', mom: 'Momentum (Trader)', smc: 'SMC Trader'};
+const STRAT_NOUN = {rev: 'reversal trades', mom: 'momentum trades', smc: 'SMC trades'};
 // many readings × several levels are tested, so a gap can appear by luck: a level is published only with enough trades
 // on both sides, a gap of 0.4R+, a Welch t-statistic of 3.2+, and the same gap (≥0.25R, same direction, 4+ trades a side) in both the older and the newer half of the trades.
 // Simulated on random data: about one chance pattern per 10–30 checks; a real 0.8R gap is caught ~60% of the time by 80 trades
@@ -1575,7 +1582,7 @@ function rvProfile() {
       const r = critSign(T, i); if (r.a.n < CRIT_SIDE || r.b.n < CRIT_SIDE || Math.abs(r.d) < CRIT_EDGE || Math.abs(r.ts) < CRIT_T) return;
       if (!critHoldsDir(T.filter(x => x.cx.sg && x.cx.sg[i] != null), x => x.cx.sg[i] === 1, r.d > 0)) return;
       const up = r.d > 0, win = up ? r.a : r.b, lose = up ? r.b : r.a; if (!(win.avgR > 0)) return;
-      F.push({st, k: 'sg' + i, ag: i === 6 && st !== 'smc' ? 'ivy' : [2, 3, 5].includes(i) && st !== 'smc' ? 'flo' : 'scout', sg: i, up, txt: up ? `"${lab}" present` : `"${lab}" absent`, ev: `${fmtR(win.avgR)} over ${win.n} trades vs ${fmtR(lose.avgR)} over ${lose.n}`});
+      F.push({st, k: 'sg' + i, ag: i === 6 && st !== 'smc' ? 'ivy' : [2, 3, 5].includes(i) && st !== 'smc' ? 'flo' : 'scout', sg: i, up, txt: `${lab}: ${up ? 'present' : 'absent'}`, ev: `${fmtR(win.avgR)} over ${win.n} trades vs ${fmtR(lose.avgR)} over ${lose.n}`});
     });
   }
   RV.prof = {t: now(), n, F};
@@ -1585,19 +1592,60 @@ function rvProfile() {
 function profFit(s, st) {
   const F = ((RV.prof || {}).F || []).filter(f => f.st === st); if (!F.length) return null;
   const chk = st === 'rev' ? (S.trC.get(s) || {}).checks : st === 'mom' ? (S.moC.get(s) || {}).checks : (S.smC && S.smC.get(s) || {}).checks;
-  const cx = entryCtx(s, chk), hit = [], miss = [];
+  const cx = entryCtx(s, chk), hit = [], miss = [], unk = [];
   for (const f of F) {
     const v = f.sg != null ? (cx.sg[f.sg] == null ? null : cx.sg[f.sg]) : cx[f.k];
-    if (v == null) { miss.push(f); continue; }
+    if (v == null) { unk.push(f); continue; }
     const ok = f.sg != null ? (f.up ? v === 1 : v === 0) : (f.up ? v >= f.t : v < f.t);
     (ok ? hit : miss).push(f);
   }
-  return {hit, miss, of: F.length};
+  return {hit, miss, unk, of: F.length};
 }
+/* ---- the screening loop: Reviewer → screening agents → traders ---- */
+// When a criterion is published or lifted, the Reviewer tells the agent that screens on it; that agent applies it as a
+// screen (✓/✗ per coin) and replies; the trader that runs the strategy replies with how it will use it. The traders
+// then skip coins that fail a published screen and take the best fits first, except 1 in 5 failing coins, which is
+// still traded as a "screen test" so the Reviewer keeps measuring whether the screen still matters.
+const AGN = {scout: 'GainerLoser', ivy: 'OpenInterest', flo: 'Flow', trader: 'Trader', smc: 'SMC Trader', rev: 'Reviewer'};
+const scrKey = f => [f.st, f.k, f.up ? 1 : 0, f.t == null ? '' : f.t].join(':');
+const scrUse = st => st === 'smc' ? !!SM.cfg.useScreens : !!PT.cfg.useScreens;
+function rvMemo(from, to, txt) {
+  RV.memos = RV.memos || []; RV.memos.unshift({t: now(), from, to, txt}); if (RV.memos.length > 80) RV.memos.length = 80;
+  raise(from, 'ACCOUNT', 'memo' + now() + Math.random(), `→ ${AGN[to] || to}: ${txt}`, 0, 0);
+}
+function screenTalk(oldF, newF) {
+  const O = new Map(oldF.map(f => [scrKey(f), f])), N = new Map(newF.map(f => [scrKey(f), f])), movers = [...S.gainers, ...S.losers];
+  for (const [k, f] of N) if (!O.has(k)) {
+    const who = f.st === 'smc' ? 'smc' : 'trader', strat = STRAT_NOUN[f.st];
+    rvMemo('rev', f.ag, `For ${strat}, screen for "${f.txt}". Evidence: ${f.ev}.`);
+    const pass = movers.filter(s => { const r = profFit(s, f.st); return r && r.hit.some(h => scrKey(h) === k); }).length;
+    rvMemo(f.ag, 'rev', `Done. I now mark coins ✓/✗ on "${f.txt}" for ${strat}. ${pass} of the current top-10 movers pass.`);
+    rvMemo(who, 'rev', scrUse(f.st) ? `Understood. For ${strat} I'll skip setups that fail "${f.txt}" and take the best fits first. 1 in 5 that fail still gets traded as a test, so you can keep checking it.` : `Noted, but the Reviewer's screens are switched off on my desk, so I'm not using it.`);
+  }
+  for (const [k, f] of O) if (!N.has(k)) {
+    const who = f.st === 'smc' ? 'smc' : 'trader', strat = STRAT_NOUN[f.st];
+    rvMemo('rev', f.ag, `Lift the "${f.txt}" screen for ${strat}: the newer trades no longer back it.`);
+    rvMemo(f.ag, 'rev', `Lifted. "${f.txt}" no longer counts for ${strat}.`);
+    if (scrUse(f.st)) rvMemo(who, 'rev', `OK, "${f.txt}" no longer filters my ${strat}.`);
+  }
+}
+// the traders ask this for each candidate: skip it, take it, or take it as a screen test
+function screenGate(s, st) {
+  if (!scrUse(st)) return null;
+  const f = profFit(s, st); if (!f) return null;
+  if (!f.miss.length) return {fit: f};
+  RV.scrN = RV.scrN || {}; RV.scrDec = RV.scrDec || {};
+  const k = st + ':' + s; let d = RV.scrDec[k];
+  if (!d || now() - d.t > 6 * 3600e3) { RV.scrN[st] = (RV.scrN[st] || 0) + 1; d = RV.scrDec[k] = {t: now(), test: RV.scrN[st] % 5 === 0}; }
+  for (const x in RV.scrDec) if (now() - RV.scrDec[x].t > 24 * 3600e3) delete RV.scrDec[x];
+  if (d.test) return {fit: f, test: true};
+  return {fit: f, skip: `${AGN[f.miss[0].ag]} screen: fails "${f.miss[0].txt}"${f.miss.length > 1 ? ` (+${f.miss.length - 1} more)` : ''}`};
+}
+const scrRec = c => c.scr ? {fit: c.scr.fit.hit.length + '/' + c.scr.fit.of, test: !!c.scr.test, miss: c.scr.fit.miss.map(f => f.txt)} : null;
 // keep the profile current and tell GainerLoser when a top-5 mover fits it fully
 function profTick() {
   const nT = critTrades('rev').length + critTrades('mom').length + critTrades('smc').length;
-  if (!RV.prof || RV.prof.nT !== nT) { rvProfile(); RV.prof.nT = nT; rvSave(); }
+  if (!RV.prof || RV.prof.nT !== nT) { const prev = RV.prof; rvProfile(); RV.prof.nT = nT; if (prev) screenTalk(prev.F || [], RV.prof.F); rvSave(); }
   if (!RV.prof.F.length) return;
   for (const s of [...S.gainers, ...S.losers]) for (const st of ['rev', 'mom', 'smc']) {
     if (st === 'rev' && sideOf(s) === 'L' && !PT.cfg.revLong) continue;
