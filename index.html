@@ -1284,15 +1284,15 @@ function smPath(B, P, dir, live, target) {
     return la >= 1.5 * atr0 && rb >= (p.i > n - 6 ? 0.75 : 1.5) * atr0; };
   const Sw = (bull ? P.H : P.L).filter(prom);
   const untaken = p => { for (let m = p.i + 1; m < n; m++) if (bull ? B[m][2] > p.px : B[m][3] < p.px) return false; return true; };
-  const atr = atr0; let fs = 0; const hr = [];
+  const atr = atr0, mid = (Math.max(...B.map(b => b[2])) + Math.min(...B.map(b => b[3]))) / 2; let fs = 0, fsIn = 0; const hr = [];
   Sw.forEach((p, k) => {
     if (!(bull ? p.px > live + 0.25 * atr && p.px < target : p.px < live - 0.25 * atr && p.px > target) || !untaken(p) || !k) return;
     const prev = Sw[k - 1], d = bull ? prev.px - p.px : p.px - prev.px;    // > 0: failed to reach the previous swing
-    if (d >= 0.1 * atr) fs++;
+    if (d >= 0.1 * atr) { fs++; if (bull ? p.px < mid : p.px > mid) fsIn++; }   // failure swings still in discount (long) / premium (short): the draw is still ahead
     else if (-d >= 0.05 * atr && (bull ? B[p.i][4] < prev.px : B[p.i][4] > prev.px)) hr.push(p);   // ran it, then closed back: high resistance
   });
   const near = hr.length ? hr.reduce((a, b) => bull ? (b.px < a.px ? b : a) : (b.px > a.px ? b : a)) : null;
-  return {fs, hr: near ? near.px : null, hrAt: near ? near.i : null};
+  return {fs, fsIn, hr: near ? near.px : null, hrAt: near ? near.i : null};
 }
 // is the stop behind a high-resistance swing (a low that ran the previous low and closed back above it; mirror for highs)?
 function smProtected(B, P, dir, ext, from, to) {
@@ -1417,7 +1417,7 @@ function smQuality(B, r, live, tf, bias, pos, X = {}) {
   const htf = SM_TF[tf].htf, al = bias ? (bull ? bias === 'bull' : bias === 'bear') : null;
   if (X.poi) add('poi', X.poi.ok, X.poi.ok === 2 ? `Sweep into a fresh ${htf} ${bull ? 'demand' : 'supply'} zone (${fmtPx(X.poi.zone.lo)}–${fmtPx(X.poi.zone.hi)}): reversal from a higher-timeframe point of interest` : X.poi.ok === 1 ? (X.poi.zone ? `Sweep into a ${htf} ${bull ? 'demand' : 'supply'} zone that was already tested` : `Sweep took a ${htf} swing ${bull ? 'low' : 'high'} (${fmtPx(X.poi.piv)}): higher-timeframe liquidity`) : `No ${htf} zone or swing at the sweep: a reversal in the middle of the ${htf} range`);
   if (X.room) add('room', X.room.clear ? 2 : X.room.capped ? 1 : 0, X.room.clear ? `No opposing ${htf} ${bull ? 'supply' : 'demand'} before the target` : X.room.capped ? `Target moved to the ${htf} ${bull ? 'supply' : 'demand'} at ${fmtPx(X.room.edge)} (${X.room.rr.toFixed(1)}R)` : `${htf} ${bull ? 'supply' : 'demand'} at ${fmtPx(X.room.edge)} is only ${X.room.rr.toFixed(1)}R away: no room`);
-  if (X.path) add('path', X.path.capped ? 1 : X.path.fs >= 2 ? 2 : 1, X.path.capped ? `Target moved in front of a high-resistance ${bull ? 'high' : 'low'} at ${fmtPx(X.path.hr)} (it ran a previous swing and was rejected) — ${X.path.rr.toFixed(1)}R` : X.path.fs >= 2 ? `Low-resistance path: ${X.path.fs} failure swings (${bull ? 'lower highs' : 'higher lows'}) between entry and target` : X.path.fs === 1 ? `One failure swing on the way to the target` : `No failure swings on the way to the target`);
+  if (X.path) add('path', X.path.capped ? 1 : X.path.fs >= 2 || X.path.fsIn >= 1 ? 2 : 1, X.path.capped ? `Target moved in front of a high-resistance ${bull ? 'high' : 'low'} at ${fmtPx(X.path.hr)} (it ran a previous swing and was rejected) — ${X.path.rr.toFixed(1)}R` : X.path.fs >= 2 || X.path.fsIn >= 1 ? `Low-resistance path: ${X.path.fs} failure swing${X.path.fs > 1 ? 's' : ''} (${bull ? 'lower highs' : 'higher lows'}) between entry and target${X.path.fsIn ? `, ${X.path.fsIn} still in ${bull ? 'discount' : 'premium'}` : ''}` : X.path.fs === 1 ? `One failure swing on the way to the target` : `No failure swings on the way to the target`);
   if (X.cont) add('prot', X.prot ? 2 : 1, X.prot ? `Stop behind a high-resistance ${bull ? 'low' : 'high'}: the base ran the ${bull ? 'low' : 'high'} at ${fmtPx(X.prot)} and was rejected` : `Base ${bull ? 'low' : 'high'} didn't run a previous swing`);
   if (X.conf && X.conf.ok) add('conf', 2, `15m confirmed: closed ${bull ? 'above' : 'below'} ${fmtPx(X.conf.ref)} inside the 1h zone`);
   add('htf', al === true ? 2 : al === null ? 1 : 0, al === true ? `${htf} structure agrees (${bias === 'bull' ? 'rising' : 'falling'})` : al === null ? `${htf} structure unclear` : `${htf} structure is ${bias === 'bull' ? 'rising' : 'falling'}: against the trade`);
