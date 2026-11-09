@@ -1495,6 +1495,15 @@ const BOARD = canvasTex(2400, 640);
   const m = new THREE.Mesh(new THREE.PlaneGeometry(13, 13 * 640 / 2400), new THREE.MeshBasicMaterial({map: BOARD.tex, toneMapped: false, fog: false}));
   m.position.set(0, 2.62, -RZ + 0.15); scene.add(m);
 }
+/* ---- north wall, left of the movers board: Trader vs SMC Trader return race ---- */
+const RACE_W = 5.6, RACE_H = 3.2, RACE_X = -10.6, RACE_Y = 2.6;
+const RACE = canvasTex(1600, Math.round(1600 * RACE_H / RACE_W));
+{
+  const b = new THREE.Mesh(new THREE.BoxGeometry(RACE_W + 0.3, RACE_H + 0.3, 0.12), mat(0x05070d, {metalness: .7, roughness: .3})); b.position.set(RACE_X, RACE_Y, -RZ + 0.08); scene.add(b);
+  box(RACE_W + 0.3, 0.04, 0.14, glow(0xffd166), RACE_X, RACE_Y + RACE_H / 2 + 0.15, -RZ + 0.1); box(RACE_W + 0.3, 0.04, 0.14, glow(0xff8ad8), RACE_X, RACE_Y - RACE_H / 2 - 0.15, -RZ + 0.1);
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(RACE_W, RACE_H), new THREE.MeshBasicMaterial({map: RACE.tex, toneMapped: false, fog: false}));
+  m.position.set(RACE_X, RACE_Y, -RZ + 0.15); scene.add(m);
+}
 const TICKER = canvasTex(4096, 80);
 TICKER.tex.wrapS = THREE.RepeatWrapping;
 {
@@ -2160,7 +2169,7 @@ function frame(t) {
   TICKER.tex.offset.x = (TICKER.tex.offset.x + dt * 0.018) % 1;
   // periodic redraws
   acc.board += dt; acc.desk += dt; acc.ticker += dt; acc.hud += dt; acc.panel += dt;
-  if (acc.board > 2) { acc.board = 0; drawBoard(); drawWall(); try { drawSmWall(); } catch (e) { console.warn('smc wall', e.message); } try { drawReviewWall(); } catch (e) { console.warn('review wall', e.message); } }
+  if (acc.board > 2) { acc.board = 0; drawBoard(); drawWall(); try { drawSmWall(); drawRace(); } catch (e) { console.warn('smc wall', e.message); } try { drawReviewWall(); } catch (e) { console.warn('review wall', e.message); } }
   if (acc.desk > 0.3) { acc.desk = 0; const d = desks[deskIdx++ % desks.length]; try { drawScreens(d); } catch (e) { console.warn('screen', d.a.id, e.message); } }
   if (acc.ticker > 15) { acc.ticker = 0; drawTicker(); }
   if (acc.hud > 1) { acc.hud = 0; topbar(); }
@@ -2188,7 +2197,7 @@ setTimeout(startSyncHTML, 0);
 camera.position.set(P.x, 1.66, P.z);
 // Reviewer/SMC code loads after this point: draw what we can now, then redraw every desk once all code is loaded.
 const drawAllScreens = () => desks.forEach(d => { try { drawScreens(d); } catch (e) { console.warn('screen', d.a.id, e.message); } });
-drawBoard(); drawAllScreens(); drawTicker(); drawWall(); setTimeout(() => { drawAllScreens(); try { drawSmWall(); } catch (e) { console.warn('smc wall', e.message); } try { drawReviewWall(); } catch (e) { console.warn('review wall', e.message); } }, 0);
+drawBoard(); drawAllScreens(); drawTicker(); drawWall(); setTimeout(() => { drawAllScreens(); try { drawSmWall(); drawRace(); } catch (e) { console.warn('smc wall', e.message); } try { drawReviewWall(); } catch (e) { console.warn('review wall', e.message); } }, 0);
 startEngine();
 requestAnimationFrame(frame);
 // If nothing arrives, explain why (most often: opened inside a preview window that blocks the internet)
@@ -2202,7 +2211,7 @@ setTimeout(function netCheck() {
   setTimeout(netCheck, 5000);
 }, 8000);
 setInterval(() => { if (S.meta.size && (S.wsOk || S.restOk)) { $('#netwarn').style.display = 'none'; $('#netbar').style.display = 'none'; } }, 3000);
-(document.fonts && document.fonts.ready || Promise.resolve()).then(() => { fontRedraws.forEach(f => f()); drawBoard(); drawTicker(); drawWall(); try { drawSmWall(); } catch (_) {} try { drawReviewWall(); } catch (_) {} });
+(document.fonts && document.fonts.ready || Promise.resolve()).then(() => { fontRedraws.forEach(f => f()); drawBoard(); drawTicker(); drawWall(); try { drawSmWall(); drawRace(); } catch (_) {} try { drawReviewWall(); } catch (_) {} });
 
 /* ================= DAY TRACKER VIEW ================= */
 function trackerHTML() {
@@ -3466,7 +3475,7 @@ function drawCmp(c, x, y, w, h, fs = 12) {
   const all = pa.concat(pb);
   if (A.length < 2 && B.length < 2) { c.fillStyle = DIM; c.font = `500 ${fs + 2}px ${FS}`; c.textAlign = 'center'; c.fillText('both curves start with the first trades', w / 2, h / 2); c.restore(); c.textAlign = 'left'; return; }
   let lo = Math.min(0, ...all.map(p => p[1])), hi = Math.max(0, ...all.map(p => p[1])); const sp = (hi - lo) || 1; lo -= sp * 0.12; hi += sp * 0.12;
-  const t0 = Math.min(...all.map(p => p[0])), t1 = Math.max(...all.map(p => p[0])), pad = 60;
+  const t0 = Math.min(...all.map(p => p[0])), t1 = Math.max(...all.map(p => p[0])), pad = Math.max(60, fs * 5.6);
   const X = t => 6 + (t - t0) / ((t1 - t0) || 1) * (w - pad - 10), Y = v => 8 + (hi - v) / (hi - lo) * (h - 24);
   c.strokeStyle = 'rgba(124,137,168,.35)'; c.setLineDash([3, 4]); c.beginPath(); c.moveTo(6, Y(0)); c.lineTo(w - pad, Y(0)); c.stroke(); c.setLineDash([]);
   for (const [pts, col] of [[pa, '#ffd166'], [pb, SMCOL]]) { if (pts.length < 2) continue; c.strokeStyle = col; c.lineWidth = 2.2; c.beginPath(); pts.forEach((p, i) => (i ? c.lineTo(X(p[0]), Y(p[1])) : c.moveTo(X(p[0]), Y(p[1])))); c.stroke(); }
@@ -3494,12 +3503,20 @@ function drawSmcScreens(d) {
     c.fillStyle = tone(r); c.textAlign = 'right'; c.fillText(fmtR(r), 784, y); c.textAlign = 'left';
   });
   A.tex.needsUpdate = true;
-  c = screenFrame(B, col, 'TRADER vs SMC TRADER · EQUITY %', '');
-  drawCmp(c, 10, 60, B.W - 20, B.H - 150, 15);
-  const a = acctStats(PT, ptEquity()), b = st;
-  c.font = `600 17px ${FM}`;
-  c.fillStyle = '#ffd166'; c.fillText(`Trader  ${fmtPct(a.ret, 1)} · DD ${fmtPct(a.dd, 1)} · ${a.n} trades`, 16, B.H - 60);
-  c.fillStyle = SMCOL; c.fillText(`SMC     ${fmtPct(b.ret, 1)} · DD ${fmtPct(b.dd, 1)} · ${b.n} trades`, 16, B.H - 30);
+  // second screen: the SMC read on the tracked coins (timeframe, higher timeframe, stage, quality)
+  c = screenFrame(B, col, 'SMC READ · TRACKED COINS', '');
+  const rank = r => ({inzone: 5, mss: 4, sweep: 3}[r.stage] || 0) * 1000 + (r.against ? -500 : 0) + ((r.q || {}).score || 0);
+  const RD = [...S.smC.entries()].filter(([, r]) => ['inzone', 'mss', 'sweep'].includes(r.stage)).sort((x, y) => rank(y[1]) - rank(x[1])).slice(0, 8);
+  c.font = `700 15px ${FS}`; c.fillStyle = DIM; [['COIN', 16], ['SETUP', 150], ['TF · HIGHER TF', 330], ['QUALITY', 600]].forEach(([t, x]) => c.fillText(t, x, 74));
+  if (!RD.length) { c.font = `600 19px ${FS}`; c.fillStyle = DIM; c.fillText('No sweeps on the tracked coins right now.', 16, 120); }
+  RD.forEach(([s, r], i) => {
+    const y = 108 + i * 38, stg = {inzone: 'IN ZONE', mss: 'SHIFTED', sweep: 'SWEPT'}[r.stage] || String(r.stage || '').toUpperCase();
+    c.font = `800 20px ${FS}`; c.fillStyle = TXT; c.fillText(base(s), 16, y);
+    c.font = `700 17px ${FS}`; c.fillStyle = r.dir === 'L' ? UP : r.dir === 'S' ? DN : DIM; c.fillText(`${r.dir === 'L' ? 'long' : r.dir === 'S' ? 'short' : ''} ${stg}`.trim(), 150, y);
+    c.font = `600 17px ${FM}`; c.fillStyle = r.against ? DN : DIM; c.fillText(`${r.tf || '15m'} · ${r.htf || '1h'} ${r.bias === 'bull' ? 'rising' : r.bias === 'bear' ? 'falling' : 'unclear'}${r.against ? ' ✗' : ''}`, 330, y);
+    if (r.q) { c.font = `800 18px ${FM}`; c.fillStyle = GRADE_C[r.q.grade] || DIM; c.fillText(`${r.q.grade} ${r.q.score}`, 600, y); }
+  });
+  c.font = `500 14px ${FS}`; c.fillStyle = DIM; c.fillText(`Takes setups with quality ${smRules().minQ}+ and the higher timeframe not against them.`, 16, B.H - 18);
   B.tex.needsUpdate = true;
 }
 // 15m candles with the SMC drawing: swept level, sweep extreme, structure-shift level, entry zone, stop and target
@@ -3643,9 +3660,9 @@ function drawSmWall() {
   const P = Object.entries(SM.pos).sort((a, b) => a[1].t - b[1].t), top = 100, bh = H - top - 16;
   if (!P.length) {
     c.font = `800 52px ${FS}`; c.fillStyle = TXT; c.fillText('Flat — no open SMC positions', 40, top + 70);
-    const best = [...S.smC.entries()].map(([s, r]) => Object.assign({s}, r)).filter(r => r.dir && !r.against && /zone|shift|swept/i.test(r.stage || '')).sort((a, b) => ((b.q || {}).score || 0) - ((a.q || {}).score || 0))[0];
+    const best = [...S.smC.entries()].map(([s, r]) => Object.assign({s}, r)).filter(r => r.dir && !r.against && ['inzone', 'mss', 'sweep'].includes(r.stage)).sort((a, b) => ((b.q || {}).score || 0) - ((a.q || {}).score || 0))[0];
     c.font = `500 26px ${FS}`; c.fillStyle = DIM;
-    wrapText(c, `Waiting for a sweep → structure shift → first pullback into the FVG or order block, on the 15m (1h not against it) or the 1h (4h not against it), quality ${smRules().minQ}/100 or better.` + (best ? ` Closest now: ${base(best.s || '')} ${best.tf} — ${best.stage}${best.q ? ', quality ' + best.q.grade : ''}.` : ''), 40, top + 118, 1480, 32, 3);
+    wrapText(c, `Waiting for a sweep → structure shift → first pullback into the FVG or order block, on the 15m (1h not against it) or the 1h (4h not against it), quality ${smRules().minQ}/100 or better.` + (best ? ` Closest now: ${base(best.s || '')} ${best.tf} — ${(SMST[best.stage] || {}).l || best.stage}${best.q ? ', quality ' + best.q.grade : ''}.` : ''), 40, top + 118, 1480, 32, 3);
     c.font = `700 22px ${FS}`; c.fillStyle = DIM; c.fillText('EQUITY · SMC vs TRADER (% from $1,000)', 40, top + 236);
     drawCmp(c, 40, top + 252, 1480, bh - 262, 22);
     c.font = `700 26px ${FM}`; c.fillStyle = DIM; c.fillText('LAST SMC TRADES', 1640, top + 40);
@@ -3678,6 +3695,45 @@ function drawSmWall() {
     drawPosChart(c, s, p, x0 + infoW, top + 6, colW - infoW - 20, bh - 12, {bars: B && B.length ? B : null, target: p.target, tLab: `${rrT.toFixed(1)}R`, zone: p.zone, foot: `${tf} · last ${tf === '1h' ? '36h' : '9h'} · zone shaded`});
   });
   if (P.length > 3) { c.font = `700 26px ${FS}`; c.fillStyle = WARN; c.textAlign = 'right'; c.fillText(`+${P.length - 3} more open — see the SMC desk`, W - 30, H - 24); c.textAlign = 'left'; }
+  T.tex.needsUpdate = true;
+}
+
+/* ---- north wall, left of the movers board: the return race, Trader vs SMC Trader ---- */
+function drawRace() {
+  if (typeof RACE === 'undefined') return;
+  const T = RACE, c = T.ctx, W = T.W, H = T.H, a = acctStats(PT, ptEquity()), b = smStats(), ea = ptEquity(), eb = smEquity();
+  c.fillStyle = '#04070f'; c.fillRect(0, 0, W, H);
+  c.fillStyle = '#0a1226'; c.fillRect(0, 0, W, 62);
+  c.textBaseline = 'middle'; c.font = `800 34px ${FS}`; c.fillStyle = '#cfe0ff'; c.fillText('RETURN RACE', 24, 32);
+  c.font = `600 22px ${FM}`; c.fillStyle = DIM; c.textAlign = 'right'; c.fillText(`paper · from $1,000 each   ${clock()}`, W - 24, 32); c.textAlign = 'left';
+  // the two scores
+  const lead = a.ret === b.ret ? null : a.ret > b.ret ? 'a' : 'b';
+  [[a, ea, 'TRADER', '#ffd166', 'a', 24], [b, eb, 'SMC TRADER', SMCOL, 'b', W / 2 + 12]].forEach(([s, eq, name, col, k, x]) => {
+    const w = W / 2 - 36;
+    c.fillStyle = 'rgba(255,255,255,.03)'; rr(c, x, 80, w, 196, 14); c.fill();
+    c.fillStyle = col; c.fillRect(x, 80, 6, 196);
+    c.font = `800 26px ${FS}`; c.fillStyle = col; c.fillText(name, x + 24, 112);
+    if (lead === k) { c.font = `800 18px ${FS}`; const lw = c.measureText('LEADING').width + 22; c.fillStyle = col; rr(c, x + w - lw - 16, 96, lw, 32, 16); c.fill(); c.fillStyle = '#04070f'; c.fillText('LEADING', x + w - lw - 5, 113); }
+    c.font = `800 72px ${FM}`; c.fillStyle = tone(s.ret); c.fillText(fmtPct(s.ret, 2), x + 22, 176);
+    c.font = `700 26px ${FM}`; c.fillStyle = TXT; c.fillText(fmtMoney(eq), x + 24, 232);
+    c.fillStyle = tone(eq - 1000); c.fillText(fmtMoney(eq - (k === 'a' ? PT.start : SM.start), 1), x + 24 + c.measureText(fmtMoney(eq)).width + 24, 232);
+    c.font = `500 20px ${FM}`; c.fillStyle = DIM; c.fillText(`${s.n} trades · ${Object.keys((k === 'a' ? PT : SM).pos).length} open`, x + 24, 262);
+  });
+  // both equity curves
+  c.textBaseline = 'alphabetic';
+  drawCmp(c, 24, 296, W - 48, 250, 20);
+  // the stats side by side
+  const rows = [['Win rate', s => s.win == null ? '—' : s.win.toFixed(0) + '%', 1], ['Avg R per trade', s => fmtR(s.avgR), 1], ['Max drawdown', s => fmtPct(s.dd, 1), 1], ['Return ÷ drawdown', s => s.retDD == null ? '—' : s.retDD.toFixed(2), 1], ['Worst losing streak', s => s.streak + '', -1], ['Profit factor', s => s.pf == null ? '—' : s.pf === Infinity ? '∞' : s.pf.toFixed(2), 1]];
+  const y0 = 588, rh = 34;
+  c.font = `700 18px ${FS}`; c.fillStyle = DIM; c.fillText('', 24, y0 - 8); c.textAlign = 'right'; c.fillStyle = '#ffd166'; c.fillText('TRADER', W - 300, y0 - 10); c.fillStyle = SMCOL; c.fillText('SMC', W - 40, y0 - 10); c.textAlign = 'left';
+  rows.forEach(([k, f], i) => {
+    const y = y0 + 22 + i * rh; if (i % 2 === 0) { c.fillStyle = 'rgba(255,255,255,.025)'; c.fillRect(24, y - 24, W - 48, rh); }
+    c.font = `500 22px ${FS}`; c.fillStyle = DIM; c.fillText(k, 36, y);
+    c.font = `700 22px ${FM}`; c.textAlign = 'right'; c.fillStyle = TXT; c.fillText(f(a), W - 300, y); c.fillText(f(b), W - 40, y); c.textAlign = 'left';
+  });
+  const v = compareVerdict(a, b);
+  c.font = `600 20px ${FS}`; c.fillStyle = v.who === 'Trader' ? '#ffd166' : v.who ? SMCOL : '#aab6d4';
+  wrapText(c, v.t, 24, y0 + 22 + rows.length * rh + 18, W - 48, 26, 2);
   T.tex.needsUpdate = true;
 }
 
