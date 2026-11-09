@@ -921,7 +921,7 @@ function ptStats() {
 // Every setup is also audited in SMC terms (sweep, liquidity, break, FVG / OB quality, premium/discount, higher timeframe,
 // entry depth) into a quality score; weak setups are skipped.
 const SM_DEF = {v: 1, start: 1000, cash: 1000, pos: {}, log: [], eqs: [], day: null, cool: {}, on: true, paused: null, created: 0, lastScan: null,
-  cfg: {riskPct: 1, maxPos: 3, maxLev: 2, minScore: 4, dailyLossPct: 3, feePct: 0.04, slipPct: 0.10, holdH: 12, minVol: 300000, maxStopPct: 15, minRR: 2, maxRR: 5, tp1R: 1.5, stopBuf: 0.3, unlGuard: 1, useScreens: 0, tf15: 1, tf1h: 1, holdH1h: 36, minQ: 55, learn: 1}};
+  cfg: {riskPct: 1, maxPos: 3, maxLev: 2, minScore: 4, dailyLossPct: 3, feePct: 0.04, slipPct: 0.10, holdH: 12, minVol: 300000, maxStopPct: 15, minRR: 2, maxRR: 5, tp1R: 1.5, stopBuf: 0.3, unlGuard: 1, useScreens: 0, tf15: 1, tf1h: 1, holdH1h: 36, minQ: 55, learn: 1, poiRule: 1, ltfConfirm: 1, roomCheck: 1}};
 // Nov 8: the SMC Trader trades on its own SMC judgement, without the Reviewer's screens (one-time switch-off for saved accounts)
 function smMigrate(p) { if (p.cfg.ownJudge !== 1) { p.cfg.useScreens = 0; p.cfg.ownJudge = 1; } return p; }
 let SM = (() => {
@@ -993,9 +993,10 @@ function smSetup(B, P, dir, live) {
     }
     if (!r.zone) { r.stage = 'nozone'; return r; }
     // after the shift: broken (closed through the zone) / tapped before / in the zone now
+    r.touch = -1;
     for (let m = Math.max(k + 1, r.zone.i + 2); m < n; m++) {
       if (bull ? B[m][4] < r.zone.lo : B[m][4] > r.zone.hi) { r.stage = 'invalid'; return r; }
-      if (m < n - 1 && (bull ? B[m][3] <= r.zone.hi : B[m][2] >= r.zone.lo)) r.taps++;
+      if (bull ? B[m][3] <= r.zone.hi : B[m][2] >= r.zone.lo) { if (r.touch < 0) r.touch = m; if (m < n - 1) r.taps++; }
     }
     const inZone = bull ? live <= r.zone.hi * 1.002 && live >= r.zone.lo : live >= r.zone.lo * 0.998 && live <= r.zone.hi;
     r.stage = inZone && !r.taps ? 'inzone' : r.taps ? 'spent' : 'mss';
@@ -1005,9 +1006,66 @@ function smSetup(B, P, dir, live) {
 }
 const SMST = {
   none: {l: 'No setup', c: DIM, code: 0}, sweep: {l: 'Liquidity swept, waiting for a structure shift', c: WARN, code: 1},
-  mss: {l: 'Structure shifted, waiting for the pullback into the zone', c: '#ffb547', code: 2}, inzone: {l: 'In the zone: entry', c: UP, code: 3},
+  mss: {l: 'Structure shifted, waiting for the pullback into the zone', c: '#ffb547', code: 2}, confirm: {l: 'In the 1h zone, waiting for a 15m structure shift (lower-timeframe confirmation)', c: '#ffd166', code: 2.5}, inzone: {l: 'In the zone: entry', c: UP, code: 3},
   spent: {l: 'Zone already used', c: DIM, code: 0}, nozone: {l: 'Shifted, but left no gap or order block to enter from', c: DIM, code: 0}, invalid: {l: 'Zone broken', c: DIM, code: 0}, wait: {l: 'Loading', c: DIM, code: -1},
 };
+/* ---- higher-timeframe supply & demand (from the SMC thesis Fred shared, Nov 9) ----
+   A demand zone is the last down candle (the base) before an impulsive rally: the rally runs 1.5+ ATR within 3 candles
+   or leaves an imbalance. Supply is the mirror. A zone is dead once a candle closes through it; it is fresh until price
+   comes back to it. Lower-timeframe reversals are taken from these zones (points of interest); the opposing zone is
+   where the move is likely to stall, so the target must clear it. */
+function smZonesB(HB) {
+  const out = {D: [], S: [], atr: null, P: null};
+  if (!HB || HB.length < 8) return out;
+  const n = HB.length, atr = smATR(HB, n) || 1e-9; out.atr = atr; out.P = smPivots(HB, 1);
+  for (let i = 1; i < n - 2; i++) for (const bull of [true, false]) {
+    const b = HB[i], nb = HB[i + 1];
+    if (bull ? !(b[4] < b[1]) : !(b[4] > b[1])) continue;              // the base: last opposite candle
+    if (bull ? !(nb[4] > nb[1]) : !(nb[4] < nb[1])) continue;           // the departure starts on the next candle
+    const nx = HB.slice(i + 1, i + 4), far = bull ? Math.max(...nx.map(x => x[2])) - b[2] : b[3] - Math.min(...nx.map(x => x[3]));
+    const gap = i + 2 < n && (bull ? b[2] < HB[i + 2][3] : b[3] > HB[i + 2][2]);
+    if (far < 1.5 * atr && !gap) continue;
+    const z = bull ? {lo: b[3], hi: Math.max(b[1], b[4]), side: 'D'} : {lo: Math.min(b[1], b[4]), hi: b[2], side: 'S'};
+    Object.assign(z, {i, t: b[0], far: far / atr, gap, broke: null, touches: []});
+    for (let m = i + 2; m < n; m++) {
+      if (bull ? HB[m][4] < z.lo : HB[m][4] > z.hi) { z.broke = HB[m][0]; break; }
+      if (m >= i + 3 && (bull ? HB[m][3] <= z.hi : HB[m][2] >= z.lo)) z.touches.push(HB[m][0]);
+    }
+    (bull ? out.D : out.S).push(z);
+  }
+  return out;
+}
+// is the sweep at a higher-timeframe point of interest? 2 = a fresh HTF zone, 1 = an HTF swing (liquidity) or a zone tested before, 0 = neither
+function smPOI(Z, r, B, htfMs) {
+  if (!Z || !Z.atr || !r || !r.swept) return null;
+  const bull = r.dir === 'L', tS = B[r.j][0], a = Z.atr, tol = 0.15 * a;
+  const zones = (bull ? Z.D : Z.S).filter(z => z.t + htfMs <= tS && !z.broke && (bull ? r.ext <= z.hi + tol && r.ext >= z.lo - 0.6 * a : r.ext >= z.lo - tol && r.ext <= z.hi + 0.6 * a));
+  const fresh = zones.find(z => !z.touches.some(t => t < tS - htfMs));
+  const z = fresh || zones[zones.length - 1] || null;
+  const piv = (bull ? Z.P.L : Z.P.H).filter(p => p.t + htfMs <= tS).find(p => bull ? r.ext < p.px && r.ext > p.px - 1.2 * a : r.ext > p.px && r.ext < p.px + 1.2 * a);
+  return {ok: fresh ? 2 : (z || piv) ? 1 : 0, zone: z ? {lo: z.lo, hi: z.hi, side: z.side, t: z.t, fresh: !!fresh, far: z.far} : null, piv: piv ? piv.px : null};
+}
+// the nearest opposing HTF zone between entry and target (supply above a long, demand below a short)
+function smRoom(Z, dir, live, target) {
+  if (!Z || !target) return null;
+  const bull = dir === 'L', opp = (bull ? Z.S : Z.D).filter(z => !z.broke && (bull ? z.lo > live && z.lo < target : z.hi < live && z.hi > target));
+  if (!opp.length) return {clear: true};
+  const z = opp.reduce((a, b) => bull ? (b.lo < a.lo ? b : a) : (b.hi > a.hi ? b : a));
+  return {clear: false, edge: bull ? z.lo : z.hi, zone: {lo: z.lo, hi: z.hi}};
+}
+// lower-timeframe confirmation for a 1h setup: once price is in the 1h zone, a 15m close beyond the last 15m swing of the pullback
+function smConfirm15(s, r) {
+  const K = smBars(s, '15m'); if (!K || K.length < 20 || !r.zone) return {ok: false, why: 'no 15m candles'};
+  const bull = r.dir === 'L', z = r.zone;
+  const t0 = r.touchT || 0; let i0 = K.findIndex(b => b[0] >= t0 && (bull ? b[3] <= z.hi : b[2] >= z.lo));
+  if (i0 < 0) return {ok: false, why: 'price has not reached the zone on the 15m'};
+  let ex = i0; for (let m = i0; m < K.length; m++) if (bull ? K[m][3] < K[ex][3] : K[m][2] > K[ex][2]) ex = m;
+  if (bull ? K[ex][3] < z.lo * 0.998 && K.slice(ex).some(b => b[4] < z.lo) : K[ex][2] > z.hi * 1.002 && K.slice(ex).some(b => b[4] > z.hi)) return {ok: false, why: '15m closed through the zone'};
+  const P = smPivots(K, 1), piv = (bull ? P.H : P.L).filter(p => p.i < ex && p.i >= i0 - 8);
+  const ref = piv.length ? piv[piv.length - 1].px : (bull ? Math.max(...K.slice(Math.max(0, i0 - 3), i0 + 1).map(b => b[2])) : Math.min(...K.slice(Math.max(0, i0 - 3), i0 + 1).map(b => b[3])));
+  const m = K.findIndex((b, j) => j > ex && (bull ? b[4] > ref : b[4] < ref));
+  return m > 0 ? {ok: true, ref, at: K[m][0], low: bull ? K[ex][3] : K[ex][2]} : {ok: false, ref, why: `waiting for a 15m close ${bull ? 'above' : 'below'} ${fmtPx(ref)}`};
+}
 // the best setup across the two entry timeframes (in the zone first, then the higher-quality one)
 function smcRead(s) {
   const R = ['15m', '1h'].filter(tf => SM.cfg[tf === '15m' ? 'tf15' : 'tf1h']).map(tf => smcReadTf(s, tf));
@@ -1025,12 +1083,25 @@ function smcReadTf(s, tf) {
   if (!cands.length) return {stage: 'none', st: SMST.none, checks: [], score: 0, bias, live, tf, htf: T.htf};
   const rank = r => (r.stage === 'inzone' ? 1e6 : r.stage === 'mss' ? 5e5 : r.stage === 'sweep' ? 2e5 : 0) + r.j;
   const r = cands.sort((a, b) => rank(b) - rank(a))[0], bull = r.dir === 'L';
+  const HB = smBars(s, T.htf), Z = smZonesB(HB), hms = T.htf === '4h' ? 4 * 3600e3 : 3600e3;
+  // 1h setups: price in the 1h zone (first test, or still testing within 4 hours) → wait for a 15m structure shift (lower-timeframe confirmation)
+  let conf = null;
+  if (tf === '1h' && SM.cfg.ltfConfirm && r.zone && r.touch >= 0 && ['inzone', 'spent'].includes(r.stage) && n - 1 - r.touch <= 6) {
+    r.touchT = B[r.touch][0]; conf = smConfirm15(s, r);
+    // after the 15m break, enter while price is still at or below the broken 15m level (its retest), not after it has run away
+    const zh = r.zone.hi - r.zone.lo, cap = conf.ok ? conf.ref : 0, near = bull ? live >= r.zone.lo && live <= Math.max(r.zone.hi + 0.5 * zh, cap) : live <= r.zone.hi && live >= Math.min(r.zone.lo - 0.5 * zh, cap || Infinity);
+    r.stage = conf.ok ? (near ? 'inzone' : 'spent') : (/through/.test(conf.why || '') ? 'invalid' : 'confirm');
+  }
   const hi24 = Math.max(...B.map(b => b[2])), lo24 = Math.min(...B.map(b => b[3])), pos = (live - lo24) / ((hi24 - lo24) || 1);
   const sb = smRules().stopBuf, stop = bull ? r.ext * (1 - sb / 100) : r.ext * (1 + sb / 100), risk = Math.abs(live - stop);
   // target: the nearest liquidity pool (an untaken swing or the 24h extreme) that pays at least minRR
   const pools = bull ? [...P.H.filter(p => p.px > live).map(p => p.px), hi24].sort((a, b) => a - b) : [...P.L.filter(p => p.px < live).map(p => p.px), lo24].sort((a, b) => b - a);
   let target = null, rr = null;
   for (const px of pools) { const q = Math.abs(px - live) / (risk || 1); if (q >= SM.cfg.minRR) { target = q > SM.cfg.maxRR ? live + (bull ? 1 : -1) * SM.cfg.maxRR * risk : px; rr = Math.min(q, SM.cfg.maxRR); break; } }
+  // room: an opposing higher-timeframe zone before the target caps it at the zone's near edge; if that leaves less than minRR, there's no room
+  let room = SM.cfg.roomCheck ? smRoom(Z, r.dir, live, target) : null;
+  if (room && !room.clear) { const q = Math.abs(room.edge - live) / (risk || 1); room.rr = q; if (q >= SM.cfg.minRR) { target = room.edge; rr = Math.min(q, SM.cfg.maxRR); room.capped = true; } else room.blocked = true; }
+  const poi = smPOI(Z, r, B, hms);
   const vBefore = B.slice(Math.max(0, r.j - 24), r.j).reduce((a, b) => a + b[5], 0) / Math.max(1, Math.min(24, r.j));
   const vLeg = Math.max(...B.slice(r.j, (r.k > 0 ? r.k : n - 1) + 1).map(b => b[5]));
   const P_ = (ok, label, d) => ({ok, label, d});
@@ -1045,18 +1116,24 @@ function smcReadTf(s, tf) {
   const score = checks.filter(c => c.ok === true).length;
   const against = !!bias && (bull ? bias === 'bear' : bias === 'bull');
   return {stage: r.stage, st: SMST[r.stage], dir: r.dir, setup: r, zone: r.zone, stop, target, rr, score, checks, bias, live, pos, risk, dist: risk / live,
-    tf, htf: T.htf, against, q: smQuality(B, r, live, tf, bias, pos)};
+    tf, htf: T.htf, against, poi, room, conf, q: smQuality(B, r, live, tf, bias, pos, {poi, room, htf: T.htf, conf})};
 }
 /* ---- setup quality in SMC terms (0–100, A–F) ---- */
 function smATR(B, end, n = 14) { let a = 0, c = 0; for (let i = Math.max(1, end - n); i < end; i++) { a += Math.max(B[i][2] - B[i][3], Math.abs(B[i][2] - B[i - 1][4]), Math.abs(B[i][3] - B[i - 1][4])); c++; } return c ? a / c : null; }
 // each item: k (factor), ok 2 good / 1 fair / 0 poor, t (plain words)
-function smQuality(B, r, live, tf, bias, pos) {
+function smQuality(B, r, live, tf, bias, pos, X = {}) {
   if (!r || !r.zone || !(r.k > 0)) return null;
   const bull = r.dir === 'L', atr = smATR(B, r.j) || (B[r.j][2] - B[r.j][3]) || 1e-9, I = [], add = (k, ok, t) => I.push({k, ok, t});
   const sw = Math.abs(r.ext - r.swept.px) / atr;
   add('sweep', sw >= 0.15 && sw <= 2.5 ? 2 : sw < 0.15 ? 1 : 0, sw < 0.15 ? `Sweep barely took the level (${sw.toFixed(2)} ATR)` : sw > 2.5 ? `Sweep ran ${sw.toFixed(1)} ATR past the level: more a breakdown than a stop hunt` : `Clean sweep, ${sw.toFixed(2)} ATR through the level, closed back inside`);
   const P = smPivots(B, 2), eq = (bull ? P.L : P.H).filter(p => p.i < r.j && p.i >= r.j - 48 && Math.abs(p.px - r.swept.px) <= 0.25 * atr).length;
   add('liq', eq >= 2 ? 2 : 1, eq >= 2 ? `Swept equal ${bull ? 'lows' : 'highs'} (${eq} touches): real resting liquidity` : `Swept a single swing ${bull ? 'low' : 'high'}, not equal ${bull ? 'lows' : 'highs'}`);
+  // the departure from the zone (supply & demand strength: how impulsive the move away was)
+  { let xi = r.j; for (let m = r.j; m <= r.k; m++) if (bull ? B[m][3] <= B[xi][3] : B[m][2] >= B[xi][2]) xi = m;
+    let hi = xi; for (let m = xi; m <= Math.min(r.k + 2, B.length - 1); m++) if (bull ? B[m][2] >= B[hi][2] : B[m][3] <= B[hi][3]) hi = m;
+    const dep = Math.abs((bull ? B[hi][2] : B[hi][3]) - r.ext) / atr, nb = hi - xi + 1;
+    const big = B.slice(xi, hi + 1).filter(b => (bull ? b[4] > b[1] : b[4] < b[1]) && Math.abs(b[4] - b[1]) >= 0.6 * (b[2] - b[3]) && b[2] - b[3] >= atr).length;
+    add('dep', (dep >= 2.5 && nb <= 6) || big >= 2 ? 2 : dep >= 1.5 ? 1 : 0, `${(dep >= 2.5 && nb <= 6) || big >= 2 ? 'Impulsive' : dep >= 1.5 ? 'Moderate' : 'Weak'} departure: ${dep.toFixed(1)} ATR in ${nb} candle${nb > 1 ? 's' : ''}${big ? `, ${big} large-bodied` : ''}`); }
   const kb = B[r.k], body = Math.abs(kb[4] - kb[1]) / Math.max(1e-12, kb[2] - kb[3]), past = Math.abs(kb[4] - r.lvl.px) / atr;
   add('mss', body >= 0.6 && past >= 0.1 ? 2 : body >= 0.4 ? 1 : 0, body >= 0.6 && past >= 0.1 ? `Decisive structure break: ${Math.round(body * 100)}% body, closed ${past.toFixed(2)} ATR beyond` : `Weak structure break: ${Math.round(body * 100)}% body, ${past.toFixed(2)} ATR beyond the level`);
   const z = r.zone, zs = (z.hi - z.lo) / atr, vb = B.slice(Math.max(0, r.j - 24), r.j), vAvg = vb.length ? vb.reduce((a, b) => a + b[5], 0) / vb.length : 0;
@@ -1072,6 +1149,9 @@ function smQuality(B, r, live, tf, bias, pos) {
   }
   add('pd', bull ? (pos <= 0.35 ? 2 : pos <= 0.5 ? 1 : 0) : (pos >= 0.65 ? 2 : pos >= 0.5 ? 1 : 0), `${bull ? 'Discount' : 'Premium'} location: ${Math.round(pos * 100)}% of the range${(bull ? pos > 0.5 : pos < 0.5) ? ` (in ${bull ? 'premium' : 'discount'}: wrong side)` : ''}`);
   const htf = SM_TF[tf].htf, al = bias ? (bull ? bias === 'bull' : bias === 'bear') : null;
+  if (X.poi) add('poi', X.poi.ok, X.poi.ok === 2 ? `Sweep into a fresh ${htf} ${bull ? 'demand' : 'supply'} zone (${fmtPx(X.poi.zone.lo)}–${fmtPx(X.poi.zone.hi)}): reversal from a higher-timeframe point of interest` : X.poi.ok === 1 ? (X.poi.zone ? `Sweep into a ${htf} ${bull ? 'demand' : 'supply'} zone that was already tested` : `Sweep took a ${htf} swing ${bull ? 'low' : 'high'} (${fmtPx(X.poi.piv)}): higher-timeframe liquidity`) : `No ${htf} zone or swing at the sweep: a reversal in the middle of the ${htf} range`);
+  if (X.room) add('room', X.room.clear ? 2 : X.room.capped ? 1 : 0, X.room.clear ? `No opposing ${htf} ${bull ? 'supply' : 'demand'} before the target` : X.room.capped ? `Target moved to the ${htf} ${bull ? 'supply' : 'demand'} at ${fmtPx(X.room.edge)} (${X.room.rr.toFixed(1)}R)` : `${htf} ${bull ? 'supply' : 'demand'} at ${fmtPx(X.room.edge)} is only ${X.room.rr.toFixed(1)}R away: no room`);
+  if (X.conf && X.conf.ok) add('conf', 2, `15m confirmed: closed ${bull ? 'above' : 'below'} ${fmtPx(X.conf.ref)} inside the 1h zone`);
   add('htf', al === true ? 2 : al === null ? 1 : 0, al === true ? `${htf} structure agrees (${bias === 'bull' ? 'rising' : 'falling'})` : al === null ? `${htf} structure unclear` : `${htf} structure is ${bias === 'bull' ? 'rising' : 'falling'}: against the trade`);
   const dz = bull ? (z.hi - live) / Math.max(1e-12, z.hi - z.lo) : (live - z.lo) / Math.max(1e-12, z.hi - z.lo);
   add('depth', dz >= 0.5 ? 2 : dz >= 0.1 ? 1 : 0, dz >= 0.5 ? `Entered at or past the zone's midpoint (${Math.round(Math.min(1, dz) * 100)}% in)` : `Entered at the edge of the zone (${Math.round(Math.max(0, dz) * 100)}% in)`);
@@ -1093,7 +1173,7 @@ function smClose(s, frac, why) {
   if (frac >= 1 || p.qty <= p.qty0 * 1e-6) {
     const R = p.risk ? p.realized / p.risk : 0;
     SM.log.unshift({s, b: p.b, side: p.side, t0: p.t, t1: now(), entry: p.entry, exit: fill, qty: p.qty0, notional: p.qty0 * p.entry, pnl: p.realized, R, fees: p.fees,
-      funding: p.funding || 0, why: p.why, exitWhy: why, stop0: p.stop0, maxR: p.maxR || 0, sc: p.sc, rr: p.rr, zoneKind: p.zoneKind, target: p.target, zone: p.zone ? {lo: p.zone.lo, hi: p.zone.hi, kind: p.zone.kind} : null, sweep: p.sweep, lvl: p.lvl, unlK: p.unlK || 'none', strat: 'smc', tf: p.tf || '15m', htfBias: p.htfBias || null, q: p.q || null, holdH: p.holdH, cx: p.cx, scr: p.scr || null, ex: (p.exits || []).map(e => [e.t, e.px, e.why])});
+      funding: p.funding || 0, why: p.why, exitWhy: why, stop0: p.stop0, maxR: p.maxR || 0, sc: p.sc, rr: p.rr, zoneKind: p.zoneKind, target: p.target, zone: p.zone ? {lo: p.zone.lo, hi: p.zone.hi, kind: p.zone.kind} : null, sweep: p.sweep, lvl: p.lvl, unlK: p.unlK || 'none', strat: 'smc', tf: p.tf || '15m', htfBias: p.htfBias || null, q: p.q || null, poi: p.poi || null, holdH: p.holdH, cx: p.cx, scr: p.scr || null, ex: (p.exits || []).map(e => [e.t, e.px, e.why])});
     if (SM.log.length > 500) SM.log.pop();
     delete SM.pos[s]; SM.cool[s] = now();
     raise('smc', s, 'close' + now(), `SMC PAPER ${p.side === 'L' ? 'long' : 'short'} ${p.b} closed ${fmtMoney(p.realized, 1)} (${R >= 0 ? '+' : ''}${R.toFixed(2)}R) — ${why}`, p.realized >= 0 ? 1 : -1, 0, true);
@@ -1111,10 +1191,10 @@ function smTryEnter(c) {
   if (qty * fill < 10) { c.skip = 'not enough room under the leverage cap'; return false; }
   const fee = qty * fill * SM.cfg.feePct / 100; SM.cash -= fee;
   const rr = Math.abs(r.target - fill) / Math.abs(fill - stop), uc = unlCtx(s);
-  const why = `${r.dir === 'L' ? 'Bullish' : 'Bearish'} SMC ${r.tf || '15m'} ${r.score}/6, quality ${r.q ? r.q.grade : '?'} — swept ${fmtPx(r.setup.swept.px)}, shift through ${fmtPx(r.setup.lvl.px)}, ${r.zone.kind} ${fmtPx(r.zone.lo)}–${fmtPx(r.zone.hi)}, target ${fmtPx(r.target)} (${rr.toFixed(1)}R)`;
+  const why = `${r.dir === 'L' ? 'Bullish' : 'Bearish'} SMC ${r.tf || '15m'} ${r.score}/6, quality ${r.q ? r.q.grade : '?'} — swept ${fmtPx(r.setup.swept.px)}, shift through ${fmtPx(r.setup.lvl.px)}, ${r.zone.kind} ${fmtPx(r.zone.lo)}–${fmtPx(r.zone.hi)}, target ${fmtPx(r.target)} (${rr.toFixed(1)}R)${r.poi && r.poi.ok === 2 ? `, from a fresh ${r.htf} ${r.dir === 'L' ? 'demand' : 'supply'} zone` : r.poi && r.poi.ok === 1 ? `, at ${r.htf} ${r.poi.zone ? 'zone' : 'liquidity'}` : ''}${r.conf && r.conf.ok ? ', 15m confirmed' : ''}${r.room && r.room.capped ? `, target capped at ${r.htf} ${r.dir === 'L' ? 'supply' : 'demand'}` : ''}`;
   SM.pos[s] = {cx: entryCtx(s, r.checks), scr: typeof scrRec === 'function' ? scrRec(c) : null, side, b: base(s), qty, qty0: qty, entry: fill, stop, stop0: stop, target: r.target, rr, t: now(), risk: qty * Math.abs(fill - stop), realized: -fee, fees: fee, funding: 0,
     why, sc: r.score, zoneKind: r.zone.kind, zone: r.zone, sweep: r.setup.ext, lvl: r.setup.lvl.px, unlK: uc.phase && uc.big ? uc.phase : 'none', nf: null, be: false, tp1: false, maxR: 0, exits: [], dist: dist * 100,
-    tf: r.tf || '15m', htfBias: r.bias || null, holdH: (r.tf === '1h' ? SM.cfg.holdH1h : SM.cfg.holdH), q: r.q ? {score: r.q.score, grade: r.q.grade, items: r.q.items, zs: r.q.zs, dz: r.q.dz} : null, tp1R: smRules().tp1R};
+    tf: r.tf || '15m', htfBias: r.bias || null, holdH: (r.tf === '1h' ? SM.cfg.holdH1h : SM.cfg.holdH), q: r.q ? {score: r.q.score, grade: r.q.grade, items: r.q.items, zs: r.q.zs, dz: r.q.dz} : null, tp1R: smRules().tp1R, poi: r.poi && r.poi.zone ? r.poi.zone : null};
   raise('smc', s, 'open' + now(), `SMC PAPER ${side === 'L' ? 'LONG' : 'SHORT'} ${base(s)} @ ${fmtPx(fill)} · stop ${fmtPx(stop)} (${(dist * 100).toFixed(1)}%) · target ${fmtPx(r.target)} (${rr.toFixed(1)}R) · ${r.tf || '15m'} ${r.zone.kind} entry, ${r.score}/6, quality ${r.q ? r.q.grade : '?'}`, side === 'L' ? 1 : -1, 0, true);
   smSave(); return true;
 }
@@ -1164,6 +1244,8 @@ function smTick() {
     else if (SM.cool[s] && t - SM.cool[s] < 2 * 3600e3) c.skip = 'cooling down after a recent trade';
     else if (r.against) c.skip = `${r.htf} structure is ${r.bias === 'bear' ? 'falling' : 'rising'}: no ${r.dir === 'L' ? 'longs' : 'shorts'} on the ${r.tf} against it`;
     else if (smRules().needHTF && !(r.bias && (r.dir === 'L' ? r.bias === 'bull' : r.bias === 'bear'))) c.skip = `${r.htf} structure must agree (Reviewer's SMC rule); it's ${r.bias ? (r.bias === 'bull' ? 'rising' : 'falling') : 'unclear'}`;
+    else if (r.poi && r.poi.ok === 0 && (smRules().needPOI || (SM.cfg.poiRule && !(r.bias && (r.dir === 'L' ? r.bias === 'bull' : r.bias === 'bear'))))) c.skip = `${r.htf} isn't trending ${r.dir === 'L' ? 'up' : 'down'} and the sweep isn't at a ${r.htf} ${r.dir === 'L' ? 'demand zone or swing low' : 'supply zone or swing high'}${smRules().needPOI ? ' (Reviewer\'s SMC rule)' : ''}`;
+    else if (r.room && r.room.blocked) c.skip = `${r.htf} ${r.dir === 'L' ? 'supply' : 'demand'} at ${fmtPx(r.room.edge)} is only ${r.room.rr.toFixed(1)}R away (needs ${SM.cfg.minRR}R of room)`;
     else if (r.score < SM.cfg.minScore) c.skip = `only ${r.score}/6 confluences (needs ${SM.cfg.minScore})`;
     else if (r.q && r.q.score < smRules().minQ) c.skip = `setup quality ${r.q.grade} (${r.q.score}/100, needs ${smRules().minQ})${r.q.worst ? ': ' + r.q.worst.toLowerCase() : ''}`;
     else if (smRules().fvgOnly && r.zone.kind !== 'FVG') c.skip = 'order block entry: FVG only (Reviewer\'s SMC rule)';
@@ -1225,7 +1307,7 @@ function compareVerdict(a, b) {
 // the SMC rules in force: your settings, plus the Reviewer's SMC-concept adjustments when learning is on (RV.smAdj)
 function smRules() {
   const c = SM.cfg, A = (SM.cfg.learn && typeof RV !== 'undefined' && RV.smAdj) || {};
-  return {minQ: Math.max(c.minQ, A.minQ || 0), needHTF: !!A.needHTF, fvgOnly: !!A.fvgOnly, needDepth: !!A.needDepth, noTf: A.noTf || null,
+  return {minQ: Math.max(c.minQ, A.minQ || 0), needHTF: !!A.needHTF, needPOI: !!A.needPOI, fvgOnly: !!A.fvgOnly, needDepth: !!A.needDepth, noTf: A.noTf || null,
     stopBuf: A.stopBuf || c.stopBuf, tp1R: A.tp1R || c.tp1R, riskMul: A.riskMul || 1};
 }
 
@@ -1398,9 +1480,12 @@ const YOU_PHRASES = [
   [/against (the )?(1h|4h|1 hour|4 hour|higher|htf|bigger|main) ?(tf|timeframe|trend|structure)?|htf (was |is )?(against|bear|bull|down|up|falling|rising)|(1h|4h|higher timeframe|htf) (was |is )?(falling|dropping|down|rising|up|bearish|bullish)|逆(大)?(勢|趨勢)|(1h|4h|大級別|大時框|一小時|四小時).{0,4}(跌|升)緊?/, {b: ['htf']}],
   [/(weak|bad|poor|no|not a( good| real)?|ugly|messy) (ob|order block)|(ob|order block) (was |is )?(weak|bad|poor|not good|messy)|ob(唔好|麻麻|差|唔靚)/, {b: ['ob']}],
   [/(small|tiny|weak|bad|poor) (fvg|gap|imbalance)|(fvg|gap) (was |is )?(too )?(small|tiny|weak|bad|poor)|(no|weak) displacement|fvg(太細|唔好|麻麻|差)/, {b: ['gap']}],
+  [/(no|not at a|not from a|missing) (htf |higher timeframe |1h |4h )?(poi|zone|demand|supply|key level)|middle of (the )?(range|nowhere)|not at (any|a) (htf |1h |4h )?(level|zone)|冇(大級別)?(支撐|阻力|zone)/, {b: ['poi']}],
+  [/(ran|ran straight|bought|sold|longed|shorted) into (a |the )?(supply|demand|resistance|support)|no room|target (was )?(behind|past|beyond) (a |the )?(supply|demand|zone)|頂住阻力|撞阻力/, {b: ['room']}],
   [/(no|weak|fake|not a (real|clean)) (sweep|liquidity grab|grab)|sweep (was |is )?(weak|small|not clean)|didn'?t (sweep|take|grab) (the )?liquidity|冇(掃|洗)(到)?流動性/, {b: ['sweep']}],
   [/(good|clean|nice|valid|strong) (fvg|gap|imbalance)|(fvg|gap) (was |is )?(good|clean|nice|fine)|靚(嘅)?fvg/, {d: ['smc_gap']}],
   [/(good|clean|nice|valid|strong) (ob|order block)|(ob|order block) (was |is )?(good|clean|nice|fine)|靚(嘅)?ob/, {d: ['smc_ob']}],
+  [/(good|right|valid|nice) (htf |1h |4h )?(poi|zone|level)|(from|at) (the |a )?(htf|1h|4h) (demand|supply|zone)/, {d: ['smc_poi']}],
   [/(htf|higher timeframe|1h|4h) (was |is )?(fine|ok|with (me|it|us))|with the (htf|higher timeframe|trend)|順勢/, {d: ['smc_htf']}],
   [/good trade|fine trade|nothing wrong|would (have )?(done|taken|take) the same|same trade|冇問題|做得好|正確/, {a: 'same'}]];
 function youRead(note) {
@@ -1420,8 +1505,8 @@ function youRead(note) {
   return {a: [...a], d: [...d], b: [...b], hits, any: a.size + d.size + b.size > 0};
 }
 // plain-language reading of a comment, for the form and the review wall
-const YOU_B_TXT = {htf: 'traded against the higher timeframe', ob: 'the order block was poor', gap: 'the FVG was poor', sweep: 'the sweep was weak', depth: 'entered at the zone\'s edge'};
-const YOU_D_TXT = {tight: 'the stop was fine', quickstop: 'the stop was fine', forming: 'entering at "forming" was fine', smc_gap: 'the FVG was good', smc_ob: 'the order block was good', smc_htf: 'the higher timeframe was fine'};
+const YOU_B_TXT = {poi: 'not at a higher-timeframe zone', room: 'ran into an opposing zone', htf: 'traded against the higher timeframe', ob: 'the order block was poor', gap: 'the FVG was poor', sweep: 'the sweep was weak', depth: 'entered at the zone\'s edge'};
+const YOU_D_TXT = {tight: 'the stop was fine', quickstop: 'the stop was fine', forming: 'entering at "forming" was fine', smc_gap: 'the FVG was good', smc_ob: 'the order block was good', smc_htf: 'the higher timeframe was fine', smc_poi: 'it was at a good zone'};
 const YOU_A_TXT = {same: 'same trade', skip: 'skip it', later: 'enter later', earlier: 'enter earlier', exitE: 'exit earlier', hold: 'hold longer', wider: 'wider stop', tighter: 'tighter stop', bigger: 'bigger size', smaller: 'smaller size'};
 function youReadTxt(c) {
   if (!c || !c.any) return '';
@@ -1490,7 +1575,7 @@ function rvYourCalls(T, TM, p, why, base, st) {
 // Factors from each trade's quality audit (sweep, liquidity, structure break, FVG / OB, premium/discount, higher timeframe,
 // entry depth), its entry timeframe and its quality grade. A change needs 5+ trades on each side and a 0.5R+ gap with the
 // better side making money; your SMC reviews count the same way as for the Trader. RV.smAdj is what the SMC Trader applies.
-const SM_FACTOR = {sweep: 'Sweep', liq: 'Liquidity taken', mss: 'Structure break', gap: 'FVG size', disp: 'FVG displacement', ob: 'Order block', obliq: 'OB took the liquidity', pd: 'Premium / discount', htf: 'Higher timeframe', depth: 'Entry depth in the zone'};
+const SM_FACTOR = {sweep: 'Sweep', liq: 'Liquidity taken', mss: 'Structure break', gap: 'FVG size', disp: 'FVG displacement', ob: 'Order block', obliq: 'OB took the liquidity', pd: 'Premium / discount', htf: 'Higher timeframe', depth: 'Entry depth in the zone', dep: 'Departure from the zone', poi: 'Higher-timeframe zone (POI)', room: 'Room to the target', conf: '15m confirmation'};
 function smStudy(L) {
   const T = L.filter(x => x.q && x.q.items && !rvManual(x)), F = {};
   for (const k in SM_FACTOR) {
@@ -1502,6 +1587,7 @@ function smStudy(L) {
 function smLearn() {
   const L = SM.log, St = smStudy(L), A = {}, W = {}, ok = (a, b) => a.n >= 5 && b.n >= 5 && a.avgR - b.avgR >= 0.5 && a.avgR > 0;
   const h = St.htf; if (h.agrees && h.unclear && ok(h.agrees, h.unclear)) { A.needHTF = true; W.needHTF = `Higher timeframe agreeing: ${h.agrees.n} trades, ${fmtR(h.agrees.avgR)}; unclear: ${h.unclear.n}, ${fmtR(h.unclear.avgR)}. Only trade with the higher timeframe.`; }
+  const fp = St.F.poi; if (fp && fp.good && fp.rest && ok(fp.good, fp.rest)) { A.needPOI = true; W.needPOI = `Sweeps into a fresh higher-timeframe zone: ${fp.good.n} trades, ${fmtR(fp.good.avgR)}; elsewhere: ${fp.rest.n}, ${fmtR(fp.rest.avgR)}. Only trade from a higher-timeframe zone or swing.`; }
   const kd = St.kind; if (kd.FVG && kd.OB && ok(kd.FVG, kd.OB)) { A.fvgOnly = true; W.fvgOnly = `FVG entries ${fmtR(kd.FVG.avgR)} (${kd.FVG.n}) vs order blocks ${fmtR(kd.OB.avgR)} (${kd.OB.n}). FVGs only.`; }
   const hiQ = rvAgg(L.filter(x => x.q && !rvManual(x) && x.q.score >= 70)), loQ = rvAgg(L.filter(x => x.q && !rvManual(x) && x.q.score < 70));
   if (ok(hiQ, loQ)) { A.minQ = 70; W.minQ = `Quality B or better: ${hiQ.n} trades, ${fmtR(hiQ.avgR)}; below B: ${loQ.n}, ${fmtR(loQ.avgR)}. Raise the bar to 70/100.`; }
@@ -1509,6 +1595,8 @@ function smLearn() {
   const d = St.F.depth; if (d && ok(d.good, d.rest)) { A.needDepth = true; W.needDepth = `Entries at the zone's midpoint or deeper: ${fmtR(d.good.avgR)} (${d.good.n}) vs at the edge: ${fmtR(d.rest.avgR)} (${d.rest.n}). Wait for the midpoint.`; }
   // your SMC reviews: your comments first (what you'd have done, and which part of the setup you think was poor)
   const Y = youTally(L);
+  if (Y.flags('poi') && !A.needPOI) { A.needPOI = true; W.needPOI = `Your comments: not at a higher-timeframe zone on ${Y.bad.poi} trades ("${String(Y.q['b:poi']).slice(0, 70)}"). Only trade from a higher-timeframe zone or swing.`; }
+  if (Y.flags('room') && !A.minQ) { A.minQ = Math.min(85, SM.cfg.minQ + 10); W.minQ = `Your comments: ran into an opposing zone on ${Y.bad.room} trades ("${String(Y.q['b:room']).slice(0, 70)}"). Raise the quality bar to ${A.minQ}/100.`; }
   if (Y.flags('htf') && !A.needHTF) { A.needHTF = true; W.needHTF = `Your comments: traded against the higher timeframe on ${Y.bad.htf} trades ("${String(Y.q['b:htf']).slice(0, 70)}"). Only trade when the higher timeframe agrees.`; }
   if (Y.flags('ob') && !A.fvgOnly) { A.fvgOnly = true; W.fvgOnly = `Your comments: the order block was poor on ${Y.bad.ob} trades ("${String(Y.q['b:ob']).slice(0, 70)}"). FVG entries only.`; }
   if ((Y.flags('gap') || Y.flags('sweep')) && !A.minQ) { const k = Y.flags('gap') ? 'gap' : 'sweep'; A.minQ = Math.min(85, SM.cfg.minQ + 10); W.minQ = `Your comments: ${k === 'gap' ? 'a poor FVG' : 'a weak sweep'} on ${Y.bad[k]} trades ("${String(Y.q['b:' + k]).slice(0, 70)}"). Raise the quality bar to ${A.minQ}/100.`; }
@@ -1517,8 +1605,8 @@ function smLearn() {
   if (Y.says('wider')) { A.stopBuf = Math.min(1.5, SM.cfg.stopBuf * 2); W.stopBuf = `${Y.src('wider', 'wider stop')} Stop further beyond the sweep.`; }
   if (Y.says('exitE') && SM.cfg.tp1R > 1.2) { A.tp1R = 1.2; W.tp1R = `${Y.src('exitE', 'exit earlier')} Bank half at +1.2R.`; }
   if (Y.says('smaller')) { A.riskMul = 0.75; W.riskMul = `${Y.src('smaller', 'smaller size')} Size ×0.75.`; }
-  for (const k of ['htf', 'depth', 'gap', 'ob']) if (Y.rejects('smc_' + k)) {
-    const m = {htf: 'needHTF', depth: 'needDepth', gap: 'minQ', ob: 'fvgOnly'}[k];
+  for (const k of ['htf', 'depth', 'gap', 'ob', 'poi']) if (Y.rejects('smc_' + k)) {
+    const m = {htf: 'needHTF', depth: 'needDepth', gap: 'minQ', ob: 'fvgOnly', poi: 'needPOI'}[k];
     if (A[m]) { delete A[m]; W.youHold = (W.youHold ? W.youHold + ' ' : '') + `Held "${SM_FACTOR[k]}" rule: ${Y.disTxt('smc_' + k)}.`; }
   }
   // tell the SMC Trader what changed
