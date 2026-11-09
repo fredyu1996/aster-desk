@@ -141,7 +141,7 @@ canvas.chart{width:100%;height:260px;display:block;border-radius:10px;background
   <div class="st" id="sOi">OI history —</div>
   <div class="st" id="sSync" style="cursor:pointer;white-space:nowrap" title="Share this account across computers"></div>
   <div class="sp"></div>
-  <div class="help"><kbd>WASD</kbd> move · <kbd>Mouse</kbd> look · <kbd>E</kbd> open desk · <kbd>1</kbd>–<kbd>6</kbd> agents · <kbd>C</kbd> coin check · <kbd>V</kbd> review wall · <kbd>Esc</kbd> release</div>
+  <div class="help"><kbd>WASD</kbd> move · <kbd>Mouse</kbd> look · <kbd>E</kbd> open desk · <kbd>1</kbd>–<kbd>6</kbd> agents · <kbd>C</kbd> coin check · <kbd>V</kbd> review wall · <kbd>B</kbd> SMC wall · <kbd>Esc</kbd> release</div>
   <div class="st" id="clock">--:--:--</div>
 </div>
 <div id="netbar"></div>
@@ -161,7 +161,7 @@ canvas.chart{width:100%;height:260px;display:block;border-radius:10px;background
     <div id="netwarn"></div>
     <div class="row">
       <button class="btn" id="enter">Enter the floor</button>
-      <div class="keys"><span><span class="kbd">WASD</span> move</span><span><span class="kbd">Shift</span> run</span><span><span class="kbd">E</span> talk to agent</span><span><span class="kbd">1–6</span> open a desk</span><span><span class="kbd">C</span> check any coin</span><span><span class="kbd">V</span> review wall</span><span><span class="kbd">Esc</span> free mouse</span></div>
+      <div class="keys"><span><span class="kbd">WASD</span> move</span><span><span class="kbd">Shift</span> run</span><span><span class="kbd">E</span> talk to agent</span><span><span class="kbd">1–6</span> open a desk</span><span><span class="kbd">C</span> check any coin</span><span><span class="kbd">V</span> review wall</span><span><span class="kbd">B</span> SMC positions wall</span><span><span class="kbd">Esc</span> free mouse</span></div>
     </div>
     <div class="disc">Data: Aster public futures API (fapi.asterdex.com), read-only, no keys. Agents are rule-based signal monitors, not financial advice. Small caps are thin and fast — size and stops are on you.</div>
   </div>
@@ -1521,6 +1521,17 @@ const RWALL = canvasTex(3200, Math.round(3200 * RWALL_H / RWALL_W));
   m.rotation.y = Math.PI / 2; m.position.set(-RX + 0.15, 2.3, RWALL_Z); scene.add(m);
   const wl = new THREE.PointLight(0xc5f05a, 0.35, 9, 2); wl.position.set(-RX + 2.5, 2.4, RWALL_Z); scene.add(wl);
 }
+/* ---- south (back) wall: the SMC Trader's open positions, each beside its live chart ---- */
+const SWALL_W = 13, SWALL_H = 2.7, SWALL_X = -3, SWALL_Y = 2.5;
+const SWALL = canvasTex(3200, Math.round(3200 * SWALL_H / SWALL_W));
+{
+  const fr = mat(0x1a2236, {metalness: .6, roughness: .4});
+  const b = new THREE.Mesh(new THREE.BoxGeometry(SWALL_W + 0.36, SWALL_H + 0.36, 0.12), fr); b.position.set(SWALL_X, SWALL_Y, RZ - 0.08); scene.add(b);
+  for (const y of [SWALL_Y + SWALL_H / 2 + 0.19, SWALL_Y - SWALL_H / 2 - 0.19]) box(SWALL_W + 0.36, 0.04, 0.14, glow(0xff8ad8), SWALL_X, y, RZ - 0.1);
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(SWALL_W, SWALL_H), new THREE.MeshBasicMaterial({map: SWALL.tex, toneMapped: false, fog: false}));
+  m.rotation.y = Math.PI; m.position.set(SWALL_X, SWALL_Y, RZ - 0.15); scene.add(m);
+  const wl = new THREE.PointLight(0xff8ad8, 0.35, 9, 2); wl.position.set(SWALL_X, 2.4, RZ - 2.5); scene.add(wl);
+}
 /* ---- decor: plants, sofa, server rack ---- */
 function plant(x, z) {
   box(0.5, 0.55, 0.5, mat(0x1a2236, {metalness: .5}), x, 0.275, z);
@@ -2086,6 +2097,7 @@ addEventListener('keydown', e => {
   const a = AGENTS.find(x => x.key === e.key);
   if (a) { const d = desks.find(x => x.a.id === a.id); teleportTo(d); openPanel(a.id); e.preventDefault(); return; }
   if (e.key === 'c' || e.key === 'C') { openPanel('check'); e.preventDefault(); return; }
+  if (e.key === 'b' || e.key === 'B') { if (PS.open) closePanel(); P.x = SWALL_X; P.z = RZ - 6.2; P.yaw = Math.PI; P.pitch = 0.06; e.preventDefault(); return; } // SMC wall (back)
   if (e.key === 'v' || e.key === 'V') { if (PS.open) closePanel(); P.x = -RX + 6.5; P.z = RWALL_Z; P.yaw = Math.PI / 2; P.pitch = 0.04; e.preventDefault(); return; } // review wall
   if ((e.key === 'e' || e.key === 'E') && !PS.open && target) { openPanel(target.a.id); return; }
   if (!PS.open && typeof RWS !== 'undefined' && RWS.hold) { // standing at the review wall
@@ -2148,7 +2160,7 @@ function frame(t) {
   TICKER.tex.offset.x = (TICKER.tex.offset.x + dt * 0.018) % 1;
   // periodic redraws
   acc.board += dt; acc.desk += dt; acc.ticker += dt; acc.hud += dt; acc.panel += dt;
-  if (acc.board > 2) { acc.board = 0; drawBoard(); drawWall(); try { drawReviewWall(); } catch (e) { console.warn('review wall', e.message); } }
+  if (acc.board > 2) { acc.board = 0; drawBoard(); drawWall(); try { drawSmWall(); } catch (e) { console.warn('smc wall', e.message); } try { drawReviewWall(); } catch (e) { console.warn('review wall', e.message); } }
   if (acc.desk > 0.3) { acc.desk = 0; const d = desks[deskIdx++ % desks.length]; try { drawScreens(d); } catch (e) { console.warn('screen', d.a.id, e.message); } }
   if (acc.ticker > 15) { acc.ticker = 0; drawTicker(); }
   if (acc.hud > 1) { acc.hud = 0; topbar(); }
@@ -2176,7 +2188,7 @@ setTimeout(startSyncHTML, 0);
 camera.position.set(P.x, 1.66, P.z);
 // Reviewer/SMC code loads after this point: draw what we can now, then redraw every desk once all code is loaded.
 const drawAllScreens = () => desks.forEach(d => { try { drawScreens(d); } catch (e) { console.warn('screen', d.a.id, e.message); } });
-drawBoard(); drawAllScreens(); drawTicker(); drawWall(); setTimeout(() => { drawAllScreens(); try { drawReviewWall(); } catch (e) { console.warn('review wall', e.message); } }, 0);
+drawBoard(); drawAllScreens(); drawTicker(); drawWall(); setTimeout(() => { drawAllScreens(); try { drawSmWall(); } catch (e) { console.warn('smc wall', e.message); } try { drawReviewWall(); } catch (e) { console.warn('review wall', e.message); } }, 0);
 startEngine();
 requestAnimationFrame(frame);
 // If nothing arrives, explain why (most often: opened inside a preview window that blocks the internet)
@@ -2190,7 +2202,7 @@ setTimeout(function netCheck() {
   setTimeout(netCheck, 5000);
 }, 8000);
 setInterval(() => { if (S.meta.size && (S.wsOk || S.restOk)) { $('#netwarn').style.display = 'none'; $('#netbar').style.display = 'none'; } }, 3000);
-(document.fonts && document.fonts.ready || Promise.resolve()).then(() => { fontRedraws.forEach(f => f()); drawBoard(); drawTicker(); drawWall(); try { drawReviewWall(); } catch (_) {} });
+(document.fonts && document.fonts.ready || Promise.resolve()).then(() => { fontRedraws.forEach(f => f()); drawBoard(); drawTicker(); drawWall(); try { drawSmWall(); } catch (_) {} try { drawReviewWall(); } catch (_) {} });
 
 /* ================= DAY TRACKER VIEW ================= */
 function trackerHTML() {
@@ -2581,19 +2593,23 @@ function wrapText(c, text, x, y, maxW, lh, maxLines) {
   if (line && n < maxLines) { c.fillText(line, x, y + n * lh); n++; }
   return n;
 }
-function drawPosChart(c, s, p, x, y, w, h) {
-  const k = S.kl.get(s), live = ptPx(s);
+// o (optional, SMC wall): {bars, target, tLab, foot, zone, col}
+function drawPosChart(c, s, p, x, y, w, h, o = {}) {
+  const k = o.bars ? {bars: o.bars} : S.kl.get(s), live = ptPx(s);
   c.fillStyle = '#060a14'; c.fillRect(x, y, w, h); c.strokeStyle = 'rgba(124,137,168,.25)'; c.strokeRect(x + .5, y + .5, w - 1, h - 1);
   if (!k || k.bars.length < 4) { c.fillStyle = DIM; c.font = `500 26px ${FS}`; c.fillText('loading chart…', x + 20, y + h / 2); return; }
   const B = k.bars.slice(-36), n = B.length, R = Math.abs(p.entry - p.stop0), dir = p.side === 'L' ? 1 : -1;
-  const t1R = p.tp1R || 1.5, tR = p.tpR || 3, tp1 = p.entry + dir * t1R * R, tp2 = p.entry + dir * tR * R;
+  const t1R = p.tp1R || 1.5, tp1 = p.entry + dir * t1R * R, tp2 = fin(o.target) ? o.target : p.entry + dir * (p.tpR || 3) * R, tR = o.tLab || (p.tpR || 3);
   const vals = [...B.map(b => b[2]), ...B.map(b => b[3]), p.entry, p.stop, tp2, live || p.entry];
+  // (zone is drawn only where it fits the price range)
   let lo = Math.min(...vals), hi = Math.max(...vals); const sp = (hi - lo) || hi * 0.01; lo -= sp * 0.04; hi += sp * 0.04;
   const padR = 150, pw = w - padR - 10, bw = pw / n;
   const Y = v => y + 12 + (hi - v) / (hi - lo) * (h - 24), X = i => x + 8 + i * bw + bw / 2;
   // entry time marker
-  const t0 = B[0][0], tEnd = B[n - 1][0] + 15 * 60e3;
+  const iv = n > 1 ? B[n - 1][0] - B[n - 2][0] : 15 * 60e3, t0 = B[0][0], tEnd = B[n - 1][0] + iv;
   if (p.t >= t0) { const ex = x + 8 + (p.t - t0) / (tEnd - t0) * pw; c.fillStyle = 'rgba(255,209,102,.07)'; c.fillRect(ex, y + 1, x + 8 + pw - ex, h - 2); c.strokeStyle = 'rgba(255,209,102,.6)'; c.setLineDash([6, 6]); c.beginPath(); c.moveTo(ex, y + 4); c.lineTo(ex, y + h - 4); c.stroke(); c.setLineDash([]); }
+  // SMC entry zone (FVG / order block)
+  if (o.zone && fin(o.zone.lo) && fin(o.zone.hi)) { const zl = Math.max(lo, o.zone.lo), zh = Math.min(hi, o.zone.hi); if (zh > zl) { c.fillStyle = 'rgba(255,138,216,.13)'; c.fillRect(x + 8, Y(zh), pw, Y(zl) - Y(zh)); c.fillStyle = 'rgba(255,138,216,.85)'; c.font = `700 20px ${FS}`; c.fillText(o.zone.kind || 'zone', x + 16, Y(zh) + 22); } }
   // candles
   for (let i = 0; i < n; i++) {
     const [, o, hh, l, cl] = B[i], cc = i === n - 1 && fin(live) ? live : cl, up = cc >= o;
@@ -2607,11 +2623,11 @@ function drawPosChart(c, s, p, x, y, w, h) {
     c.fillStyle = col; c.font = `700 22px ${FM}`; c.textBaseline = 'middle'; c.fillText(`${label} ${fmtPx(v)}`, x + pw + 16, yy); c.textBaseline = 'alphabetic';
   };
   if (!p.tp1) lvl(tp1, 'rgba(46,229,157,.75)', t1R + 'R', [10, 8]);
-  lvl(tp2, UP, tR + 'R', [10, 8]);
+  lvl(tp2, UP, typeof tR === 'number' ? tR + 'R' : tR, [10, 8]);
   lvl(p.entry, '#ffd166', 'IN', [4, 6]);
   lvl(p.stop, DN, p.be ? 'STOP·BE' : 'STOP');
   if (fin(live)) { const yy = Y(live); c.fillStyle = TXT; c.beginPath(); c.arc(X(n - 1) + bw * 0.6, yy, 7, 0, 7); c.fill(); }
-  c.fillStyle = DIM; c.font = `500 20px ${FM}`; c.fillText('15m · last 9h', x + 16, y + h - 14);
+  c.fillStyle = DIM; c.font = `500 20px ${FM}`; c.fillText(o.foot || '15m · last 9h', x + 16, y + h - 14);
 }
 function drawWall() {
   if (typeof WALL === 'undefined') return;
@@ -3608,6 +3624,62 @@ document.getElementById('panel').addEventListener('change', e => {
   if (syBlock()) { i.value = SM.cfg[i.dataset.smcfg]; return; }
   const v = +i.value; if (fin(v)) { SM.cfg[i.dataset.smcfg] = v; smSave(); }
 });
+
+/* ---- back (south) wall: the SMC Trader's open positions, each on its own setup's chart ---- */
+function drawSmWall() {
+  if (typeof SWALL === 'undefined') return;
+  const T = SWALL, c = T.ctx, W = T.W, H = T.H, st = smStats(), eq = smEquity(), pnl = eq - SM.start;
+  c.fillStyle = '#04070f'; c.fillRect(0, 0, W, H);
+  c.fillStyle = '#1a0f22'; c.fillRect(0, 0, W, 84); c.fillStyle = SMCOL; c.fillRect(0, 82, W, 3);
+  c.textBaseline = 'middle'; c.font = `800 44px ${FS}`; c.fillStyle = SMCOL; c.fillText('SMC TRADER · OPEN POSITIONS', 30, 42);
+  const tw = c.measureText('SMC TRADER · OPEN POSITIONS').width; c.font = `700 22px ${FS}`; const tagW = c.measureText('PAPER ACCOUNT').width + 28;
+  c.fillStyle = SMCOL; rr(c, 60 + tw, 24, tagW, 38, 19); c.fill(); c.fillStyle = '#04070f'; c.fillText('PAPER ACCOUNT', 74 + tw, 44);
+  c.textAlign = 'right'; c.font = `700 32px ${FM}`;
+  c.fillStyle = TXT; c.fillText(`Equity ${fmtMoney(eq)}`, W - 1060, 44);
+  c.fillStyle = tone(pnl); c.fillText(`${fmtMoney(pnl, 1)} (${fmtPct(pnl / SM.start * 100, 2)})`, W - 600, 44);
+  const nOpen = Object.keys(SM.pos).length;
+  c.fillStyle = DIM; c.font = `600 26px ${FM}`; c.fillText(`${nOpen}/${SM.cfg.maxPos} open · ${SM.log.length} closed · ${SM.on ? 'ON' : 'OFF'}  ${clock()}`, W - 30, 44);
+  c.textAlign = 'left'; c.textBaseline = 'alphabetic';
+  const P = Object.entries(SM.pos).sort((a, b) => a[1].t - b[1].t), top = 100, bh = H - top - 16;
+  if (!P.length) {
+    c.font = `800 52px ${FS}`; c.fillStyle = TXT; c.fillText('Flat — no open SMC positions', 40, top + 70);
+    const best = [...S.smC.entries()].map(([s, r]) => Object.assign({s}, r)).filter(r => r.dir && !r.against && /zone|shift|swept/i.test(r.stage || '')).sort((a, b) => ((b.q || {}).score || 0) - ((a.q || {}).score || 0))[0];
+    c.font = `500 26px ${FS}`; c.fillStyle = DIM;
+    wrapText(c, `Waiting for a sweep → structure shift → first pullback into the FVG or order block, on the 15m (1h not against it) or the 1h (4h not against it), quality ${smRules().minQ}/100 or better.` + (best ? ` Closest now: ${base(best.s || '')} ${best.tf} — ${best.stage}${best.q ? ', quality ' + best.q.grade : ''}.` : ''), 40, top + 118, 1480, 32, 3);
+    c.font = `700 22px ${FS}`; c.fillStyle = DIM; c.fillText('EQUITY · SMC vs TRADER (% from $1,000)', 40, top + 236);
+    drawCmp(c, 40, top + 252, 1480, bh - 262, 22);
+    c.font = `700 26px ${FM}`; c.fillStyle = DIM; c.fillText('LAST SMC TRADES', 1640, top + 40);
+    SM.log.slice(0, 7).forEach((x, i) => {
+      const y = top + 90 + i * 58; c.font = `800 32px ${FS}`; c.fillStyle = TXT; c.fillText(x.b, 1640, y);
+      c.font = `700 24px ${FS}`; c.fillStyle = x.side === 'L' ? UP : DN; c.fillText((x.side === 'L' ? 'LONG' : 'SHORT') + (x.tf ? ' ' + x.tf : ''), 1880, y);
+      c.font = `700 30px ${FM}`; c.fillStyle = tone(x.pnl); c.textAlign = 'right'; c.fillText(`${fmtMoney(x.pnl, 1)}   ${x.R >= 0 ? '+' : ''}${x.R.toFixed(2)}R`, W - 40, y); c.textAlign = 'left';
+      c.font = `500 20px ${FS}`; c.fillStyle = DIM; c.fillText(String(x.exitWhy).slice(0, 44), 2090, y);
+    });
+    if (!SM.log.length) { c.font = `500 28px ${FS}`; c.fillStyle = DIM; c.fillText('No closed trades yet.', 1640, top + 90); }
+    T.tex.needsUpdate = true; return;
+  }
+  const shown = P.slice(0, 3), n = shown.length, colW = W / n, infoW = n === 1 ? 900 : n === 2 ? 640 : 470, sc = n === 3 ? 1 : 1.15;
+  shown.forEach(([s, p], i) => {
+    const x0 = i * colW, px = ptPx(s), u = px ? smUpnl(p, px) + p.realized : null, r = px ? smR(p, px) : null, L = p.side === 'L', tf = p.tf || '15m';
+    if (i) { c.fillStyle = 'rgba(255,138,216,.25)'; c.fillRect(x0, top, 2, bh); }
+    const ix = x0 + 26;
+    c.font = `800 ${Math.round(56 * sc)}px ${FS}`; c.fillStyle = TXT; c.fillText(p.b, ix, top + 58);
+    const nw = c.measureText(p.b).width; c.font = `800 ${Math.round(26 * sc)}px ${FS}`; c.fillStyle = L ? UP : DN; c.fillText(`${L ? 'LONG' : 'SHORT'} · ${tf} ${p.zoneKind || ''}`, ix + nw + 18, top + 56);
+    c.font = `800 ${Math.round(46 * sc)}px ${FM}`; c.fillStyle = tone(u); c.fillText(fmtMoney(u, 1), ix, top + 124);
+    c.font = `700 ${Math.round(30 * sc)}px ${FM}`; c.fillText(r == null ? '—' : `${r >= 0 ? '+' : ''}${r.toFixed(2)}R`, ix, top + 166);
+    if (p.q) { const gx = ix + Math.round(170 * sc); c.fillStyle = GRADE_C[p.q.grade] || DIM; c.font = `800 ${Math.round(26 * sc)}px ${FS}`; c.fillText(`quality ${p.q.grade} · ${p.q.score}`, gx, top + 166); }
+    const htf = (SM_TF[tf] || SM_TF['15m']).htf;
+    const rows = [['Entry', fmtPx(p.entry)], ['Now', fmtPx(px)], [p.trail ? 'Trail stop' : p.be ? 'Stop (BE)' : 'Stop', fmtPx(p.stop)], ['Target', fmtPx(p.target)], ['Held', ago(p.t)], [htf + ' at entry', p.htfBias === 'bull' ? 'rising' : p.htfBias === 'bear' ? 'falling' : 'unclear']];
+    c.font = `500 ${Math.round(24 * sc)}px ${FM}`;
+    rows.forEach(([k, v], j) => { const y = top + 214 + j * Math.round(34 * sc); c.fillStyle = DIM; c.fillText(k, ix, y); c.fillStyle = /top/.test(k) ? DN : k === 'Target' ? UP : TXT; c.textAlign = 'right'; c.fillText(v, x0 + infoW - 16, y); c.textAlign = 'left'; });
+    c.font = `500 ${Math.round(19 * sc)}px ${FS}`; c.fillStyle = '#d9c2d2';
+    wrapText(c, (p.tp1 ? 'Half banked · ' : '') + p.why, ix, top + 214 + 6 * Math.round(34 * sc) + 8, infoW - 40, Math.round(25 * sc), 3);
+    const B = smBars(s, tf), rrT = Math.abs(p.target - p.entry) / (Math.abs(p.entry - p.stop0) || 1);
+    drawPosChart(c, s, p, x0 + infoW, top + 6, colW - infoW - 20, bh - 12, {bars: B && B.length ? B : null, target: p.target, tLab: `${rrT.toFixed(1)}R`, zone: p.zone, foot: `${tf} · last ${tf === '1h' ? '36h' : '9h'} · zone shaded`});
+  });
+  if (P.length > 3) { c.font = `700 26px ${FS}`; c.fillStyle = WARN; c.textAlign = 'right'; c.fillText(`+${P.length - 3} more open — see the SMC desk`, W - 30, H - 24); c.textAlign = 'left'; }
+  T.tex.needsUpdate = true;
+}
 
 /* ================= REVIEWER ON THE CHART + RULES IN FORCE ================= */
 // Every closed trade, drawn on its own candles with the Reviewer's verdict: numbered ✓ (done right) and ✗ (done wrong)
