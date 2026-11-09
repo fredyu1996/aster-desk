@@ -1166,7 +1166,13 @@ function compareVerdict(a, b) {
 const RV_WIN = 40;
 const rvMean = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
 const fmtR = r => fin(r) ? (r >= 0 ? '+' : '') + r.toFixed(2) + 'R' : '—';
-const rvManual = x => /closed by you/.test(x.exitWhy || '');
+// Fred's own reviews of closed trades: {key: {g, ag, alt[], x[], note, excl, t, by}}. Kept on branch "notes" of the data
+// repo (file manual-reviews.json) so any computer, viewer or not, can add one; the cloud reads it each run.
+let RVM = LS.get('awx_mine', {}) || {};
+const mineKey = x => (x.strat === 'smc' ? 'sm' : 'pt') + '|' + x.s + '|' + x.t1;
+const mineOf = x => RVM[mineKey(x)] || null;
+// trades closed by hand, or that Fred marked "leave out", are not used for grading statistics, rules or criteria
+const rvManual = x => /closed by you/.test(x.exitWhy || '') || !!(RVM[mineKey(x)] && RVM[mineKey(x)].excl);
 const rvStage = x => x.st ? (String(x.st).startsWith('done') ? 'done' : 'rev') : (/Reversed/.test(x.why || '') ? 'done' : 'rev');
 const rvExitKind = x => { const e = x.exitWhy || ''; return /unlock/.test(e) ? 'Closed before unlock' : /forming against/.test(e) ? 'Reversal against momentum' : /closed by you/.test(e) ? 'Closed by you' : /target/.test(e) ? 'Hit target' : /trailing/.test(e) ? 'Trailing stop' : /breakeven/.test(e) ? 'Breakeven stop' : /stop loss/.test(e) ? 'Stop loss' : /faded/.test(e) ? 'Signals faded' : /time stop/.test(e) ? 'Time stop' : 'Other'; };
 function rvAgg(a) { const R = a.map(x => x.R); return {n: a.length, avgR: rvMean(R), win: a.length ? a.filter(x => x.R > 0).length / a.length * 100 : null, sum: R.reduce((p, q) => p + q, 0)}; }

@@ -1985,7 +1985,17 @@ $('#panel').addEventListener('click', e => {
 /* ================= INPUT ================= */
 let started = false, dragging = false;
 function lockPointer() { if (PS.open || !started) return; try { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (_) {} }
-canvas.addEventListener('click', lockPointer);
+canvas.addEventListener('click', e => {
+  // clicking the "review it yourself" button on the review wall (crosshair when looking around, else the mouse)
+  try {
+    if (started && !PS.open && typeof RWS !== 'undefined' && RWS.hold && RWS.btn) {
+      const r = canvas.getBoundingClientRect(), lk = !!document.pointerLockElement;
+      const q = wallPoint(lk ? 0 : ((e.clientX - r.left) / r.width) * 2 - 1, lk ? 0 : -((e.clientY - r.top) / r.height) * 2 + 1), b = RWS.btn;
+      if (q && q.x >= b.x && q.x <= b.x + b.w && q.y >= b.y && q.y <= b.y + b.h) { openMineFromWall(); return; }
+    }
+  } catch (_) {}
+  lockPointer();
+});
 canvas.addEventListener('mousedown', () => { if (!document.pointerLockElement) dragging = true; });
 addEventListener('mouseup', () => dragging = false);
 let lockAt = 0;
@@ -2007,6 +2017,10 @@ addEventListener('keydown', e => {
   if (e.key === 'c' || e.key === 'C') { openPanel('check'); e.preventDefault(); return; }
   if (e.key === 'v' || e.key === 'V') { if (PS.open) closePanel(); P.x = -RX + 6.5; P.z = RWALL_Z; P.yaw = Math.PI / 2; P.pitch = 0.04; e.preventDefault(); return; } // review wall
   if ((e.key === 'e' || e.key === 'E') && !PS.open && target) { openPanel(target.a.id); return; }
+  if (!PS.open && typeof RWS !== 'undefined' && RWS.hold) { // standing at the review wall
+    if (e.key === 'e' || e.key === 'E') { openMineFromWall(); return; }
+    if (e.key === '[' || e.key === ']') { wallStep(e.key === ']' ? 1 : -1); e.preventDefault(); return; }
+  }
   if (PS.open) return;
   keys[e.code] = true;
   if (e.code === 'Tab') e.preventDefault();
@@ -2039,7 +2053,10 @@ function frame(t) {
     const dot = tmpV.normalize().dot(fwdV); if (dot > best) { best = dot; target = d; }
   }
   const pr = $('#prompt');
+  let wallNow = false; try { wallNow = !target && typeof atWall === 'function' && atWall(); } catch (_) {}
+  if (typeof RWS !== 'undefined' && RWS.hold !== wallNow) { RWS.hold = wallNow; try { drawReviewWall(); } catch (_) {} }
   if (target && !PS.open && started) { pr.style.display = 'block'; pr.innerHTML = `<span class="kbd">E</span> Talk to <span class="who" style="color:${target.a.color}">${target.a.name}</span> · ${target.a.role}`; }
+  else if (wallNow && RWS.cur) { pr.style.display = 'block'; pr.innerHTML = `<span class="kbd">E</span> Review <span class="who" style="color:#ff8ad8">${esc(RWS.cur[1].b)}</span> yourself · <span class="kbd">[</span> <span class="kbd">]</span> previous / next trade`; }
   else pr.style.display = 'none';
   // agents
   const ts = t / 1000;
@@ -2581,7 +2598,13 @@ function drawWall() {
 const RV_WIN = 40;
 const rvMean = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
 const fmtR = r => fin(r) ? (r >= 0 ? '+' : '') + r.toFixed(2) + 'R' : '—';
-const rvManual = x => /closed by you/.test(x.exitWhy || '');
+// Fred's own reviews of closed trades: {key: {g, ag, alt[], x[], note, excl, t, by}}. Kept on branch "notes" of the data
+// repo (file manual-reviews.json) so any computer, viewer or not, can add one; the cloud reads it each run.
+let RVM = LS.get('awx_mine', {}) || {};
+const mineKey = x => (x.strat === 'smc' ? 'sm' : 'pt') + '|' + x.s + '|' + x.t1;
+const mineOf = x => RVM[mineKey(x)] || null;
+// trades closed by hand, or that Fred marked "leave out", are not used for grading statistics, rules or criteria
+const rvManual = x => /closed by you/.test(x.exitWhy || '') || !!(RVM[mineKey(x)] && RVM[mineKey(x)].excl);
 const rvStage = x => x.st ? (String(x.st).startsWith('done') ? 'done' : 'rev') : (/Reversed/.test(x.why || '') ? 'done' : 'rev');
 const rvExitKind = x => { const e = x.exitWhy || ''; return /unlock/.test(e) ? 'Closed before unlock' : /forming against/.test(e) ? 'Reversal against momentum' : /closed by you/.test(e) ? 'Closed by you' : /target/.test(e) ? 'Hit target' : /trailing/.test(e) ? 'Trailing stop' : /breakeven/.test(e) ? 'Breakeven stop' : /stop loss/.test(e) ? 'Stop loss' : /faded/.test(e) ? 'Signals faded' : /time stop/.test(e) ? 'Time stop' : 'Other'; };
 function rvAgg(a) { const R = a.map(x => x.R); return {n: a.length, avgR: rvMean(R), win: a.length ? a.filter(x => x.R > 0).length / a.length * 100 : null, sum: R.reduce((p, q) => p + q, 0)}; }
@@ -3555,7 +3578,8 @@ function drawReviewWall() {
   c.fillStyle = 'rgba(197,240,90,.3)'; c.fillRect(split, 90, 2, H - 100);
   // left: rotate through the last trades every 25 s
   const all = rvTrades().filter(([, x]) => !isManual(x)).slice(0, 8);
-  if (now() - RWS.t > 25e3) { RWS.t = now(); RWS.i = (RWS.i + 1) % Math.max(1, all.length); }
+  if (now() - RWS.t > 25e3 && !RWS.hold) { RWS.t = now(); RWS.i = (RWS.i + 1) % Math.max(1, all.length); } // stays put while you stand at the wall
+  RWS.cur = null; RWS.btn = null; RWS.n = all.length;
   if (!all.length) {
     c.font = `800 48px ${FS}`; c.fillStyle = TXT; c.fillText('No closed trades yet', 40, 200);
     c.font = `500 28px ${FS}`; c.fillStyle = DIM; c.fillText('When a trade closes, the Reviewer grades it and marks what went right (✓)', 40, 260); c.fillText('and what went wrong (✗) on its chart, here and on the Reviewer\'s desk (5).', 40, 300);
@@ -3566,10 +3590,17 @@ function drawReviewWall() {
     c.fillStyle = a === 'sm' ? SMCOL : '#ffd166'; c.fillText(stratName(a, x).toUpperCase(), cx, 134); cx += c.measureText(stratName(a, x).toUpperCase()).width + 30;
     c.font = `800 40px ${FM}`; c.fillStyle = tone(x.R); c.fillText(fmtR(x.R), cx, 132); cx += c.measureText(fmtR(x.R)).width + 16;
     c.font = `700 28px ${FM}`; c.fillText(fmtMoney(x.pnl, 1), cx, 134);
-    c.textAlign = 'right'; c.font = `500 22px ${FS}`; c.fillStyle = DIM; c.fillText(`closed ${ago(x.t1)} ago · trade ${RWS.i % all.length + 1} of ${all.length} · changes every 25 s`, split - 30, 134); c.textAlign = 'left';
+    c.textAlign = 'right'; c.font = `500 22px ${FS}`; c.fillStyle = DIM; c.fillText(`closed ${ago(x.t1)} ago · trade ${RWS.i % all.length + 1} of ${all.length} · ${RWS.hold ? '[ / ] previous / next' : 'changes every 25 s'}`, split - 30, 134); c.textAlign = 'left';
     // grade badge
     c.fillStyle = GRADE_C[g.g] || DIM; rr(c, 30, 166, 64, 64, 12); c.fill(); c.fillStyle = '#04070f'; c.font = `800 46px ${FS}`; c.textAlign = 'center'; c.fillText(g.g, 62, 200); c.textAlign = 'left';
-    c.font = `600 26px ${FS}`; c.fillStyle = TXT; wrapText(c, 'Reviewer: ' + g.note, 112, 186, split - 150, 30, 2);
+    RWS.cur = [a, x];
+    c.font = `600 26px ${FS}`; c.fillStyle = TXT; wrapText(c, 'Reviewer: ' + g.note, 112, 186, split - 640, 30, 2);
+    // the button: look at it and press E, or click it
+    const bw = 470, bh = 64, bx = split - 30 - bw, by = 166; RWS.btn = {x: bx, y: by, w: bw, h: bh};
+    const mine = mineOf(x), hot = RWS.hold;
+    c.fillStyle = hot ? MINE_C : 'rgba(255,138,216,.16)'; rr(c, bx, by, bw, bh, 14); c.fill(); c.strokeStyle = MINE_C; c.lineWidth = 3; rr(c, bx, by, bw, bh, 14); c.stroke();
+    c.fillStyle = hot ? '#04070f' : MINE_C; c.font = `800 27px ${FS}`; c.textAlign = 'center';
+    c.fillText(mine ? '✍  EDIT YOUR REVIEW  (E)' : '✍  REVIEW IT YOURSELF  (E)', bx + bw / 2, by + bh / 2 + 1); c.textAlign = 'left';
     const cy = 248, ch = H - cy - 14, cw = 1150;
     drawTradeChart(c, x, a, 24, cy, cw, ch, 2.1, E);
     // ✓ / ✗ list
@@ -3583,6 +3614,12 @@ function drawReviewWall() {
       }
       y += 8;
     };
+    if (mine) {
+      c.font = `800 22px ${FS}`; c.fillStyle = MINE_C; c.fillText(`YOUR REVIEW: ${mine.g || '—'}${mine.ag ? ' · ' + MINE_AG[mine.ag] : ''}${mine.excl ? ' · left out of learning' : ''}`, lx, y); y += 30;
+      c.font = `500 20px ${FS}`; c.fillStyle = '#f3d6ea';
+      const txt = [(mine.alt || []).length ? 'Would have: ' + mine.alt.map(k => MINE_ALT[k]).join(', ') : '', (mine.x || []).length ? 'Disagrees with points ' + mine.x.join(', ') : '', mine.note || ''].filter(Boolean).join(' · ');
+      if (txt) { const n = wrapText(c, txt, lx, y, lw, 24, 3); y += 24 * (n || 1); } y += 16;
+    }
     sect('DONE RIGHT', UP, E.items.filter(i => i.ok)); sect('DONE WRONG', DN, E.items.filter(i => !i.ok));
     if (E.les.length && y < H - 70) { c.font = `800 22px ${FS}`; c.fillStyle = LIME; c.fillText('RULE NOW IN FORCE BECAUSE OF TRADES LIKE THIS', lx, y); y += 32; c.font = `600 21px ${FS}`; c.fillStyle = TXT; for (const l of E.les) { if (y > H - 30) break; const n = wrapText(c, '› ' + l, lx, y, lw, 25, 2); y += 25 * (n || 1) + 6; } }
     else if (a === 'sm' && y < H - 40) { c.font = `500 19px ${FS}`; c.fillStyle = DIM; wrapText(c, 'Graded for comparison only. The SMC Trader\'s rules stay fixed (no Reviewer).', lx, y, lw, 24, 2); }
@@ -3592,7 +3629,7 @@ function drawReviewWall() {
   [RN.pt, RN.sm].forEach((K, ci) => {
     const x0 = split + 24 + ci * (colW + 8), cw = colW - 14; let y = 122;
     c.font = `800 30px ${FS}`; c.fillStyle = K.col; c.fillText(K.name.toUpperCase(), x0, y);
-    y += 32; c.font = `600 18px ${FS}`; c.fillStyle = K.changed ? LIME : DIM; wrapText(c, K.st, x0, y, cw, 22, 2); y += 34;
+    y += 32; c.font = `600 18px ${FS}`; c.fillStyle = K.changed ? LIME : DIM; const sl = wrapText(c, K.st, x0, y, cw, 22, 2) || 1; y += 22 * sl + 12;
     for (const [gname, rows] of K.groups) {
       if (y > H - 40) break;
       c.font = `800 17px ${FS}`; c.fillStyle = DIM; c.fillText(gname.toUpperCase(), x0, y); y += 26;
@@ -3666,13 +3703,15 @@ function rulesBothHTML() {
 function rvChartHTML() {
   const L = rvTrades(RVS.acct);
   const filt = `<div style="display:flex;gap:6px;margin-bottom:10px">${[['all', 'Both traders'], ['pt', 'Trader'], ['sm', 'SMC Trader']].map(([k, l]) => `<span class="chip ${RVS.acct === k ? 'on' : ''}" data-rvacct="${k}">${l}</span>`).join('')}</div>`;
+  const mineN = Object.keys(RVM).length, agreeN = Object.values(RVM).filter(r => r.ag === 'agree').length;
+  const filt2 = filt + (mineN ? `<div class="dim" style="font-size:12px;margin:-4px 0 10px">You've reviewed ${mineN} trade${mineN === 1 ? '' : 's'}; you agreed with the Reviewer on ${agreeN}.</div>` : '');
   if (!L.length) return filt + '<div class="empty">No closed trades yet. When a trade closes, it shows up here on its own chart, with what the trader did right (✓) and wrong (✗) marked where it happened.</div>';
   let sel = L.find(([a, x]) => tradeKey(a, x) === RVS.key); if (!sel) { sel = L[0]; RVS.key = tradeKey(...sel); }
   const [a, x] = sel, E = rvExplain(x, a), g = E.grade;
-  const list = L.slice(0, 60).map(([a2, y]) => { const gg = rvGrade(y), k = tradeKey(a2, y); return `<div class="rvpick${k === RVS.key ? ' on' : ''}" data-rvpick="${esc(k)}" style="display:flex;gap:8px;align-items:center;padding:6px 8px;border-radius:7px;cursor:pointer;${k === RVS.key ? 'background:rgba(197,240,90,.12);' : ''}"><b style="color:${GRADE_C[gg.g]};width:14px">${gg.g}</b><b style="min-width:60px">${esc(y.b)}</b><span class="${y.side === 'L' ? 'up' : 'dn'}" style="font-size:11px">${y.side === 'L' ? 'LONG' : 'SHORT'}</span><span style="font-size:11px;color:${a2 === 'sm' ? SMCOL : '#ffd166'}">${a2 === 'sm' ? 'SMC' : y.strat === 'mom' ? 'MOM' : 'REV'}</span><span class="mono ${cls(y.R)}" style="margin-left:auto">${fmtR(y.R)}</span><span class="dim" style="font-size:11px;width:44px;text-align:right">${ago(y.t1)}</span></div>`; }).join('');
+  const list = L.slice(0, 60).map(([a2, y]) => { const gg = rvGrade(y), k = tradeKey(a2, y); return `<div class="rvpick${k === RVS.key ? ' on' : ''}" data-rvpick="${esc(k)}" style="display:flex;gap:8px;align-items:center;padding:6px 8px;border-radius:7px;cursor:pointer;${k === RVS.key ? 'background:rgba(197,240,90,.12);' : ''}"><b style="color:${GRADE_C[gg.g]};width:14px">${gg.g}</b><b style="min-width:60px">${esc(y.b)}</b><span class="${y.side === 'L' ? 'up' : 'dn'}" style="font-size:11px">${y.side === 'L' ? 'LONG' : 'SHORT'}</span><span style="font-size:11px;color:${a2 === 'sm' ? SMCOL : '#ffd166'}">${a2 === 'sm' ? 'SMC' : y.strat === 'mom' ? 'MOM' : 'REV'}</span>${RVM[k] ? `<span title="Your grade" style="font-size:10px;font-weight:800;color:#04070f;background:${MINE_C};border-radius:4px;padding:0 4px">you ${esc(RVM[k].g || '✓')}</span>` : ''}<span class="mono ${cls(y.R)}" style="margin-left:auto">${fmtR(y.R)}</span><span class="dim" style="font-size:11px;width:44px;text-align:right">${ago(y.t1)}</span></div>`; }).join('');
   const item = it => `<div class="chk" style="padding:4px 0"><span class="i" style="background:${it.ok ? UP : DN};color:#04070f;border-radius:5px;padding:0 5px;font-weight:800;min-width:30px;text-align:center">${it.ok ? '✓' : '✗'}${it.n}</span><span>${esc(it.t)}</span></div>`;
   const G = E.items.filter(i => i.ok), B = E.items.filter(i => !i.ok);
-  return filt + `<div class="grid2" style="grid-template-columns:260px 1fr;gap:14px">
+  return filt2 + `<div class="grid2" style="grid-template-columns:260px 1fr;gap:14px">
     <div class="card2" style="padding:8px;max-height:640px;overflow:auto">${list}</div>
     <div><div class="card2" style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
       <span style="background:${GRADE_C[g.g]};color:#04070f;font-weight:800;font-size:26px;border-radius:9px;width:44px;height:44px;display:flex;align-items:center;justify-content:center">${g.g}</span>
@@ -3684,7 +3723,8 @@ function rvChartHTML() {
     <div class="grid2" style="margin-top:10px"><div class="card2"><h3 style="color:${UP}">DONE RIGHT</h3>${G.map(item).join('') || '<span class="dim" style="font-size:13px">Nothing stood out.</span>'}</div>
     <div class="card2"><h3 style="color:${DN}">DONE WRONG</h3>${B.map(item).join('') || '<span class="dim" style="font-size:13px">Nothing. A clean trade by the rules.</span>'}</div></div>
     <div class="card2" style="margin-top:12px;border-left:4px solid #c5f05a"><h3 style="color:#c5f05a">WHAT THE REVIEWER CHANGED</h3>${a === 'sm' ? '<span class="dim" style="font-size:13px">Graded for comparison only. The SMC Trader\'s rules stay fixed (no Reviewer).</span>' : E.les.length ? E.les.map(l => `<div class="chk"><span class="i" style="color:#c5f05a">›</span><span>${esc(l)}</span></div>`).join('') + '<div class="dim" style="font-size:12px;margin-top:4px">These rules are in force now, partly because of trades like this one.</div>' : `<span class="dim" style="font-size:13px">No rule change from trades like this yet. The Reviewer needs a minimum sample before it changes anything (3 trades for a setup, 4 for a side, 6 overall).</span>`}
-    <div class="dim" style="font-size:12px;margin-top:6px">Entry reason: ${esc(x.why || '—')}<br>Exit: ${esc(x.exitWhy || '—')}</div></div></div></div>`;
+    <div class="dim" style="font-size:12px;margin-top:6px">Entry reason: ${esc(x.why || '—')}<br>Exit: ${esc(x.exitWhy || '—')}</div></div>
+    ${mineFormHTML(a, x, E)}</div></div>`;
 }
 function drawRvCanvas(cv) {
   const k = cv.dataset.rvchart, hit = rvTrades().find(([a, x]) => tradeKey(a, x) === k); if (!hit) return;
@@ -3782,6 +3822,76 @@ function rvTalkHTML() {
   <div class="grid2" style="grid-template-columns:repeat(3,1fr)">${inUse}</div>${val}
   <div class="card2" style="margin-top:12px"><h3>CONVERSATION · OLDEST FIRST</h3>${thread}</div>`;
 }
+
+
+/* ---- your own review of a trade (button on the review wall, form on the Reviewer's "On the chart" tab) ---- */
+const MINE_C = '#ff8ad8';
+const MINE_AG = {agree: 'agree with the Reviewer', partly: 'partly agree', disagree: 'disagree with the Reviewer'};
+const MINE_ALT = {same: 'same trade', skip: 'skip it', later: 'enter later', earlier: 'enter earlier', exitE: 'exit earlier', hold: 'hold longer', wider: 'wider stop', tighter: 'tighter stop', bigger: 'bigger size', smaller: 'smaller size'};
+const MD = {key: null, d: null, msg: ''};           // the form being filled in (kept across panel refreshes)
+function mineDraft(k) { if (MD.key !== k) { const r = RVM[k]; MD.key = k; MD.d = r ? JSON.parse(JSON.stringify(r)) : {g: '', ag: '', alt: [], x: [], note: '', excl: false}; MD.msg = ''; } return MD.d; }
+function mineFormHTML(a, x, E) {
+  const k = tradeKey(a, x), d = mineDraft(k), saved = RVM[k];
+  const chip = (attr, v, lab, on, col) => `<span class="chip ${on ? 'on' : ''}" ${attr}="${v}" style="${on ? `background:${col || MINE_C};color:#04070f;border-color:${col || MINE_C}` : ''}">${lab}</span>`;
+  return `<div class="card2" id="mineForm" style="margin-top:12px;border-left:4px solid ${MINE_C}"><h3 style="color:${MINE_C}">YOUR REVIEW${saved ? ` <span class="dim" style="font-size:11px;font-weight:500">saved ${ago(saved.t)} ago${saved.by ? ' on ' + esc(saved.by) : ''}</span>` : ''}</h3>
+    <div style="display:grid;grid-template-columns:150px 1fr;gap:10px 12px;align-items:center;font-size:13px">
+      <span class="dim">Your grade</span><div style="display:flex;gap:6px;flex-wrap:wrap">${['A', 'B', 'C', 'D', 'F'].map(gr => chip('data-mine-g', gr, gr, d.g === gr, GRADE_C[gr])).join('')}<span class="dim" style="font-size:11px;align-self:center">Reviewer said ${E.grade.g}</span></div>
+      <span class="dim">The Reviewer's verdict</span><div style="display:flex;gap:6px;flex-wrap:wrap">${Object.entries({agree: 'Agree', partly: 'Partly', disagree: 'Disagree'}).map(([v, l]) => chip('data-mine-ag', v, l, d.ag === v)).join('')}</div>
+      <span class="dim">Points you disagree with</span><div style="display:flex;gap:6px;flex-wrap:wrap">${E.items.map(it => chip('data-mine-x', it.n, (it.ok ? '✓' : '✗') + it.n, d.x.includes(it.n), it.ok ? UP : DN)).join('') || '<span class="dim">—</span>'}</div>
+      <span class="dim">What you'd have done</span><div style="display:flex;gap:6px;flex-wrap:wrap">${Object.entries(MINE_ALT).map(([v, l]) => chip('data-mine-alt', v, l, d.alt.includes(v))).join('')}</div>
+      <span class="dim">Notes</span><textarea id="mineNote" rows="3" placeholder="What you saw on the chart, what you'd do differently…" style="width:100%;background:#0b1224;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:8px;font:13px var(--sans);resize:vertical">${esc(d.note || '')}</textarea>
+      <span></span><label style="display:flex;gap:8px;align-items:center;font-size:12px;cursor:pointer"><input type="checkbox" id="mineExcl" ${d.excl ? 'checked' : ''}> Leave this trade out of the Reviewer's learning (bad data, a fluke, or not a real setup)</label>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;margin-top:12px"><button class="btn" data-mine="save" style="background:${MINE_C};color:#04070f;border-color:${MINE_C}">Save my review</button>${saved ? '<button class="btn ghost sm" data-mine="del">Delete</button>' : ''}<span style="font-size:12px" id="mineMsg">${esc(MD.msg)}</span></div>
+    <p class="note" style="margin-top:8px">${SY.on ? 'Saved to your shared account, so it shows on every computer and on the review wall.' : 'Saved in this browser only (Sync is off).'} The Reviewer leaves out trades you mark "leave out" when it grades, changes rules and studies screening criteria.</p></div>`;
+}
+document.getElementById('panel').addEventListener('input', e => {
+  if (!MD.d) return;
+  if (e.target.id === 'mineNote') MD.d.note = e.target.value;
+  if (e.target.id === 'mineExcl') MD.d.excl = e.target.checked;
+}, true);
+document.getElementById('panel').addEventListener('click', async e => {
+  const el = e.target.closest('[data-mine-g],[data-mine-ag],[data-mine-x],[data-mine-alt],[data-mine]'); if (!el || !MD.d) return;
+  e.stopPropagation(); const d = MD.d;
+  const tog = (arr, v) => { const i = arr.indexOf(v); if (i >= 0) arr.splice(i, 1); else arr.push(v); };
+  if (el.dataset.mineG) d.g = d.g === el.dataset.mineG ? '' : el.dataset.mineG;
+  else if (el.dataset.mineAg) d.ag = d.ag === el.dataset.mineAg ? '' : el.dataset.mineAg;
+  else if (el.dataset.mineX) tog(d.x, +el.dataset.mineX);
+  else if (el.dataset.mineAlt) tog(d.alt, el.dataset.mineAlt);
+  else if (el.dataset.mine === 'save' || el.dataset.mine === 'del') {
+    const k = MD.key, del = el.dataset.mine === 'del';
+    if (!del && !d.g && !d.ag && !d.note && !d.alt.length && !d.x.length && !d.excl) { MD.msg = 'Pick a grade or write a note first.'; renderPanel(); return; }
+    const rec = del ? null : Object.assign({}, d, {t: now(), by: SY.name || ''});
+    MD.msg = 'Saving…'; renderPanel();
+    try {
+      const where = await notesSave(k, rec);
+      if (del) { MD.key = null; mineDraft(k); }
+      MD.msg = del ? 'Deleted.' : where === 'shared' ? 'Saved to your shared account ✓' : 'Saved in this browser ✓';
+      try { drawReviewWall(); } catch (_) {}
+    } catch (err) { MD.msg = 'Not saved: ' + err.message; }
+    renderPanel(); return;
+  }
+  renderPanel();
+}, true);
+// open the form for the trade on the review wall
+function openMineFromWall() {
+  if (!RWS.cur) return;
+  RVS.key = tradeKey(...RWS.cur); RVS.acct = 'all';
+  if (PS.open) closePanel();
+  openPanel('rev'); PS.tab.rev = 'chart'; setTabs(); renderPanel();
+  setTimeout(() => { const f = document.getElementById('mineForm'); if (f) f.scrollIntoView({block: 'start', behavior: 'smooth'}); }, 150);
+}
+// where you are looking on the review wall (canvas pixels), or null
+function wallPoint(ndcX = 0, ndcY = 0) {
+  if (typeof RWALL === 'undefined') return null;
+  const o = camera.position, dir = new THREE.Vector3(ndcX, ndcY, 0.5).unproject(camera).sub(o).normalize(), px = -RX + 0.15;
+  if (dir.x > -0.05) return null; const t = (px - o.x) / dir.x; if (t <= 0 || t > 16) return null;
+  const y = o.y + dir.y * t, z = o.z + dir.z * t, u = (RWALL_Z + RWALL_W / 2 - z) / RWALL_W, v = (2.3 + RWALL_H / 2 - y) / RWALL_H;
+  if (u < 0 || u > 1 || v < 0 || v > 1) return null;
+  return {x: u * RWALL.W, y: v * RWALL.H};
+}
+const atWall = () => started && !PS.open && P.x < -RX + 10.5 && Math.abs(P.z - RWALL_Z) < RWALL_W / 2 + 1.5 && !!wallPoint();
+function wallStep(dir) { if (!RWS.n) return; RWS.i = (RWS.i + dir + RWS.n) % RWS.n; RWS.t = now(); try { drawReviewWall(); } catch (_) {} }
 
 /* ================= SYNC: one shared account across computers, stored in a private GitHub repo ================= */
 // The file lives on a branch called "state" that always has exactly one commit (overwritten on each save),
@@ -3886,7 +3996,7 @@ async function syTick() {
       SYS.err = '';
     }
   } catch (e) { SYS.err = e.message; }
-  SYS.busy = false; syChip();
+  SYS.busy = false; syChip(); try { notesTick(); } catch (_) {}
 }
 // a viewer shouldn't change the account locally (the next reload would wipe it) — say so instead
 function syBlock() { if (!syViewer()) return false; sayFor('trader', `This computer is only viewing. Take over trading here first (trading runs on ${SYS.lock ? SYS.lock.name : 'another computer'}).`); return true; }
@@ -3969,6 +4079,34 @@ document.getElementById('panel').addEventListener('input', e => {
   const t = e.target; if (!t || !t.id) return;
   if (t.id === 'syRepo') SYS.draft.repo = t.value; else if (t.id === 'syTok') SYS.draft.tok = t.value; else if (t.id === 'syName') SYS.draft.name = t.value;
 }, true);
+
+/* ---- Fred's own trade reviews: branch "notes", file manual-reviews.json (any computer can write) ---- */
+const NOTES_BR = 'notes', NOTES_FILE = 'manual-reviews.json';
+async function notesPull() {
+  const r = await gh('/git/ref/heads/' + NOTES_BR, {ok404: true}); if (!r) return {head: null, m: {}};
+  return {head: r.object.sha, m: JSON.parse(await gh('/contents/' + NOTES_FILE + '?ref=' + r.object.sha, {raw: true}))};
+}
+// read → change one review → write; if another computer saved in between, GitHub refuses the update and we retry
+async function notesSave(key, rec) {
+  if (!SY.on) { if (rec) RVM[key] = rec; else delete RVM[key]; LS.set('awx_mine', RVM); return 'local'; }
+  for (let i = 0; i < 4; i++) {
+    const {head, m} = await notesPull();
+    if (rec) m[key] = rec; else delete m[key];
+    const blob = await gh('/git/blobs', {method: 'POST', body: {content: b64enc(JSON.stringify(m)), encoding: 'base64'}});
+    const tree = await gh('/git/trees', {method: 'POST', body: {tree: [{path: NOTES_FILE, mode: '100644', type: 'blob', sha: blob.sha}]}});
+    const commit = await gh('/git/commits', {method: 'POST', body: {message: `${SY.name} · review ${key.split('|')[1] || ''}`, tree: tree.sha, parents: head ? [head] : []}});
+    try {
+      if (head) await gh('/git/refs/heads/' + NOTES_BR, {method: 'PATCH', body: {sha: commit.sha, force: false}});
+      else await gh('/git/refs', {method: 'POST', body: {ref: 'refs/heads/' + NOTES_BR, sha: commit.sha}});
+      RVM = m; LS.set('awx_mine', RVM); return 'shared';
+    } catch (e) { if (e.status !== 422 && e.status !== 409) throw e; }
+  }
+  throw new Error('another computer kept saving at the same moment; try again');
+}
+function notesTick() {
+  if (!SY.on || now() - (SYS.notesT || 0) < 60e3) return; SYS.notesT = now();
+  notesPull().then(r => { RVM = r.m || {}; LS.set('awx_mine', RVM); }).catch(() => {});
+}
 
 </script>
 </body>

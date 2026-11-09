@@ -26,6 +26,13 @@ async function gh(p, opt = {}) {
   if (!r.ok) throw new Error(`GitHub ${r.status} ${p.split('?')[0]}: ${(await r.text()).slice(0, 200)}`);
   return opt.raw ? r.text() : r.json();
 }
+// Fred's own trade reviews (branch "notes", written by any browser): read-only here
+let MINE = null;
+async function readNotes() {
+  if (LOCAL_IN) { MINE = process.env.NOTES_IN && fs.existsSync(process.env.NOTES_IN) ? JSON.parse(fs.readFileSync(process.env.NOTES_IN, 'utf8')) : null; return; }
+  try { const r = await gh('/git/ref/heads/notes', {ok404: true}); if (r) MINE = JSON.parse(await gh('/contents/manual-reviews.json?ref=' + r.object.sha, {raw: true})); }
+  catch (e) { log('notes not read:', e.message); }
+}
 async function headSha() { const r = await gh('/git/ref/heads/' + BR, {ok404: true}); return r ? r.object.sha : null; }
 async function readState() {
   if (LOCAL_IN) return {head: 'local', b: fs.existsSync(LOCAL_IN) ? JSON.parse(fs.readFileSync(LOCAL_IN, 'utf8')) : null};
@@ -51,7 +58,7 @@ async function writeState(b, head, msg) {
 /* ---------- load the desk's own trading code into a sandbox ---------- */
 function loadCore(b) {
   const store = new Map();
-  for (const [k, v] of [['awx_pt', b && b.pt], ['awx_rv', b && b.rv], ['awx_sm', b && b.sm], ['awx_trk', b && b.trk], ['awx_cfg', b && b.cfg]]) if (v) store.set(k, JSON.stringify(v));
+  for (const [k, v] of [['awx_pt', b && b.pt], ['awx_rv', b && b.rv], ['awx_sm', b && b.sm], ['awx_trk', b && b.trk], ['awx_cfg', b && b.cfg], ['awx_mine', MINE]]) if (v) store.set(k, JSON.stringify(v));
   const el = {addEventListener() {}, style: {setProperty() {}}, classList: {add() {}, remove() {}}, textContent: '', innerHTML: ''};
   const ctx = vm.createContext({console, fetch, URL, TextEncoder, TextDecoder, Date, Math, JSON, Promise, setTimeout, clearTimeout,
     setInterval: () => 0, navigator: {userAgent: 'node'},
@@ -67,6 +74,7 @@ async function pool(items, n, fn) { const q = [...items]; await Promise.all(Arra
 async function main() {
   if (!LOCAL_IN && (!REPO || !TOKEN)) throw new Error('DATA_REPO / DATA_TOKEN not set (add the DATA_TOKEN secret in the repo settings)');
   const {head, b} = await readState();
+  await readNotes();
   const prevCloud = (b && b.cloud) || {runs: 0, alerts: []};
   // a browser that is actively trading has the lock: stand by and change nothing
   if (b && b.lock && b.lock.dev !== 'cloud' && Date.now() - b.lock.t < BROWSER_STALE) { log(`standing by: trading is running in a browser (${b.lock.name})`); return; }
