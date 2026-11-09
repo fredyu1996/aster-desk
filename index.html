@@ -3895,6 +3895,14 @@ function syChip() {
   const R = SYS.role, c = !SY.on ? DIM : R === 'leader' ? UP : R === 'viewer' ? '#4dd2ff' : R === 'error' ? DN : WARN;
   const txt = !SY.on ? 'SYNC OFF' : R === 'leader' ? (SYS.err ? 'SYNC RETRYING' : 'SYNCED · TRADING HERE') : R === 'viewer' ? (SYS.lock && SYS.lock.dev === 'cloud' ? 'VIEWING · CLOUD TRADES' : `VIEWING · ${(SYS.lock ? SYS.lock.name : '?').toUpperCase().slice(0, 12)}`) : R === 'error' ? 'SYNC ERROR' : 'CONNECTING…';
   el.title = R === 'viewer' ? `Trading runs on ${SYS.lock ? SYS.lock.name : '?'} — click to take over` : 'Sync across computers';
+  // watchdog: the cloud normally saves every ~5 min; say so loudly if it has gone quiet
+  const quiet = SY.on && R === 'viewer' && SYS.lock && SYS.lock.dev === 'cloud' && now() - SYS.lock.t > 20 * 60e3;
+  if (quiet) {
+    el.title = 'The cloud trader has not saved for ' + ago(SYS.lock.t) + '. Check the Actions tab and the cron-job.org timer (an expired token is the usual cause). After 30 min this computer takes over trading while it stays open.';
+    el.innerHTML = `<i style="background:${WARN};box-shadow:0 0 8px ${WARN}"></i>${esc('CLOUD QUIET · ' + ago(SYS.lock.t))}`;
+    if (!SYS.quietSaid || now() - SYS.quietSaid > 30 * 60e3) { SYS.quietSaid = now(); raise('trader', 'ACCOUNT', 'cloudquiet' + now(), `Watchdog: the cloud trader hasn't run for ${ago(SYS.lock.t)}. Check GitHub Actions and the cron-job.org timer; an expired timer token is the usual cause.`, -1, 0, true); }
+    return;
+  }
   el.innerHTML = `<i style="background:${c};box-shadow:0 0 8px ${c}"></i>${esc(txt)}`;
 }
 function syBanner() {
