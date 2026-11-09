@@ -917,13 +917,15 @@ function ptStats() {
 //   3. entry zone: the fair value gap (FVG) left by that displacement, or the order block (last opposite candle) if there is no gap
 //   4. entry on the first pullback into the zone; stop beyond the sweep extreme; target = the next liquidity pool (≥ 2R)
 const SM_DEF = {v: 1, start: 1000, cash: 1000, pos: {}, log: [], eqs: [], day: null, cool: {}, on: true, paused: null, created: 0, lastScan: null,
-  cfg: {riskPct: 1, maxPos: 3, maxLev: 2, minScore: 4, dailyLossPct: 3, feePct: 0.04, slipPct: 0.10, holdH: 12, minVol: 300000, maxStopPct: 15, minRR: 2, maxRR: 5, tp1R: 1.5, stopBuf: 0.3, unlGuard: 1, useScreens: 1}};
+  cfg: {riskPct: 1, maxPos: 3, maxLev: 2, minScore: 4, dailyLossPct: 3, feePct: 0.04, slipPct: 0.10, holdH: 12, minVol: 300000, maxStopPct: 15, minRR: 2, maxRR: 5, tp1R: 1.5, stopBuf: 0.3, unlGuard: 1, useScreens: 0}};
+// Nov 8: the SMC Trader trades on its own SMC judgement, without the Reviewer's screens (one-time switch-off for saved accounts)
+function smMigrate(p) { if (p.cfg.ownJudge !== 1) { p.cfg.useScreens = 0; p.cfg.ownJudge = 1; } return p; }
 let SM = (() => {
   const saved = LS.get('awx_sm', null);
   const p = Object.assign(JSON.parse(JSON.stringify(SM_DEF)), saved || {});
   p.cfg = Object.assign({}, SM_DEF.cfg, (saved && saved.cfg) || {});
   if (!p.created) p.created = now();
-  return p;
+  return smMigrate(p);
 })();
 function smSave() { LS.set('awx_sm', SM); }
 function smReset() { const cfg = SM.cfg; SM = JSON.parse(JSON.stringify(SM_DEF)); SM.cfg = cfg; SM.created = now(); smSave(); }
@@ -1615,14 +1617,14 @@ function rvMemo(from, to, txt) {
 }
 function screenTalk(oldF, newF) {
   const O = new Map(oldF.map(f => [scrKey(f), f])), N = new Map(newF.map(f => [scrKey(f), f])), movers = [...S.gainers, ...S.losers];
-  for (const [k, f] of N) if (!O.has(k)) {
+  for (const [k, f] of N) if (!O.has(k) && (f.st !== 'smc' || scrUse('smc'))) {
     const who = f.st === 'smc' ? 'smc' : 'trader', strat = STRAT_NOUN[f.st];
     rvMemo('rev', f.ag, `For ${strat}, screen for "${f.txt}". Evidence: ${f.ev}.`);
     const pass = movers.filter(s => { const r = profFit(s, f.st); return r && r.hit.some(h => scrKey(h) === k); }).length;
     rvMemo(f.ag, 'rev', `Done. I now mark coins ✓/✗ on "${f.txt}" for ${strat}. ${pass} of the current top-10 movers pass.`);
     rvMemo(who, 'rev', scrUse(f.st) ? `Understood. For ${strat} I'll skip setups that fail "${f.txt}" and take the best fits first. 1 in 5 that fail still gets traded as a test, so you can keep checking it.` : `Noted, but the Reviewer's screens are switched off on my desk, so I'm not using it.`);
   }
-  for (const [k, f] of O) if (!N.has(k)) {
+  for (const [k, f] of O) if (!N.has(k) && (f.st !== 'smc' || scrUse('smc'))) {
     const who = f.st === 'smc' ? 'smc' : 'trader', strat = STRAT_NOUN[f.st];
     rvMemo('rev', f.ag, `Lift the "${f.txt}" screen for ${strat}: the newer trades no longer back it.`);
     rvMemo(f.ag, 'rev', `Lifted. "${f.txt}" no longer counts for ${strat}.`);
