@@ -921,7 +921,7 @@ function ptStats() {
 // Every setup is also audited in SMC terms (sweep, liquidity, break, FVG / OB quality, premium/discount, higher timeframe,
 // entry depth) into a quality score; weak setups are skipped.
 const SM_DEF = {v: 1, start: 1000, cash: 1000, pos: {}, log: [], eqs: [], day: null, cool: {}, on: true, paused: null, created: 0, lastScan: null,
-  cfg: {riskPct: 1, maxPos: 3, maxLev: 2, minScore: 4, dailyLossPct: 3, feePct: 0.04, slipPct: 0.10, holdH: 12, minVol: 300000, maxStopPct: 15, minRR: 2, maxRR: 5, tp1R: 1.5, stopBuf: 0.3, unlGuard: 1, useScreens: 0, tf15: 1, tf1h: 1, holdH1h: 36, minQ: 55, learn: 1, poiRule: 1, ltfConfirm: 1, roomCheck: 1, cont: 1}};
+  cfg: {riskPct: 1, maxPos: 3, maxLev: 2, minScore: 4, dailyLossPct: 3, feePct: 0.04, slipPct: 0.10, holdH: 12, minVol: 300000, maxStopPct: 15, minRR: 2, maxRR: 5, tp1R: 1.5, stopBuf: 0.3, unlGuard: 1, useScreens: 0, tf15: 1, tf1h: 1, holdH1h: 36, minQ: 55, learn: 1, poiRule: 1, ltfConfirm: 1, roomCheck: 1, cont: 1, pathCheck: 1}};
 // Nov 8: the SMC Trader trades on its own SMC judgement, without the Reviewer's screens (one-time switch-off for saved accounts)
 function smMigrate(p) { if (p.cfg.ownJudge !== 1) { p.cfg.useScreens = 0; p.cfg.ownJudge = 1; } return p; }
 let SM = (() => {
@@ -1084,6 +1084,35 @@ function smRoom(Z, dir, live, target) {
   const z = opp.reduce((a, b) => bull ? (b.lo < a.lo ? b : a) : (b.hi > a.hi ? b : a));
   return {clear: false, edge: bull ? z.lo : z.hi, zone: {lo: z.lo, hi: z.hi}};
 }
+/* ---- the path to the target: low- vs high-resistance liquidity (from the MMXM failure-swings lesson Fred shared, Nov 9) ----
+   On the far side of the trade, swings that failed to beat the previous swing (lower highs above a long, higher lows below
+   a short: failure swings) are low-resistance liquidity; price tends to run through them. A swing that ran the previous
+   swing and was rejected (wick through, close back) is high-resistance liquidity; price tends to stall there. */
+function smPath(B, P, dir, live, target) {
+  if (!target) return null;
+  const bull = dir === 'L', n = B.length, atr0 = smATR(B, n) || 1e-9;
+  // structural swings only: at least 1.5 ATR of price on both sides (the right side may still be forming: 0.75 ATR)
+  const prom = p => {
+    let la = 0, rb = 0; for (let m = Math.max(0, p.i - 8); m < p.i; m++) la = Math.max(la, bull ? p.px - B[m][3] : B[m][2] - p.px); for (let m = p.i + 1; m <= Math.min(n - 1, p.i + 8); m++) rb = Math.max(rb, bull ? p.px - B[m][3] : B[m][2] - p.px);
+    return la >= 1.5 * atr0 && rb >= (p.i > n - 6 ? 0.75 : 1.5) * atr0; };
+  const Sw = (bull ? P.H : P.L).filter(prom);
+  const untaken = p => { for (let m = p.i + 1; m < n; m++) if (bull ? B[m][2] > p.px : B[m][3] < p.px) return false; return true; };
+  const atr = atr0; let fs = 0; const hr = [];
+  Sw.forEach((p, k) => {
+    if (!(bull ? p.px > live + 0.25 * atr && p.px < target : p.px < live - 0.25 * atr && p.px > target) || !untaken(p) || !k) return;
+    const prev = Sw[k - 1], d = bull ? prev.px - p.px : p.px - prev.px;    // > 0: failed to reach the previous swing
+    if (d >= 0.1 * atr) fs++;
+    else if (-d >= 0.05 * atr && (bull ? B[p.i][4] < prev.px : B[p.i][4] > prev.px)) hr.push(p);   // ran it, then closed back: high resistance
+  });
+  const near = hr.length ? hr.reduce((a, b) => bull ? (b.px < a.px ? b : a) : (b.px > a.px ? b : a)) : null;
+  return {fs, hr: near ? near.px : null, hrAt: near ? near.i : null};
+}
+// is the stop behind a high-resistance swing (a low that ran the previous low and closed back above it; mirror for highs)?
+function smProtected(B, P, dir, ext, from, to) {
+  const bull = dir === 'L'; let xi = from; for (let m = from; m <= to; m++) if (bull ? B[m][3] <= B[xi][3] : B[m][2] >= B[xi][2]) xi = m;
+  const prior = (bull ? P.L : P.H).filter(p => p.i < xi && p.i >= xi - 48 && (bull ? p.px > B[xi][3] && B[xi][4] > p.px : p.px < B[xi][2] && B[xi][4] < p.px));
+  return prior.length ? prior[prior.length - 1].px : null;
+}
 // lower-timeframe confirmation for a 1h setup: once price is in the 1h zone, a 15m close beyond the last 15m swing of the pullback
 function smConfirm15(s, r) {
   const K = smBars(s, '15m'); if (!K || K.length < 20 || !r.zone) return {ok: false, why: 'no 15m candles'};
@@ -1136,6 +1165,10 @@ function smcReadTf(s, tf) {
   // room: an opposing higher-timeframe zone before the target caps it at the zone's near edge; if that leaves less than minRR, there's no room
   let room = SM.cfg.roomCheck ? smRoom(Z, r.dir, live, target) : null;
   if (room && !room.clear) { const q = Math.abs(room.edge - live) / (risk || 1); room.rr = q; if (q >= SM.cfg.minRR) { target = room.edge; rr = Math.min(q, SM.cfg.maxRR); room.capped = true; } else room.blocked = true; }
+  // path: cap the target before a high-resistance swing in the way (if that still pays minRR); otherwise there's no clean path
+  let path = SM.cfg.pathCheck ? smPath(B, P, r.dir, live, target) : null;
+  if (path && path.hr) { const edge = path.hr, q = Math.abs(edge - live) / (risk || 1); path.rr = q; if (q >= SM.cfg.minRR) { target = edge; rr = Math.min(q, SM.cfg.maxRR); path.capped = true; } else path.blocked = true; }
+  const prot = cont ? smProtected(B, P, r.dir, r.ext, r.j, r.k) : null;
   const poi = smPOI(Z, r, B, hms);
   const vBefore = B.slice(Math.max(0, r.j - 24), r.j).reduce((a, b) => a + b[5], 0) / Math.max(1, Math.min(24, r.j));
   const vLeg = Math.max(...B.slice(r.j, (r.k > 0 ? r.k : n - 1) + 1).map(b => b[5]));
@@ -1158,7 +1191,7 @@ function smcReadTf(s, tf) {
   const score = checks.filter(c => c.ok === true).length;
   const against = !!bias && (bull ? bias === 'bear' : bias === 'bull');
   return {stage: r.stage, st: SMST[r.stage], dir: r.dir, setup: r, zone: r.zone, stop, target, rr, score, checks, bias, live, pos, risk, dist: risk / live,
-    tf, htf: T.htf, against, poi, room, conf, q: smQuality(B, r, live, tf, bias, pos, {poi, room, htf: T.htf, conf})};
+    tf, htf: T.htf, against, poi, room, conf, path, q: smQuality(B, r, live, tf, bias, pos, {poi, room, htf: T.htf, conf, path, prot, cont})};
 }
 /* ---- setup quality in SMC terms (0–100, A–F) ---- */
 function smATR(B, end, n = 14) { let a = 0, c = 0; for (let i = Math.max(1, end - n); i < end; i++) { a += Math.max(B[i][2] - B[i][3], Math.abs(B[i][2] - B[i - 1][4]), Math.abs(B[i][3] - B[i - 1][4])); c++; } return c ? a / c : null; }
@@ -1197,6 +1230,8 @@ function smQuality(B, r, live, tf, bias, pos, X = {}) {
   const htf = SM_TF[tf].htf, al = bias ? (bull ? bias === 'bull' : bias === 'bear') : null;
   if (X.poi) add('poi', X.poi.ok, X.poi.ok === 2 ? `Sweep into a fresh ${htf} ${bull ? 'demand' : 'supply'} zone (${fmtPx(X.poi.zone.lo)}–${fmtPx(X.poi.zone.hi)}): reversal from a higher-timeframe point of interest` : X.poi.ok === 1 ? (X.poi.zone ? `Sweep into a ${htf} ${bull ? 'demand' : 'supply'} zone that was already tested` : `Sweep took a ${htf} swing ${bull ? 'low' : 'high'} (${fmtPx(X.poi.piv)}): higher-timeframe liquidity`) : `No ${htf} zone or swing at the sweep: a reversal in the middle of the ${htf} range`);
   if (X.room) add('room', X.room.clear ? 2 : X.room.capped ? 1 : 0, X.room.clear ? `No opposing ${htf} ${bull ? 'supply' : 'demand'} before the target` : X.room.capped ? `Target moved to the ${htf} ${bull ? 'supply' : 'demand'} at ${fmtPx(X.room.edge)} (${X.room.rr.toFixed(1)}R)` : `${htf} ${bull ? 'supply' : 'demand'} at ${fmtPx(X.room.edge)} is only ${X.room.rr.toFixed(1)}R away: no room`);
+  if (X.path) add('path', X.path.capped ? 1 : X.path.fs >= 2 ? 2 : 1, X.path.capped ? `Target moved in front of a high-resistance ${bull ? 'high' : 'low'} at ${fmtPx(X.path.hr)} (it ran a previous swing and was rejected) — ${X.path.rr.toFixed(1)}R` : X.path.fs >= 2 ? `Low-resistance path: ${X.path.fs} failure swings (${bull ? 'lower highs' : 'higher lows'}) between entry and target` : X.path.fs === 1 ? `One failure swing on the way to the target` : `No failure swings on the way to the target`);
+  if (X.cont) add('prot', X.prot ? 2 : 1, X.prot ? `Stop behind a high-resistance ${bull ? 'low' : 'high'}: the base ran the ${bull ? 'low' : 'high'} at ${fmtPx(X.prot)} and was rejected` : `Base ${bull ? 'low' : 'high'} didn't run a previous swing`);
   if (X.conf && X.conf.ok) add('conf', 2, `15m confirmed: closed ${bull ? 'above' : 'below'} ${fmtPx(X.conf.ref)} inside the 1h zone`);
   add('htf', al === true ? 2 : al === null ? 1 : 0, al === true ? `${htf} structure agrees (${bias === 'bull' ? 'rising' : 'falling'})` : al === null ? `${htf} structure unclear` : `${htf} structure is ${bias === 'bull' ? 'rising' : 'falling'}: against the trade`);
   const dz = bull ? (z.hi - live) / Math.max(1e-12, z.hi - z.lo) : (live - z.lo) / Math.max(1e-12, z.hi - z.lo);
@@ -1237,7 +1272,7 @@ function smTryEnter(c) {
   if (qty * fill < 10) { c.skip = 'not enough room under the leverage cap'; return false; }
   const fee = qty * fill * SM.cfg.feePct / 100; SM.cash -= fee;
   const rr = Math.abs(r.target - fill) / Math.abs(fill - stop), uc = unlCtx(s);
-  const why = `${r.dir === 'L' ? 'Bullish' : 'Bearish'} SMC ${r.tf || '15m'} ${r.setup.type === 'cont' ? (r.dir === 'L' ? 'continuation (rally-base-rally) ' : 'continuation (drop-base-drop) ') : ''}${r.score}/6, quality ${r.q ? r.q.grade : '?'} — ${r.setup.type === 'cont' ? `${r.htf} and ${r.tf} trending, base at ${fmtPx(r.setup.ext)}, broke ${fmtPx(r.setup.lvl.px)}` : `swept ${fmtPx(r.setup.swept.px)}, shift through ${fmtPx(r.setup.lvl.px)}`}, ${r.zone.kind} ${fmtPx(r.zone.lo)}–${fmtPx(r.zone.hi)}, target ${fmtPx(r.target)} (${rr.toFixed(1)}R)${r.poi && r.poi.ok === 2 ? `, from a fresh ${r.htf} ${r.dir === 'L' ? 'demand' : 'supply'} zone` : r.poi && r.poi.ok === 1 ? `, at ${r.htf} ${r.poi.zone ? 'zone' : 'liquidity'}` : ''}${r.conf && r.conf.ok ? ', 15m confirmed' : ''}${r.room && r.room.capped ? `, target capped at ${r.htf} ${r.dir === 'L' ? 'supply' : 'demand'}` : ''}`;
+  const why = `${r.dir === 'L' ? 'Bullish' : 'Bearish'} SMC ${r.tf || '15m'} ${r.setup.type === 'cont' ? (r.dir === 'L' ? 'continuation (rally-base-rally) ' : 'continuation (drop-base-drop) ') : ''}${r.score}/6, quality ${r.q ? r.q.grade : '?'} — ${r.setup.type === 'cont' ? `${r.htf} and ${r.tf} trending, base at ${fmtPx(r.setup.ext)}, broke ${fmtPx(r.setup.lvl.px)}` : `swept ${fmtPx(r.setup.swept.px)}, shift through ${fmtPx(r.setup.lvl.px)}`}, ${r.zone.kind} ${fmtPx(r.zone.lo)}–${fmtPx(r.zone.hi)}, target ${fmtPx(r.target)} (${rr.toFixed(1)}R)${r.poi && r.poi.ok === 2 ? `, from a fresh ${r.htf} ${r.dir === 'L' ? 'demand' : 'supply'} zone` : r.poi && r.poi.ok === 1 ? `, at ${r.htf} ${r.poi.zone ? 'zone' : 'liquidity'}` : ''}${r.conf && r.conf.ok ? ', 15m confirmed' : ''}${r.room && r.room.capped ? `, target capped at ${r.htf} ${r.dir === 'L' ? 'supply' : 'demand'}` : ''}${r.path && r.path.capped ? `, target in front of a high-resistance ${r.dir === 'L' ? 'high' : 'low'}` : r.path && r.path.fs >= 2 ? `, low-resistance path (${r.path.fs} failure swings)` : ''}`;
   SM.pos[s] = {cx: entryCtx(s, r.checks), scr: typeof scrRec === 'function' ? scrRec(c) : null, side, b: base(s), qty, qty0: qty, entry: fill, stop, stop0: stop, target: r.target, rr, t: now(), risk: qty * Math.abs(fill - stop), realized: -fee, fees: fee, funding: 0,
     why, sc: r.score, zoneKind: r.zone.kind, zone: r.zone, sweep: r.setup.ext, lvl: r.setup.lvl.px, unlK: uc.phase && uc.big ? uc.phase : 'none', nf: null, be: false, tp1: false, maxR: 0, exits: [], dist: dist * 100,
     tf: r.tf || '15m', htfBias: r.bias || null, holdH: (r.tf === '1h' ? SM.cfg.holdH1h : SM.cfg.holdH), q: r.q ? {score: r.q.score, grade: r.q.grade, items: r.q.items, zs: r.q.zs, dz: r.q.dz} : null, tp1R: smRules().tp1R, poi: r.poi && r.poi.zone ? r.poi.zone : null, type: r.setup.type || 'rev'};
@@ -1292,6 +1327,7 @@ function smTick() {
     else if (smRules().needHTF && !(r.bias && (r.dir === 'L' ? r.bias === 'bull' : r.bias === 'bear'))) c.skip = `${r.htf} structure must agree (Reviewer's SMC rule); it's ${r.bias ? (r.bias === 'bull' ? 'rising' : 'falling') : 'unclear'}`;
     else if (r.setup && r.setup.type === 'cont' && smRules().noCont) c.skip = 'continuation setups paused (Reviewer\'s SMC rule)';
     else if (r.poi && r.poi.ok === 0 && (smRules().needPOI || (SM.cfg.poiRule && !(r.bias && (r.dir === 'L' ? r.bias === 'bull' : r.bias === 'bear'))))) c.skip = `${r.htf} isn't trending ${r.dir === 'L' ? 'up' : 'down'} and the sweep isn't at a ${r.htf} ${r.dir === 'L' ? 'demand zone or swing low' : 'supply zone or swing high'}${smRules().needPOI ? ' (Reviewer\'s SMC rule)' : ''}`;
+    else if (r.path && r.path.blocked) c.skip = `high-resistance ${r.dir === 'L' ? 'high' : 'low'} at ${fmtPx(r.path.hr)} is only ${r.path.rr.toFixed(1)}R away: price tends to stall there`;
     else if (r.room && r.room.blocked) c.skip = `${r.htf} ${r.dir === 'L' ? 'supply' : 'demand'} at ${fmtPx(r.room.edge)} is only ${r.room.rr.toFixed(1)}R away (needs ${SM.cfg.minRR}R of room)`;
     else if (r.score < SM.cfg.minScore) c.skip = `only ${r.score}/6 confluences (needs ${SM.cfg.minScore})`;
     else if (r.q && r.q.score < smRules().minQ) c.skip = `setup quality ${r.q.grade} (${r.q.score}/100, needs ${smRules().minQ})${r.q.worst ? ': ' + r.q.worst.toLowerCase() : ''}`;
@@ -1529,6 +1565,8 @@ const YOU_PHRASES = [
   [/(small|tiny|weak|bad|poor) (fvg|gap|imbalance)|(fvg|gap) (was |is )?(too )?(small|tiny|weak|bad|poor)|(no|weak) displacement|fvg(太細|唔好|麻麻|差)/, {b: ['gap']}],
   [/(no|not at a|not from a|missing) (htf |higher timeframe |1h |4h )?(poi|zone|demand|supply|key level)|middle of (the )?(range|nowhere)|not at (any|a) (htf |1h |4h )?(level|zone)|冇(大級別)?(支撐|阻力|zone)/, {b: ['poi']}],
   [/(no|don'?t|do not|stop|skip) (trade |trading |take |taking )?(the )?continuation|continuation (setups? )?(are|is|was) (bad|weak|not good)|chas(ed|ing) the trend|唔好(做|追)順勢/, {b: ['cont']}],
+  [/low[ -]resistance|failure swings? (above|below|in the way|to the target)|clean path/, {d: ['smc_path']}],
+  [/high[ -]resistance (high|low|liquidity|swing)|(stalled|struggled) at (the |a )?(high|low|swing)/, {b: ['room']}],
   [/(ran|ran straight|bought|sold|longed|shorted) into (a |the )?(supply|demand|resistance|support)|no room|target (was )?(behind|past|beyond) (a |the )?(supply|demand|zone)|頂住阻力|撞阻力/, {b: ['room']}],
   [/(no|weak|fake|not a (real|clean)) (sweep|liquidity grab|grab)|sweep (was |is )?(weak|small|not clean)|didn'?t (sweep|take|grab) (the )?liquidity|冇(掃|洗)(到)?流動性/, {b: ['sweep']}],
   [/(good|clean|nice|valid|strong) (fvg|gap|imbalance)|(fvg|gap) (was |is )?(good|clean|nice|fine)|靚(嘅)?fvg/, {d: ['smc_gap']}],
@@ -1554,7 +1592,7 @@ function youRead(note) {
 }
 // plain-language reading of a comment, for the form and the review wall
 const YOU_B_TXT = {cont: 'skip continuation setups', poi: 'not at a higher-timeframe zone', room: 'ran into an opposing zone', htf: 'traded against the higher timeframe', ob: 'the order block was poor', gap: 'the FVG was poor', sweep: 'the sweep was weak', depth: 'entered at the zone\'s edge'};
-const YOU_D_TXT = {tight: 'the stop was fine', quickstop: 'the stop was fine', forming: 'entering at "forming" was fine', smc_gap: 'the FVG was good', smc_ob: 'the order block was good', smc_htf: 'the higher timeframe was fine', smc_poi: 'it was at a good zone'};
+const YOU_D_TXT = {tight: 'the stop was fine', quickstop: 'the stop was fine', forming: 'entering at "forming" was fine', smc_gap: 'the FVG was good', smc_ob: 'the order block was good', smc_htf: 'the higher timeframe was fine', smc_poi: 'it was at a good zone', smc_path: 'the path to the target was low-resistance'};
 const YOU_A_TXT = {same: 'same trade', skip: 'skip it', later: 'enter later', earlier: 'enter earlier', exitE: 'exit earlier', hold: 'hold longer', wider: 'wider stop', tighter: 'tighter stop', bigger: 'bigger size', smaller: 'smaller size'};
 function youReadTxt(c) {
   if (!c || !c.any) return '';
@@ -1623,7 +1661,7 @@ function rvYourCalls(T, TM, p, why, base, st) {
 // Factors from each trade's quality audit (sweep, liquidity, structure break, FVG / OB, premium/discount, higher timeframe,
 // entry depth), its entry timeframe and its quality grade. A change needs 5+ trades on each side and a 0.5R+ gap with the
 // better side making money; your SMC reviews count the same way as for the Trader. RV.smAdj is what the SMC Trader applies.
-const SM_FACTOR = {sweep: 'Sweep', liq: 'Liquidity taken', mss: 'Structure break', gap: 'FVG size', disp: 'FVG displacement', ob: 'Order block', obliq: 'OB took the liquidity', pd: 'Premium / discount', htf: 'Higher timeframe', depth: 'Entry depth in the zone', dep: 'Departure from the zone', poi: 'Higher-timeframe zone (POI)', trend: 'Trend (continuation)', room: 'Room to the target', conf: '15m confirmation'};
+const SM_FACTOR = {sweep: 'Sweep', liq: 'Liquidity taken', mss: 'Structure break', gap: 'FVG size', disp: 'FVG displacement', ob: 'Order block', obliq: 'OB took the liquidity', pd: 'Premium / discount', htf: 'Higher timeframe', depth: 'Entry depth in the zone', dep: 'Departure from the zone', poi: 'Higher-timeframe zone (POI)', trend: 'Trend (continuation)', path: 'Path to target (failure swings)', prot: 'Stop behind a high-resistance swing', room: 'Room to the target', conf: '15m confirmation'};
 function smStudy(L) {
   const T = L.filter(x => x.q && x.q.items && !rvManual(x)), F = {};
   for (const k in SM_FACTOR) {
