@@ -659,15 +659,18 @@ if (typeof window !== 'undefined' && typeof setInterval === 'function') { unlLoa
 // Trades the reversal signals from the day tracker. No real orders are ever sent: fills are simulated at live
 // Aster prices with taker fee, slippage and funding charged, so the results are a fair test of the rules.
 const PT_DEF = {v: 1, start: 1000, cash: 1000, pos: {}, log: [], eqs: [], day: null, cool: {}, on: true, paused: null, created: 0,
-  cfg: {riskPct: 1, maxPos: 3, maxLev: 2, minScore: 5, dailyLossPct: 3, feePct: 0.04, slipPct: 0.10, holdH: 12, minVol: 300000, maxStopPct: 15, tp1R: 1.5, tpR: 3, stopBuf: 0.5, unlGuard: true, unlDays: 3, unlMinPct: 2, stratRev: 1, revLong: 0, useScreens: 1, stratMom: 1, momMinScore: 6, momRiskPct: 0.75, momMaxPos: 2, momHoldH: 6, momMaxExt: 8}, cands: []};
+  cfg: {riskPct: 1, maxPos: 3, maxLev: 10, minScore: 5, dailyLossPct: 3, feePct: 0.04, slipPct: 0.10, holdH: 12, minVol: 300000, maxStopPct: 15, tp1R: 1.5, tpR: 3, stopBuf: 0.5, unlGuard: true, unlDays: 3, unlMinPct: 2, stratRev: 1, revLong: 0, useScreens: 1, stratMom: 1, momMinScore: 6, momRiskPct: 0.75, momMaxPos: 2, momHoldH: 6, momMaxExt: 8}, cands: []};
+// Nov 11 (Fred): both traders use a 10× leverage cap (one-time switch for saved accounts)
+function ptMigrate(p) { if (p.cfg.lev10 !== 1) { p.cfg.maxLev = 10; p.cfg.lev10 = 1; } return p; }
 let PT = (() => {
   const saved = LS.get('awx_pt', null);
   const p = Object.assign(JSON.parse(JSON.stringify(PT_DEF)), saved || {});
   p.cfg = Object.assign({}, PT_DEF.cfg, (saved && saved.cfg) || {});
   if (!p.created) p.created = now();
   if (!Array.isArray(p.cands)) p.cands = [];
-  return p;
+  return ptMigrate(p);
 })();
+
 // Reviewer state (the Reviewer agent lives in review.js)
 const RV_DEF = {v: 1, on: true, auto: true, every: 3, reviews: [], active: null, pending: null, lastT: 0, seq: 0};
 let RV = (() => { const s = LS.get('awx_rv', null); return Object.assign(JSON.parse(JSON.stringify(RV_DEF)), s || {}); })();
@@ -921,9 +924,9 @@ function ptStats() {
 // Every setup is also audited in SMC terms (sweep, liquidity, break, FVG / OB quality, premium/discount, higher timeframe,
 // entry depth) into a quality score; weak setups are skipped.
 const SM_DEF = {v: 1, start: 1000, cash: 1000, pos: {}, log: [], eqs: [], day: null, cool: {}, on: true, paused: null, created: 0, lastScan: null,
-  cfg: {riskPct: 1, maxPos: 3, maxLev: 2, minScore: 4, dailyLossPct: 3, feePct: 0.04, slipPct: 0.10, holdH: 12, minVol: 300000, maxStopPct: 15, minRR: 2, maxRR: 5, tp1R: 1.5, stopBuf: 0.3, unlGuard: 1, useScreens: 0, tf15: 1, tf1h: 1, holdH1h: 36, minQ: 55, learn: 1, poiRule: 1, ltfConfirm: 1, roomCheck: 1, cont: 1, pathCheck: 1, pdLiq: 1, invExit: 1}};
+  cfg: {riskPct: 1, maxPos: 3, maxLev: 10, minScore: 4, dailyLossPct: 3, feePct: 0.04, slipPct: 0.10, holdH: 12, minVol: 300000, maxStopPct: 15, minRR: 2, maxRR: 5, tp1R: 1.5, stopBuf: 0.3, unlGuard: 1, useScreens: 0, tf15: 1, tf1h: 1, holdH1h: 36, minQ: 55, learn: 1, poiRule: 1, ltfConfirm: 1, roomCheck: 1, cont: 1, pathCheck: 1, pdLiq: 1, invExit: 1}};
 // Nov 8: the SMC Trader trades on its own SMC judgement, without the Reviewer's screens (one-time switch-off for saved accounts)
-function smMigrate(p) { if (p.cfg.ownJudge !== 1) { p.cfg.useScreens = 0; p.cfg.ownJudge = 1; } return p; }
+function smMigrate(p) { if (p.cfg.ownJudge !== 1) { p.cfg.useScreens = 0; p.cfg.ownJudge = 1; } if (p.cfg.lev10 !== 1) { p.cfg.maxLev = 10; p.cfg.lev10 = 1; } return p; } // Nov 11 (Fred): 10× leverage cap
 let SM = (() => {
   const saved = LS.get('awx_sm', null);
   const p = Object.assign(JSON.parse(JSON.stringify(SM_DEF)), saved || {});
