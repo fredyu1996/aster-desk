@@ -2340,6 +2340,7 @@ addEventListener('keydown', e => {
   if (!PS.open && typeof RWS !== 'undefined' && RWS.hold) { // standing at the review wall
     if (e.key === 'e' || e.key === 'E') { openMineFromWall(); return; }
     if (e.key === '[' || e.key === ']') { wallStep(e.key === ']' ? 1 : -1); e.preventDefault(); return; }
+    if (e.key === 't' || e.key === 'T') { rvTagsToggle(); e.preventDefault(); return; }
   }
   if (PS.open) return;
   keys[e.code] = true;
@@ -3116,6 +3117,8 @@ function youRead(note) {
 const YOU_B_TXT = {draw: 'against the draw on liquidity', cont: 'skip continuation setups', poi: 'not at a higher-timeframe zone', room: 'ran into an opposing zone', htf: 'traded against the higher timeframe', ob: 'the order block was poor', gap: 'the FVG was poor', sweep: 'the sweep was weak', depth: 'entered at the zone\'s edge'};
 const YOU_D_TXT = {tight: 'the stop was fine', quickstop: 'the stop was fine', forming: 'entering at "forming" was fine', smc_gap: 'the FVG was good', smc_ob: 'the order block was good', smc_htf: 'the higher timeframe was fine', smc_poi: 'it was at a good zone', smc_path: 'the path to the target was low-resistance', smc_draw: 'it was with the draw'};
 const YOU_A_TXT = {same: 'same trade', skip: 'skip it', later: 'enter later', earlier: 'enter earlier', exitE: 'exit earlier', hold: 'hold longer', wider: 'wider stop', tighter: 'tighter stop', bigger: 'bigger size', smaller: 'smaller size'};
+// everything you wrote on a review: the comment plus the caption under each chart picture
+const mineText = m => [m && m.note, ...((m && m.imgs) || []).map(i => i && i.cap)].filter(s => String(s || '').trim()).join('. ');
 function youReadTxt(c) {
   if (!c || !c.any) return '';
   return [...c.a.map(k => YOU_A_TXT[k]), ...[...new Set(c.d.map(k => YOU_D_TXT[k]))], ...c.b.map(k => YOU_B_TXT[k])].filter(Boolean).join(' · ');
@@ -3125,7 +3128,7 @@ function youTally(L) {
   const put = (o, k, w) => { o[k] = (o[k] || 0) + w; };
   let nc = 0;
   for (const [, m] of R) {
-    const c = youRead(m.note), quote = String(m.note || '').trim().replace(/\s+/g, ' ');
+    const c = youRead(mineText(m)), quote = String(mineText(m)).trim().replace(/\s+/g, ' ');
     if (c.any) nc++;
     const A = new Set(c.a), D = new Set(c.d);
     // comment = 1, chip not said in the comment = ½
@@ -4099,6 +4102,8 @@ function drawRace() {
 // Also: the rules each trader is using right now, with the Reviewer's changes marked.
 
 const RVK = new Map();                            // candles per closed trade
+const RVT = {tags: LS.get('awx_tags', true) !== false}; // show the ✓/✗ tags on trade charts (T at the review wall, or the button on the chart)
+function rvTagsToggle() { RVT.tags = !RVT.tags; LS.set('awx_tags', RVT.tags); try { drawReviewWall(); } catch (_) {} try { document.querySelectorAll('canvas[data-rvchart]').forEach(drawRvCanvas); } catch (_) {} const b = document.querySelector('[data-rvtags]'); if (b) { b.classList.toggle('on', RVT.tags); b.textContent = RVT.tags ? '✓/✗ on chart: ON' : '✓/✗ on chart: OFF'; } }
 const RVS = {key: null, acct: 'all'};             // panel selection
 const RWS = {i: 0, t: 0, key: null};              // wall rotation
 const isManual = x => /closed by you/.test(x.exitWhy || '');
@@ -4302,8 +4307,8 @@ function drawTradeChart(c, x, acct, X0, Y0, w, h, f, E) {
   c.fillStyle = x.R >= 0 ? UP : DN; c.beginPath(); c.arc(xb, Y(x.exit), 6.5 * f, 0, 7); c.fill(); c.strokeStyle = '#04070f'; c.lineWidth = 1.5; c.stroke();
   // best point (the bar in the trade with the most favourable extreme)
   let tb = x.t0; { let bv = L ? -Infinity : Infinity; for (const b of Bs) if (b[0] + e.ms > x.t0 && b[0] <= x.t1) { const v = L ? b[2] : b[3]; if (L ? v > bv : v < bv) { bv = v; tb = b[0] + e.ms / 2; } } }
-  // ✓ / ✗ tags at the spot each verdict refers to
-  if (E) {
+  // ✓ / ✗ tags at the spot each verdict refers to (hidden while you read the chart yourself)
+  if (E && RVT.tags) {
     const at = {entry: [xa, Y(x.entry), L ? 1 : -1], best: [X(tb), Y(best), L ? -1 : 1], tp1: parts.length ? [X(parts[0][0]), Y(parts[0][1]), L ? -1 : 1] : [(xa + xb) / 2, Y(tp1), L ? -1 : 1], exit: [xb, Y(x.exit), x.R >= 0 === L ? -1 : 1], after: x.fu && x.fu.af ? [X(x.fu.af.tMax), Y(x.fu.af.pMax), L ? -1 : 1] : [xb, Y(x.exit), 1]};
     if (x.fu && x.fu.af) { c.strokeStyle = '#9ab0ff'; c.lineWidth = 2 * f; c.beginPath(); c.arc(X(x.fu.af.tMax), Y(x.fu.af.pMax), 6 * f, 0, 7); c.stroke(); }
     const grp = {}; for (const it of E.items) (grp[it.at] = grp[it.at] || []).push(it);
@@ -4352,7 +4357,7 @@ function drawReviewWall() {
     c.fillStyle = a === 'sm' ? SMCOL : '#ffd166'; c.fillText(stratName(a, x).toUpperCase(), cx, 134); cx += c.measureText(stratName(a, x).toUpperCase()).width + 30;
     c.font = `800 40px ${FM}`; c.fillStyle = tone(x.R); c.fillText(fmtR(x.R), cx, 132); cx += c.measureText(fmtR(x.R)).width + 16;
     c.font = `700 28px ${FM}`; c.fillText(fmtMoney(x.pnl, 1), cx, 134);
-    c.textAlign = 'right'; c.font = `500 22px ${FS}`; c.fillStyle = DIM; c.fillText(`closed ${ago(x.t1)} ago · trade ${RWS.i % all.length + 1} of ${all.length} · ${RWS.hold ? '[ / ] previous / next' : 'changes every 25 s'}`, split - 30, 134); c.textAlign = 'left';
+    c.textAlign = 'right'; c.font = `500 22px ${FS}`; c.fillStyle = DIM; c.fillText(`closed ${ago(x.t1)} ago · trade ${RWS.i % all.length + 1} of ${all.length} · ${RWS.hold ? `[ / ] previous / next · T ✓/✗ ${RVT.tags ? 'off' : 'on'}` : 'changes every 25 s'}`, split - 30, 134); c.textAlign = 'left';
     // grade badge
     c.fillStyle = GRADE_C[g.g] || DIM; rr(c, 30, 166, 64, 64, 12); c.fill(); c.fillStyle = '#04070f'; c.font = `800 46px ${FS}`; c.textAlign = 'center'; c.fillText(g.g, 62, 200); c.textAlign = 'left';
     RWS.cur = [a, x];
@@ -4380,7 +4385,8 @@ function drawReviewWall() {
       c.font = `800 22px ${FS}`; c.fillStyle = MINE_C; c.fillText(`YOUR REVIEW: ${mine.g || '—'}${mine.ag ? ' · ' + MINE_AG[mine.ag] : ''}${mine.excl ? ' · left out of learning' : ''}`, lx, y); y += 30;
       c.font = `500 20px ${FS}`; c.fillStyle = '#f3d6ea';
       if (mine.note) { c.font = `italic 500 21px ${FS}`; c.fillStyle = '#f3d6ea'; const n = wrapText(c, '“' + mine.note.trim() + '”', lx, y, lw, 25, 3); y += 25 * (n || 1) + 4; }
-      const rd = youReadTxt(youRead(mine.note)); if (rd) { c.font = `700 19px ${FS}`; c.fillStyle = MINE_C; const n = wrapText(c, 'Reviewer reads: ' + rd, lx, y, lw, 23, 2); y += 23 * (n || 1) + 2; }
+      if ((mine.imgs || []).length) { c.font = `600 19px ${FS}`; c.fillStyle = '#f3d6ea'; const n = wrapText(c, `📷 ${mine.imgs.length} chart picture${mine.imgs.length > 1 ? 's' : ''}` + (mine.imgs.some(i => i.cap) ? ': ' + mine.imgs.map(i => i.cap).filter(Boolean).join(' · ') : ' (open the review with E to see them)'), lx, y, lw, 23, 2); y += 23 * (n || 1) + 2; }
+      const rd = youReadTxt(youRead(mineText(mine))); if (rd) { c.font = `700 19px ${FS}`; c.fillStyle = MINE_C; const n = wrapText(c, 'Reviewer reads: ' + rd, lx, y, lw, 23, 2); y += 23 * (n || 1) + 2; }
       const txt = [(mine.alt || []).length ? 'Ticked: ' + mine.alt.map(k => MINE_ALT[k]).join(', ') : '', (mine.x || []).length ? 'disagrees with ' + mine.x.join(', ') : ''].filter(Boolean).join(' · ');
       if (txt) { c.font = `500 18px ${FS}`; c.fillStyle = '#c9b3c2'; const n = wrapText(c, txt, lx, y, lw, 22, 2); y += 22 * (n || 1); } y += 16;
     }
@@ -4488,7 +4494,7 @@ function rvChartHTML() {
       ${E.smc ? `<div style="font-size:12px;margin-top:2px;color:${SMCOL}">${esc(smcLine(E))}</div>` : ''}<div style="font-size:13px;margin-top:2px">${esc(g.note)}</div></div>
       <span class="dim" style="margin-left:auto;font-size:12px">${new Date(x.t0).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'})} → ${new Date(x.t1).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})} · held ${held(x)}</span></div>
     <canvas data-rvchart="${esc(RVS.key)}" style="width:100%;height:360px;display:block;border-radius:8px;border:1px solid var(--line);margin-top:10px"></canvas>
-    <div class="dim" style="font-size:11px;margin-top:4px">▲/▼ entry · ◆ half taken · ● exit · shaded = time in the trade · numbered tags match the lists below</div>
+    <div style="display:flex;gap:10px;align-items:center;margin-top:4px"><span class="dim" style="font-size:11px">▲/▼ entry · ◆ half taken · ● exit · shaded = time in the trade · numbered tags match the lists below</span><span class="chip ${RVT.tags ? 'on' : ''}" data-rvtags="1" style="margin-left:auto;font-size:11px" title="Hide the Reviewer's ✓/✗ tags so you can read the chart yourself (T at the review wall)">${RVT.tags ? '✓/✗ on chart: ON' : '✓/✗ on chart: OFF'}</span></div>
     <div class="grid2" style="margin-top:10px"><div class="card2"><h3 style="color:${UP}">DONE RIGHT</h3>${G.map(item).join('') || '<span class="dim" style="font-size:13px">Nothing stood out.</span>'}</div>
     <div class="card2"><h3 style="color:${DN}">DONE WRONG</h3>${B.map(item).join('') || '<span class="dim" style="font-size:13px">Nothing. A clean trade by the rules.</span>'}</div></div>
     <div class="card2" style="margin-top:12px;border-left:4px solid #c5f05a"><h3 style="color:#c5f05a">WHAT THE REVIEWER CHANGED</h3>${E.les.length ? E.les.map(l => `<div class="chk"><span class="i" style="color:#c5f05a">›</span><span>${esc(l)}</span></div>`).join('') + '<div class="dim" style="font-size:12px;margin-top:4px">These rules are in force now, partly because of trades like this one.</div>' : `<span class="dim" style="font-size:13px">No rule change from trades like this yet. The Reviewer needs a minimum sample before it changes anything (${a === 'sm' ? '5 SMC trades on each side of a comparison' : '3 trades for a setup, 4 for a side, 6 overall'}).</span>`}
@@ -4503,6 +4509,7 @@ function drawRvCanvas(cv) {
   drawTradeChart(c, hit[1], hit[0], 0, 0, r.width, r.height, 1, rvExplain(hit[1], hit[0]));
 }
 document.getElementById('panel').addEventListener('click', e => {
+  if (e.target.closest('[data-rvtags]')) { e.stopPropagation(); rvTagsToggle(); return; }
   const p = e.target.closest('[data-rvpick]'), f = e.target.closest('[data-rvacct]'); if (!p && !f) return; e.stopPropagation();
   if (p) RVS.key = p.dataset.rvpick; if (f) { RVS.acct = f.dataset.rvacct; RVS.key = null; }
   renderPanel();
@@ -4628,19 +4635,59 @@ const MINE_C = '#ff8ad8';
 const MINE_AG = {agree: 'agree with the Reviewer', partly: 'partly agree', disagree: 'disagree with the Reviewer'};
 const MINE_ALT = {same: 'same trade', skip: 'skip it', later: 'enter later', earlier: 'enter earlier', exitE: 'exit earlier', hold: 'hold longer', wider: 'wider stop', tighter: 'tighter stop', bigger: 'bigger size', smaller: 'smaller size'};
 const MD = {key: null, d: null, msg: ''};           // the form being filled in (kept across panel refreshes)
-function mineDraft(k) { if (MD.key !== k) { const r = RVM[k]; MD.key = k; MD.d = r ? JSON.parse(JSON.stringify(r)) : {g: '', ag: '', alt: [], x: [], note: '', excl: false}; MD.msg = ''; } return MD.d; }
+function mineDraft(k) { if (MD.key !== k) { const r = RVM[k]; MD.key = k; MD.d = r ? JSON.parse(JSON.stringify(r)) : {g: '', ag: '', alt: [], x: [], note: '', excl: false, imgs: []}; MD.d.imgs = MD.d.imgs || []; MD.msg = ''; } return MD.d; }
+// chart pictures on a review: shrunk to ≤1600 px JPEG (~150-400 KB) so they sync quickly
+async function mineImgPrep(file) {
+  const url = URL.createObjectURL(file), im = new Image();
+  try { await new Promise((res, rej) => { im.onload = res; im.onerror = () => rej(new Error('not a picture')); im.src = url; }); } finally { setTimeout(() => URL.revokeObjectURL(url), 1000); }
+  const sc = Math.min(1, 1600 / Math.max(im.naturalWidth, im.naturalHeight)), w = Math.max(1, Math.round(im.naturalWidth * sc)), h = Math.max(1, Math.round(im.naturalHeight * sc));
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h; const c = cv.getContext('2d'); c.fillStyle = '#04070f'; c.fillRect(0, 0, w, h); c.drawImage(im, 0, 0, w, h);
+  let q = 0.88, data = cv.toDataURL('image/jpeg', q); while (data.length > 550e3 && q > 0.5) { q -= 0.1; data = cv.toDataURL('image/jpeg', q); }
+  return {p: 'img/' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7) + '.jpg', w, h, cap: '', data};
+}
+function mineImgsHTML(d) {
+  const L = d.imgs || [];
+  return `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start">${L.map((im, i) => `<div style="width:210px"><div style="position:relative"><img data-mimg="${esc(im.p)}"${im.data ? ` src="${im.data}"` : ''} data-mimg-open="${i}" alt="loading…" style="width:210px;height:126px;object-fit:cover;border-radius:7px;border:1px solid var(--line);cursor:zoom-in;background:#0b1224;display:block;color:var(--dim);font-size:11px"><span data-mimg-del="${i}" title="Remove this picture" style="position:absolute;top:5px;right:5px;background:rgba(4,7,15,.85);color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:15px">×</span></div><textarea data-mimg-cap="${i}" rows="2" placeholder="What this picture shows, e.g. 4h OB here · swept PDL first · 1h still falling" style="width:100%;margin-top:4px;background:#0b1224;color:var(--txt);border:1px solid var(--line);border-radius:7px;padding:5px 7px;font:12px var(--sans);resize:vertical">${esc(im.cap || '')}</textarea></div>`).join('')}
+    ${L.length < 4 ? `<label class="btn ghost sm" style="cursor:pointer;align-self:center">📷 Add picture<input type="file" id="mineImg" accept="image/*" multiple style="display:none"></label>` : ''}</div>
+    <div class="dim" style="font-size:11px;margin-top:4px">Up to 4 per review: screenshots of your chart, your own markup. You can also paste a screenshot (Ctrl+V / ⌘V) into the comment box. Click a picture to see it full size.</div>`;
+}
+function mineImgsRefresh() {
+  const box = document.getElementById('mineImgs'); if (box && MD.d) box.innerHTML = mineImgsHTML(MD.d);
+  const r = document.getElementById('mineRead'); if (r && MD.d) r.innerHTML = mineReadHTML(mineText(MD.d));
+  const m = document.getElementById('mineMsg'); if (m) m.textContent = MD.msg || '';
+  imgFill();
+}
+async function mineAddImgs(files) {
+  const d = MD.d; if (!d) return; d.imgs = d.imgs || []; MD.msg = '';
+  for (const f of files) {
+    if (!/^image\//.test(f.type || '')) continue;
+    if (d.imgs.length >= 4) { MD.msg = 'Up to 4 pictures per review.'; break; }
+    try { d.imgs.push(await mineImgPrep(f)); MD.msg = 'Picture added. Press "Save my review" to keep it.'; } catch (e) { MD.msg = 'Could not read that picture: ' + e.message; }
+  }
+  mineImgsRefresh();
+}
+function mineImgView(src, cap) {
+  const o = document.createElement('div');
+  o.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(2,4,10,.93);display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:zoom-out;padding:24px';
+  o.innerHTML = `<img src="${src}" style="max-width:96vw;max-height:86vh;border-radius:8px;box-shadow:0 0 40px rgba(0,0,0,.6)">${cap ? `<div style="color:#f3d6ea;font:15px var(--sans);margin-top:12px;max-width:90vw;text-align:center">${esc(cap)}</div>` : ''}<div style="color:#8a94b0;font:12px var(--sans);margin-top:8px">click or Esc to close</div>`;
+  const k = ev => { if (ev.key === 'Escape') { ev.stopPropagation(); ev.preventDefault(); close(); } };
+  const close = () => { o.remove(); removeEventListener('keydown', k, true); };
+  o.onclick = close; addEventListener('keydown', k, true); document.body.appendChild(o);
+}
 // what the Reviewer took from your comment, shown live under the box
 function mineReadHTML(note) {
-  if (!String(note || '').trim()) return '<span class="dim">Write what you saw; the Reviewer will show here what it takes from it.</span>';
+  if (!String(note || '').trim()) return '<span class="dim">Write what you saw (in the comment or under a picture); the Reviewer will show here what it takes from it.</span>';
   const c = youRead(note);
   return c.any ? `<span style="color:${MINE_C}">The Reviewer reads this as:</span> <b>${esc(youReadTxt(c))}</b>` : '<span style="color:#ffd166">Nothing the Reviewer can act on yet.</span> <span class="dim">It understands phrases like "entered too early", "wait for the midpoint", "stop too tight / wicked out", "closed too early", "take profit earlier", "smaller size", "against the 4h", "weak OB", "small FVG", "good FVG", "should not have traded" (also 太早入, 等確認, 止蝕太近, 逆勢, 走得太早…). Your note is still saved.</span>';
 }
 function mineFormHTML(a, x, E) {
   const k = tradeKey(a, x), d = mineDraft(k), saved = RVM[k];
+  setTimeout(imgFill, 0);
   const chip = (attr, v, lab, on, col) => `<span class="chip ${on ? 'on' : ''}" ${attr}="${v}" style="${on ? `background:${col || MINE_C};color:#04070f;border-color:${col || MINE_C}` : ''}">${lab}</span>`;
   return `<div class="card2" id="mineForm" style="margin-top:12px;border-left:4px solid ${MINE_C}"><h3 style="color:${MINE_C}">YOUR REVIEW${saved ? ` <span class="dim" style="font-size:11px;font-weight:500">saved ${ago(saved.t)} ago${saved.by ? ' on ' + esc(saved.by) : ''}</span>` : ''}</h3>
     <div style="display:grid;grid-template-columns:150px 1fr;gap:10px 12px;align-items:center;font-size:13px">
-      <span style="color:${MINE_C};font-weight:700">Your comments<br><span class="dim" style="font-weight:400;font-size:11px">the Reviewer reads these first</span></span><div><textarea id="mineNote" rows="3" placeholder="In your own words (English or 中文): e.g. entered too early, should wait for the midpoint · stop too tight, wicked out · against the 4h · weak OB · good FVG · should have held" style="width:100%;background:#0b1224;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:8px;font:13px var(--sans);resize:vertical">${esc(d.note || '')}</textarea><div id="mineRead" style="font-size:12px;margin-top:4px">${mineReadHTML(d.note)}</div></div>
+      <span style="color:${MINE_C};font-weight:700">Your comments<br><span class="dim" style="font-weight:400;font-size:11px">the Reviewer reads these first</span></span><div><textarea id="mineNote" rows="3" placeholder="In your own words (English or 中文): e.g. entered too early, should wait for the midpoint · stop too tight, wicked out · against the 4h · weak OB · good FVG · should have held" style="width:100%;background:#0b1224;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:8px;font:13px var(--sans);resize:vertical">${esc(d.note || '')}</textarea><div id="mineRead" style="font-size:12px;margin-top:4px">${mineReadHTML(mineText(d))}</div></div>
+      <span style="color:${MINE_C};font-weight:700">Chart pictures<br><span class="dim" style="font-weight:400;font-size:11px">explain your read; the Reviewer reads the captions too</span></span><div id="mineImgs">${mineImgsHTML(d)}</div>
       <span class="dim">Your grade</span><div style="display:flex;gap:6px;flex-wrap:wrap">${['A', 'B', 'C', 'D', 'F'].map(gr => chip('data-mine-g', gr, gr, d.g === gr, GRADE_C[gr])).join('')}<span class="dim" style="font-size:11px;align-self:center">Reviewer said ${E.grade.g}</span></div>
       <span class="dim">The Reviewer's verdict</span><div style="display:flex;gap:6px;flex-wrap:wrap">${Object.entries({agree: 'Agree', partly: 'Partly', disagree: 'Disagree'}).map(([v, l]) => chip('data-mine-ag', v, l, d.ag === v)).join('')}</div>
       <span class="dim">Points you disagree with <span style="font-size:11px">(½ weight)</span></span><div style="display:flex;gap:6px;flex-wrap:wrap">${E.items.map(it => chip('data-mine-x', it.n, (it.ok ? '✓' : '✗') + it.n, d.x.includes(it.n), it.ok ? UP : DN)).join('') || '<span class="dim">—</span>'}</div>
@@ -4653,10 +4700,26 @@ function mineFormHTML(a, x, E) {
 }
 document.getElementById('panel').addEventListener('input', e => {
   if (!MD.d) return;
-  if (e.target.id === 'mineNote') { MD.d.note = e.target.value; const r = document.getElementById('mineRead'); if (r) r.innerHTML = mineReadHTML(MD.d.note); }
+  if (e.target.id === 'mineNote') { MD.d.note = e.target.value; const r = document.getElementById('mineRead'); if (r) r.innerHTML = mineReadHTML(mineText(MD.d)); }
+  if (e.target.dataset && e.target.dataset.mimgCap != null) { const im = (MD.d.imgs || [])[+e.target.dataset.mimgCap]; if (im) im.cap = e.target.value; const r = document.getElementById('mineRead'); if (r) r.innerHTML = mineReadHTML(mineText(MD.d)); }
   if (e.target.id === 'mineExcl') MD.d.excl = e.target.checked;
 }, true);
+document.getElementById('panel').addEventListener('change', e => {
+  if (e.target.id === 'mineImg' && MD.d) { const f = [...(e.target.files || [])]; e.target.value = ''; mineAddImgs(f); }
+}, true);
+document.getElementById('panel').addEventListener('paste', e => {
+  if (!MD.d || !e.target.closest || !e.target.closest('#mineForm')) return;
+  const f = [...((e.clipboardData && e.clipboardData.files) || [])].filter(x => /^image\//.test(x.type));
+  if (f.length) { e.preventDefault(); mineAddImgs(f); }
+}, true);
 document.getElementById('panel').addEventListener('click', async e => {
+  const pi = e.target.closest('[data-mimg-open],[data-mimg-del]');
+  if (pi && MD.d) {
+    e.stopPropagation(); const i = +(pi.dataset.mimgOpen ?? pi.dataset.mimgDel), im = MD.d.imgs[i]; if (!im) return;
+    if (pi.dataset.mimgDel != null) { MD.d.imgs.splice(i, 1); MD.msg = 'Picture removed. Press "Save my review" to keep the change.'; mineImgsRefresh(); }
+    else { const src = im.data || IMGC.get(im.p); if (src) mineImgView(src, im.cap); }
+    return;
+  }
   const el = e.target.closest('[data-mine-g],[data-mine-ag],[data-mine-x],[data-mine-alt],[data-mine]'); if (!el || !MD.d) return;
   e.stopPropagation(); const d = MD.d;
   const tog = (arr, v) => { const i = arr.indexOf(v); if (i >= 0) arr.splice(i, 1); else arr.push(v); };
@@ -4666,14 +4729,16 @@ document.getElementById('panel').addEventListener('click', async e => {
   else if (el.dataset.mineAlt) tog(d.alt, el.dataset.mineAlt);
   else if (el.dataset.mine === 'save' || el.dataset.mine === 'del') {
     const k = MD.key, del = el.dataset.mine === 'del';
-    if (!del && !d.g && !d.ag && !d.note && !d.alt.length && !d.x.length && !d.excl) { MD.msg = 'Pick a grade or write a note first.'; renderPanel(); return; }
+    if (!del && !d.g && !d.ag && !d.note && !d.alt.length && !d.x.length && !d.excl && !(d.imgs || []).length) { MD.msg = 'Pick a grade or write a note first.'; renderPanel(); return; }
     // remember WHICH points you disagreed with (by key, not number), so the Reviewer can count them across trades
     let xk = [], ik = [];
     try { const tr = rvTrades().find(([a, x]) => tradeKey(a, x) === k); if (tr) { const E = rvExplain(tr[1], tr[0]); ik = [...new Set(E.items.map(i => i.k))]; xk = [...new Set(d.x.map(n => (E.items.find(i => i.n === n) || {}).k).filter(Boolean))]; } } catch (_) {}
-    const rec = del ? null : Object.assign({}, d, {xk, ik, t: now(), by: SY.name || ''});
+    const rec = del ? null : Object.assign({}, d, {imgs: (d.imgs || []).map(({data, ...r}) => r), xk, ik, t: now(), by: SY.name || ''});
+    const add = del ? [] : (d.imgs || []).filter(i => i.data).map(i => ({p: i.p, data: i.data}));
     MD.msg = 'Saving…'; renderPanel();
     try {
-      const where = await notesSave(k, rec);
+      const where = await notesSave(k, rec, add);
+      if (!del) for (const im of d.imgs || []) delete im.data; // uploaded: shown from the saved copy from now on
       if (del) { MD.key = null; mineDraft(k); }
       MD.msg = del ? 'Deleted.' : where === 'shared' ? 'Saved to your shared account ✓' : 'Saved in this browser ✓';
       try { drawReviewWall(); } catch (_) {}
@@ -4895,15 +4960,21 @@ async function notesPull() {
   const r = await gh('/git/ref/heads/' + NOTES_BR, {ok404: true}); if (!r) return {head: null, m: {}};
   return {head: r.object.sha, m: JSON.parse(await gh('/contents/' + NOTES_FILE + '?ref=' + r.object.sha, {raw: true}))};
 }
-// read → change one review → write; if another computer saved in between, GitHub refuses the update and we retry
-async function notesSave(key, rec) {
+// read → change one review → write; if another computer saved in between, GitHub refuses the update and we retry.
+// add = chart pictures attached to this review [{p: 'img/….jpg', data: 'data:image/jpeg;base64,…'}]: stored as their own
+// files on the notes branch next to manual-reviews.json (the review only keeps their path and caption)
+async function notesSave(key, rec, add = []) {
+  for (const a of add) { IMGC.set(a.p, a.data); IDB.put(a.p, a.data).catch(() => {}); }
   if (!SY.on) { if (rec) RVM[key] = rec; else delete RVM[key]; LS.set('awx_mine', RVM); return 'local'; }
+  const ib = [];
+  for (const a of add) { const b = await gh('/git/blobs', {method: 'POST', body: {content: a.data.split(',')[1], encoding: 'base64'}}); ib.push({path: a.p, mode: '100644', type: 'blob', sha: b.sha}); }
   for (let i = 0; i < 4; i++) {
     const {head, m} = await notesPull();
     if (rec) m[key] = rec; else delete m[key];
     const blob = await gh('/git/blobs', {method: 'POST', body: {content: b64enc(JSON.stringify(m)), encoding: 'base64'}});
-    const tree = await gh('/git/trees', {method: 'POST', body: {tree: [{path: NOTES_FILE, mode: '100644', type: 'blob', sha: blob.sha}]}});
-    const commit = await gh('/git/commits', {method: 'POST', body: {message: `${SY.name} · review ${key.split('|')[1] || ''}`, tree: tree.sha, parents: head ? [head] : []}});
+    const base = head ? (await gh('/git/commits/' + head)).tree.sha : null; // keep the pictures already there
+    const tree = await gh('/git/trees', {method: 'POST', body: Object.assign(base ? {base_tree: base} : {}, {tree: [{path: NOTES_FILE, mode: '100644', type: 'blob', sha: blob.sha}, ...ib]})});
+    const commit = await gh('/git/commits', {method: 'POST', body: {message: `${SY.name} · review ${key.split('|')[1] || ''}${ib.length ? ` · ${ib.length} picture${ib.length > 1 ? 's' : ''}` : ''}`, tree: tree.sha, parents: head ? [head] : []}});
     try {
       if (head) await gh('/git/refs/heads/' + NOTES_BR, {method: 'PATCH', body: {sha: commit.sha, force: false}});
       else await gh('/git/refs', {method: 'POST', body: {ref: 'refs/heads/' + NOTES_BR, sha: commit.sha}});
@@ -4911,6 +4982,32 @@ async function notesSave(key, rec) {
     } catch (e) { if (e.status !== 422 && e.status !== 409) throw e; }
   }
   throw new Error('another computer kept saving at the same moment; try again');
+}
+/* ---- chart pictures on your reviews: kept in this browser (IndexedDB) and, with Sync on, on the notes branch ---- */
+const IDB = (() => {
+  let p = null;
+  const open = () => p || (p = new Promise((res, rej) => { const r = indexedDB.open('awx', 1); r.onupgradeneeded = () => r.result.createObjectStore('img'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }));
+  const run = async (mode, f) => { const d = await open(); return new Promise((res, rej) => { const t = d.transaction('img', mode), q = f(t.objectStore('img')); t.oncomplete = () => res(q && q.result); t.onerror = () => rej(t.error); }); };
+  return {get: k => run('readonly', s => s.get(k)), put: (k, v) => run('readwrite', s => s.put(v, k)), del: k => run('readwrite', s => s.delete(k))};
+})();
+const IMGC = new Map(), IMGL = new Map(); // path → data URL; path → loading promise
+function imgLoad(path) {
+  if (IMGC.has(path)) return Promise.resolve(IMGC.get(path));
+  if (IMGL.has(path)) return IMGL.get(path);
+  const pr = (async () => {
+    let d = null; try { d = await IDB.get(path); } catch (_) {}
+    if (!d && SY.on) { const r = await gh('/contents/' + path + '?ref=' + NOTES_BR, {ok404: true}); if (r && r.content) { d = 'data:image/jpeg;base64,' + r.content.replace(/\s/g, ''); IDB.put(path, d).catch(() => {}); } }
+    if (d) IMGC.set(path, d);
+    return d;
+  })().finally(() => IMGL.delete(path));
+  IMGL.set(path, pr); return pr;
+}
+// fill every <img data-mimg="path"> on the page once its picture is here
+function imgFill() {
+  document.querySelectorAll('img[data-mimg]').forEach(el => {
+    const p = el.dataset.mimg; if (el.src && el.src.startsWith('data:')) return;
+    if (IMGC.has(p)) el.src = IMGC.get(p); else imgLoad(p).then(d => { if (d) el.src = d; else el.alt = 'picture not found'; }).catch(() => { el.alt = 'could not load'; });
+  });
 }
 function notesTick() {
   if (!SY.on || now() - (SYS.notesT || 0) < 60e3) return; SYS.notesT = now();

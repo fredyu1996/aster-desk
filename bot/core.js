@@ -1659,6 +1659,8 @@ function youRead(note) {
 const YOU_B_TXT = {draw: 'against the draw on liquidity', cont: 'skip continuation setups', poi: 'not at a higher-timeframe zone', room: 'ran into an opposing zone', htf: 'traded against the higher timeframe', ob: 'the order block was poor', gap: 'the FVG was poor', sweep: 'the sweep was weak', depth: 'entered at the zone\'s edge'};
 const YOU_D_TXT = {tight: 'the stop was fine', quickstop: 'the stop was fine', forming: 'entering at "forming" was fine', smc_gap: 'the FVG was good', smc_ob: 'the order block was good', smc_htf: 'the higher timeframe was fine', smc_poi: 'it was at a good zone', smc_path: 'the path to the target was low-resistance', smc_draw: 'it was with the draw'};
 const YOU_A_TXT = {same: 'same trade', skip: 'skip it', later: 'enter later', earlier: 'enter earlier', exitE: 'exit earlier', hold: 'hold longer', wider: 'wider stop', tighter: 'tighter stop', bigger: 'bigger size', smaller: 'smaller size'};
+// everything you wrote on a review: the comment plus the caption under each chart picture
+const mineText = m => [m && m.note, ...((m && m.imgs) || []).map(i => i && i.cap)].filter(s => String(s || '').trim()).join('. ');
 function youReadTxt(c) {
   if (!c || !c.any) return '';
   return [...c.a.map(k => YOU_A_TXT[k]), ...[...new Set(c.d.map(k => YOU_D_TXT[k]))], ...c.b.map(k => YOU_B_TXT[k])].filter(Boolean).join(' · ');
@@ -1668,7 +1670,7 @@ function youTally(L) {
   const put = (o, k, w) => { o[k] = (o[k] || 0) + w; };
   let nc = 0;
   for (const [, m] of R) {
-    const c = youRead(m.note), quote = String(m.note || '').trim().replace(/\s+/g, ' ');
+    const c = youRead(mineText(m)), quote = String(mineText(m)).trim().replace(/\s+/g, ' ');
     if (c.any) nc++;
     const A = new Set(c.a), D = new Set(c.d);
     // comment = 1, chip not said in the comment = ½
