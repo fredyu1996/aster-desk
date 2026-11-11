@@ -921,7 +921,7 @@ function ptStats() {
 // Every setup is also audited in SMC terms (sweep, liquidity, break, FVG / OB quality, premium/discount, higher timeframe,
 // entry depth) into a quality score; weak setups are skipped.
 const SM_DEF = {v: 1, start: 1000, cash: 1000, pos: {}, log: [], eqs: [], day: null, cool: {}, on: true, paused: null, created: 0, lastScan: null,
-  cfg: {riskPct: 1, maxPos: 3, maxLev: 2, minScore: 4, dailyLossPct: 3, feePct: 0.04, slipPct: 0.10, holdH: 12, minVol: 300000, maxStopPct: 15, minRR: 2, maxRR: 5, tp1R: 1.5, stopBuf: 0.3, unlGuard: 1, useScreens: 0, tf15: 1, tf1h: 1, holdH1h: 36, minQ: 55, learn: 1, poiRule: 1, ltfConfirm: 1, roomCheck: 1, cont: 1, pathCheck: 1, pdLiq: 1}};
+  cfg: {riskPct: 1, maxPos: 3, maxLev: 2, minScore: 4, dailyLossPct: 3, feePct: 0.04, slipPct: 0.10, holdH: 12, minVol: 300000, maxStopPct: 15, minRR: 2, maxRR: 5, tp1R: 1.5, stopBuf: 0.3, unlGuard: 1, useScreens: 0, tf15: 1, tf1h: 1, holdH1h: 36, minQ: 55, learn: 1, poiRule: 1, ltfConfirm: 1, roomCheck: 1, cont: 1, pathCheck: 1, pdLiq: 1, invExit: 1}};
 // Nov 8: the SMC Trader trades on its own SMC judgement, without the Reviewer's screens (one-time switch-off for saved accounts)
 function smMigrate(p) { if (p.cfg.ownJudge !== 1) { p.cfg.useScreens = 0; p.cfg.ownJudge = 1; } return p; }
 let SM = (() => {
@@ -1263,6 +1263,15 @@ function smQuality(B, r, live, tf, bias, pos, X = {}) {
   const eq = (bull ? P.L : P.H).filter(p => p.i < r.j && p.i >= r.j - 48 && Math.abs(p.px - r.swept.px) <= 0.25 * atr).length;
   add('liq', eq >= 2 ? 2 : 1, eq >= 2 ? `Swept equal ${bull ? 'lows' : 'highs'} (${eq} touches): real resting liquidity` : `Swept a single swing ${bull ? 'low' : 'high'}, not equal ${bull ? 'lows' : 'highs'}`);
   }
+  if (!cont) {
+    // candle confirmation (swing formation): the sweep candle (C2) closed back inside in the trade's direction, or the next candle (C3) closed beyond it
+    const c2 = B[r.j], c3 = B[r.j + 1], c2ok = bull ? c2[4] > c2[1] : c2[4] < c2[1], c3ok = c3 && (bull ? c3[4] > c2[2] : c3[4] < c2[3]);
+    add('c2', c2ok || c3ok ? 2 : 1, c2ok ? `Sweep candle closed ${bull ? 'bullish' : 'bearish'} back inside: the swing is confirmed on its own candle` : c3ok ? `Two-stage confirmation: the candle after the sweep closed ${bull ? 'above' : 'below'} the sweep candle` : `Sweep candle closed back inside but stayed ${bull ? 'bearish' : 'bullish'}, and the next candle didn't confirm`, true);
+    // intra-candle reversal: the higher-timeframe candle first traded against the trade beyond its open (the manipulation leg), then turned
+    const hm = tf === '15m' ? 3600e3 : 4 * 3600e3, st = Math.floor(B[r.j][0] / hm) * hm; let oi = r.j; while (oi > 0 && B[oi - 1][0] >= st) oi--;
+    const op = B[oi][1], man = bull ? r.ext < op : r.ext > op;
+    add('open', man ? 2 : 1, man ? `The sweep traded ${bull ? 'below' : 'above'} the ${SM_TF[tf].htf} candle's open (${fmtPx(op)}): the manipulation leg of that candle is done` : `The sweep stayed ${bull ? 'above' : 'below'} the ${SM_TF[tf].htf} candle's open: no manipulation leg against the trade yet`, true);
+  }
   // the departure from the zone (supply & demand strength: how impulsive the move away was)
   { let xi = r.j; for (let m = r.j; m <= r.k; m++) if (bull ? B[m][3] <= B[xi][3] : B[m][2] >= B[xi][2]) xi = m;
     let hi = xi; for (let m = xi; m <= Math.min(r.k + 2, B.length - 1); m++) if (bull ? B[m][2] >= B[hi][2] : B[m][3] <= B[hi][3]) hi = m;
@@ -1316,7 +1325,7 @@ function smClose(s, frac, why) {
   if (frac >= 1 || p.qty <= p.qty0 * 1e-6) {
     const R = p.risk ? p.realized / p.risk : 0;
     SM.log.unshift({s, b: p.b, side: p.side, t0: p.t, t1: now(), entry: p.entry, exit: fill, qty: p.qty0, notional: p.qty0 * p.entry, pnl: p.realized, R, fees: p.fees,
-      funding: p.funding || 0, why: p.why, exitWhy: why, stop0: p.stop0, maxR: p.maxR || 0, sc: p.sc, rr: p.rr, zoneKind: p.zoneKind, target: p.target, zone: p.zone ? {lo: p.zone.lo, hi: p.zone.hi, kind: p.zone.kind} : null, sweep: p.sweep, lvl: p.lvl, unlK: p.unlK || 'none', strat: 'smc', tf: p.tf || '15m', htfBias: p.htfBias || null, q: p.q || null, poi: p.poi || null, type: p.type || 'rev', holdH: p.holdH, cx: p.cx, scr: p.scr || null, ex: (p.exits || []).map(e => [e.t, e.px, e.why])});
+      funding: p.funding || 0, why: p.why, exitWhy: why, stop0: p.stop0, maxR: p.maxR || 0, sc: p.sc, rr: p.rr, zoneKind: p.zoneKind, target: p.target, zone: p.zone ? {lo: p.zone.lo, hi: p.zone.hi, kind: p.zone.kind} : null, sweep: p.sweep, lvl: p.lvl, unlK: p.unlK || 'none', ceBroke: p.ceBroke || 0, strat: 'smc', tf: p.tf || '15m', htfBias: p.htfBias || null, q: p.q || null, poi: p.poi || null, type: p.type || 'rev', holdH: p.holdH, cx: p.cx, scr: p.scr || null, ex: (p.exits || []).map(e => [e.t, e.px, e.why])});
     if (SM.log.length > 500) SM.log.pop();
     delete SM.pos[s]; SM.cool[s] = now();
     raise('smc', s, 'close' + now(), `SMC PAPER ${p.side === 'L' ? 'long' : 'short'} ${p.b} closed ${fmtMoney(p.realized, 1)} (${R >= 0 ? '+' : ''}${R.toFixed(2)}R) — ${why}`, p.realized >= 0 ? 1 : -1, 0, true);
@@ -1359,6 +1368,15 @@ function smManage(t, only) {
     const hold = p.holdH || SM.cfg.holdH;
     if (t - p.t > hold * 3600e3) { smClose(s, 1, `time stop (${hold}h)`); continue; }
     if (only) continue;
+    if (!p.be && p.zone && fin(p.zone.lo)) {
+      const TB = smBars(s, p.tf || '15m');
+      if (TB && TB.length > 2) {
+        const ce = (p.zone.lo + p.zone.hi) / 2;
+        for (let i = TB.length - 2; i >= 0 && TB[i][0] >= p.t; i--) if (L ? TB[i][4] < ce : TB[i][4] > ce) p.ceBroke = 1; // closed candles since the entry
+        const lc = TB[TB.length - 2];
+        if (SM.cfg.invExit && lc && lc[0] >= p.t && (L ? lc[4] < p.zone.lo : lc[4] > p.zone.hi)) { smClose(s, 1, `the ${p.zoneKind || 'zone'} failed: a ${p.tf || '15m'} candle closed ${L ? 'below' : 'above'} it (invalidation)`); continue; }
+      }
+    }
     if (L && SM.cfg.unlGuard) { const u = unlCtx(s, t); if (u.phase === 'ahead' && u.big && u.hours <= 12) { smClose(s, 1, `closed ahead of the ${u.e.b} token unlock (${unlWhen(u)})`); continue; } }
     // after the partial: trail behind each new confirmed swing on the trade's own timeframe (structure-based trailing)
     if (p.be) {
@@ -1728,7 +1746,7 @@ function rvYourCalls(T, TM, p, why, base, st) {
 // Factors from each trade's quality audit (sweep, liquidity, structure break, FVG / OB, premium/discount, higher timeframe,
 // entry depth), its entry timeframe and its quality grade. A change needs 5+ trades on each side and a 0.5R+ gap with the
 // better side making money; your SMC reviews count the same way as for the Trader. RV.smAdj is what the SMC Trader applies.
-const SM_FACTOR = {sweep: 'Sweep', liq: 'Liquidity taken', mss: 'Structure break', gap: 'FVG size', disp: 'FVG displacement', ob: 'Order block', obliq: 'OB took the liquidity', pd: 'Premium / discount', htf: 'Higher timeframe', depth: 'Entry depth in the zone', dep: 'Departure from the zone', poi: 'Higher-timeframe zone (POI)', trend: 'Trend (continuation)', path: 'Path to target (failure swings)', draw: 'Higher-timeframe draw on liquidity', pday: 'Previous day high/low', mit: 'Mitigation block', cycle: 'Market cycle (expansion / AMD)', bg: 'Breakaway gap', prot: 'Stop behind a high-resistance swing', room: 'Room to the target', conf: '15m confirmation'};
+const SM_FACTOR = {sweep: 'Sweep', liq: 'Liquidity taken', mss: 'Structure break', gap: 'FVG size', disp: 'FVG displacement', ob: 'Order block', obliq: 'OB took the liquidity', pd: 'Premium / discount', htf: 'Higher timeframe', depth: 'Entry depth in the zone', dep: 'Departure from the zone', poi: 'Higher-timeframe zone (POI)', trend: 'Trend (continuation)', path: 'Path to target (failure swings)', draw: 'Higher-timeframe draw on liquidity', pday: 'Previous day high/low', mit: 'Mitigation block', cycle: 'Market cycle (expansion / AMD)', bg: 'Breakaway gap', prot: 'Stop behind a high-resistance swing', room: 'Room to the target', conf: '15m confirmation', c2: 'Candle confirmation (C2 / C3)', open: 'Higher-timeframe candle open (manipulation leg)'};
 function smStudy(L) {
   const T = L.filter(x => x.q && x.q.items && !rvManual(x)), F = {};
   for (const k in SM_FACTOR) {
