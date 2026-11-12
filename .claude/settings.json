@@ -36,6 +36,17 @@
             "statusMessage": "Checking build + npm test before push"
           }
         ]
+      },
+      {
+        "matcher": "PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/test-before-push.mjs\"",
+            "timeout": 300,
+            "statusMessage": "Checking build + npm test before push"
+          }
+        ]
       }
     ]
   }

@@ -4,6 +4,13 @@
 // Exit 2 blocks the tool call and shows the reason to Claude.
 import { spawnSync } from 'node:child_process';
 
+// The PowerShell matcher has no `if` filter, so check the command here: only `git push` is gated.
+let raw = '';
+for await (const c of process.stdin) raw += c;
+let cmdText = '';
+try { cmdText = (JSON.parse(raw || '{}').tool_input || {}).command || ''; } catch {}
+if (!/\bgit\s+(?:-\S+\s+)*push\b/.test(cmdText)) process.exit(0);
+
 const winPath = p => process.platform === 'win32' ? p.replace(/^\/([a-zA-Z])\//, (_, d) => d.toUpperCase() + ':/') : p;
 const root = winPath(process.env.CLAUDE_PROJECT_DIR || process.cwd());
 const opts = (extraEnv = {}) => ({ cwd: root, env: { ...process.env, ...extraEnv }, encoding: 'utf8', timeout: 280000 });
