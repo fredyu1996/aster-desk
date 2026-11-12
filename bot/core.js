@@ -1844,19 +1844,33 @@ function smLearn() {
   if (Y.says('wider')) { A.stopBuf = Math.min(1.5, SM.cfg.stopBuf * 2); W.stopBuf = `${Y.src('wider', 'wider stop')} Stop further beyond the sweep.`; }
   if (Y.says('exitE') && SM.cfg.tp1R > 1.2) { A.tp1R = 1.2; W.tp1R = `${Y.src('exitE', 'exit earlier')} Bank half at +1.2R.`; }
   if (Y.says('smaller')) { A.riskMul = 0.75; W.riskMul = `${Y.src('smaller', 'smaller size')} Size ×0.75.`; }
+  const youHeld = new Set();
   for (const k of ['htf', 'depth', 'gap', 'ob', 'poi', 'draw']) if (Y.rejects('smc_' + k)) {
     const m = {htf: 'needHTF', depth: 'needDepth', gap: 'minQ', ob: 'fvgOnly', poi: 'needPOI', draw: 'needDraw'}[k];
     if (A[m]) { delete A[m]; W.youHold = (W.youHold ? W.youHold + ' ' : '') + `Held "${SM_FACTOR[k]}" rule: ${Y.disTxt('smc_' + k)}.`; }
+    youHeld.add(m);
   }
   // tell the SMC Trader what changed
   // coaching findings with enough trades behind them become rules too (see smCoach)
   const CO = smCoach(L);
   for (const c of CO.recs) if (c.solid && c.rule && !(c.rule in A)) { if (c.rule === 'tp1R') A.tp1R = 1.2; else if (c.rule === 'stopBuf') A.stopBuf = Math.min(1.5, SM.cfg.stopBuf * 2); else if (c.rule === 'minQ') A.minQ = Math.min(85, SM.cfg.minQ + 10); else A[c.rule] = true; W[c.rule] = 'Coaching: ' + c.txt; }
+  // rules stay until the trades say otherwise (they used to drop out and come back within hours):
+  // a rule in force is kept until 6+ SMC trades closed since it last had support average ≥ 0, or 5 days pass; your disagreement lifts it at once
+  { const old0 = RV.smAdj || {}, SS = RV.smSticky = RV.smSticky || {}, Ln = L.filter(x => !rvManual(x));
+    for (const k in old0) {
+      const st = SS[k] || (SS[k] = {last: now(), why: (RV.smWhy || {})[k] || ''}), newer = Ln.filter(x => x.t1 > st.last);
+      const release = youHeld.has(k) || now() - st.last > RV_STICKY_MAX || (newer.length >= 6 && rvMean(newer.map(x => x.R)) >= 0);
+      if (release) continue;
+      if (!(k in A)) { A[k] = old0[k]; W[k] = `${st.why || W[k] || ''} (Kept: ${newer.length} SMC trade${newer.length === 1 ? '' : 's'} since, ${newer.length ? fmtR(rvMean(newer.map(x => x.R))) : 'none yet'}; no opposite evidence.)`.trim(); }
+      else if (k === 'minQ' && old0.minQ > A.minQ) A.minQ = old0.minQ;
+    }
+    for (const k in A) if (!(k in old0) || !SS[k] || W[k] && !/\(Kept:/.test(W[k])) SS[k] = {last: now(), why: W[k] || ''};
+    for (const k in SS) if (!(k in A)) delete SS[k]; }
   const lab = {needDraw: 'Only trade with the higher-timeframe draw on liquidity', needPOI: 'Only trade from a higher-timeframe zone or swing', noCont: 'Pause continuation setups', needHTF: 'Only trade when the higher timeframe agrees', fvgOnly: 'FVG entries only (no order blocks)', minQ: `Minimum setup quality ${A.minQ}/100`, noTf: `Pause ${A.noTf} setups`, needDepth: 'Enter at the zone\'s midpoint or deeper', stopBuf: `Stop ${A.stopBuf}% beyond the sweep`, tp1R: `Half at +${A.tp1R}R`, riskMul: `Size ×${A.riskMul}`};
   const old = RV.smAdj || {}, key = o => JSON.stringify(o);
   if (key(old) !== key(A)) {
     for (const k in A) if (key(A[k]) !== key(old[k])) { rvMemo('rev', 'smc', `SMC review: ${lab[k] || k}. ${W[k] || ''}`); rvMemo('smc', 'rev', SM.cfg.learn ? `Applied: ${String(lab[k] || k).charAt(0).toLowerCase() + String(lab[k] || k).slice(1)}.` : 'Noted, but learning from SMC reviews is switched off on my desk.'); }
-    for (const k in old) if (!(k in A)) { rvMemo('rev', 'smc', `SMC review: lift "${k}". The newer trades no longer back it.`); rvMemo('smc', 'rev', 'Lifted.'); }
+    for (const k in old) if (!(k in A)) { rvMemo('rev', 'smc', `SMC review: lift "${lab[k] || k}". ${youHeld.has(k) ? 'You disagreed with the point it rests on.' : 'The SMC trades since it was set came out fine, or it was due a re-test.'}`); rvMemo('smc', 'rev', 'Lifted.'); }
   }
   RV.smAdj = A; RV.smWhy = W; RV.smStudyN = St.n;
   smCoachTalk(CO);
