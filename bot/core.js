@@ -1710,10 +1710,28 @@ function youRead(note, side) {
 }
 // A review as the Reviewer takes it. If Claude has read this review (comment + chart pictures) in a chat and left a reading
 // (m.rd, saved with the review), that reading is used instead of the phrase reader, as long as the text hasn't changed since.
-function youReadM(m, side) {
+// Your marks on the chart (m.plan, drawn on the Reviewer's "On the chart" tab), compared with the trade, count like a comment.
+function youReadM(m, side, x) {
   const txt = mineText(m), c = youRead(txt, side), rd = m && m.rd;
   if (rd && rd.n === txt.length) { c.a = [...(rd.a || [])]; c.b = [...(rd.b || [])]; c.d = [...(rd.d || [])]; c.any = c.a.length + c.b.length + c.d.length > 0; c.rd = rd; }
+  const pp = planPoints(m && m.plan, x);
+  for (const k of ['a', 'b', 'd']) for (const v of pp[k]) if (!c[k].includes(v)) c[k].push(v);
+  if (pp.a.length + pp.b.length + pp.d.length) { c.any = true; c.plan = pp; if (c.a.length > 1) c.a = c.a.filter(v => v !== 'same'); }
   return c;
+}
+// what your marked setup says, measured against the trade (in units of the trade's own risk):
+//   other side → "trade the other side" · same side, entry ≥ 0.25R deeper → "enter later" + edge entry
+//   (same entry) stop ≥ 0.2R further out / in → "wider" / "tighter stop" · target ≥ 30% short of / 40% past the trade's → "exit earlier" / "hold longer"
+function planPoints(P, x) {
+  const o = {a: [], b: [], d: []}; if (!P || !x || !P.entry || !fin(P.entry.p)) return o;
+  const side = P.side || x.side; if (side !== x.side) { o.a.push('flip'); return o; }
+  const L = side === 'L', sg = L ? 1 : -1, d = Math.abs(x.entry - x.stop0) || x.entry * 0.01, en = P.entry.p;
+  const deeper = (x.entry - en) * sg >= 0.25 * d;
+  if (deeper) { o.a.push('later'); o.b.push('depth'); }
+  else if (fin(P.stop)) { const out = (x.stop0 - P.stop) * sg; if (out >= 0.2 * d) o.a.push('wider'); else if (out <= -0.2 * d && (en - P.stop) * sg > 0) o.a.push('tighter'); }
+  const bt = x.strat === 'smc' ? x.target : x.entry + sg * (x.tpR || (typeof PT !== 'undefined' ? PT.cfg.tpR : 3)) * d, span = fin(bt) ? Math.abs(bt - x.entry) : 0;
+  if (fin(P.target) && span) { const q = (P.target - bt) * sg / span; if (q <= -0.3) o.a.push('exitE'); else if (q >= 0.4) o.a.push('hold'); }
+  return o;
 }
 // plain-language reading of a comment, for the form and the review wall
 const YOU_B_TXT = {draw: 'against the draw on liquidity', cont: 'skip continuation setups', poi: 'not at a higher-timeframe zone', room: 'ran into an opposing zone', htf: 'traded against the higher timeframe', ob: 'the order block was poor', gap: 'the FVG was poor', sweep: 'the sweep was weak', depth: 'entered at the zone\'s edge'};
@@ -1731,7 +1749,7 @@ function youTally(L) {
   let nc = 0;
   let den = 0;                                       // reviews that carry an opinion (a reading, a chip, or a disputed point)
   for (const [x, m] of R) {
-    const c = youReadM(m, x.side), quote = String(c.rd && c.rd.txt ? c.rd.txt : mineText(m)).trim().replace(/\s+/g, ' ');
+    const c = youReadM(m, x.side, x), quote = String(c.rd && c.rd.txt ? c.rd.txt : mineText(m)).trim().replace(/\s+/g, ' ');
     if (c.any) nc++;
     if (c.any || (m.alt || []).length || (m.xk || []).length) den++;
     const A = new Set(c.a), D = new Set(c.d);

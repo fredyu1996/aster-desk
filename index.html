@@ -2217,6 +2217,7 @@ function filterNote() {
 }
 function renderPanel() {
   const id = PS.open; if (!id) return;
+  if (typeof RVP !== 'undefined' && RVP.drag) return;                       // don't rebuild the chart in the middle of a drag
   const ae = document.activeElement; if (ae && $('#pbody').contains(ae) && /INPUT|SELECT|TEXTAREA/.test(ae.tagName)) return; // don't wipe a field being edited
   const tab = PS.tab[id], body = $('#pbody'), sc = body.scrollTop;
   const um = () => S.universe.map(mget);
@@ -3170,10 +3171,28 @@ function youRead(note, side) {
 }
 // A review as the Reviewer takes it. If Claude has read this review (comment + chart pictures) in a chat and left a reading
 // (m.rd, saved with the review), that reading is used instead of the phrase reader, as long as the text hasn't changed since.
-function youReadM(m, side) {
+// Your marks on the chart (m.plan, drawn on the Reviewer's "On the chart" tab), compared with the trade, count like a comment.
+function youReadM(m, side, x) {
   const txt = mineText(m), c = youRead(txt, side), rd = m && m.rd;
   if (rd && rd.n === txt.length) { c.a = [...(rd.a || [])]; c.b = [...(rd.b || [])]; c.d = [...(rd.d || [])]; c.any = c.a.length + c.b.length + c.d.length > 0; c.rd = rd; }
+  const pp = planPoints(m && m.plan, x);
+  for (const k of ['a', 'b', 'd']) for (const v of pp[k]) if (!c[k].includes(v)) c[k].push(v);
+  if (pp.a.length + pp.b.length + pp.d.length) { c.any = true; c.plan = pp; if (c.a.length > 1) c.a = c.a.filter(v => v !== 'same'); }
   return c;
+}
+// what your marked setup says, measured against the trade (in units of the trade's own risk):
+//   other side → "trade the other side" · same side, entry ≥ 0.25R deeper → "enter later" + edge entry
+//   (same entry) stop ≥ 0.2R further out / in → "wider" / "tighter stop" · target ≥ 30% short of / 40% past the trade's → "exit earlier" / "hold longer"
+function planPoints(P, x) {
+  const o = {a: [], b: [], d: []}; if (!P || !x || !P.entry || !fin(P.entry.p)) return o;
+  const side = P.side || x.side; if (side !== x.side) { o.a.push('flip'); return o; }
+  const L = side === 'L', sg = L ? 1 : -1, d = Math.abs(x.entry - x.stop0) || x.entry * 0.01, en = P.entry.p;
+  const deeper = (x.entry - en) * sg >= 0.25 * d;
+  if (deeper) { o.a.push('later'); o.b.push('depth'); }
+  else if (fin(P.stop)) { const out = (x.stop0 - P.stop) * sg; if (out >= 0.2 * d) o.a.push('wider'); else if (out <= -0.2 * d && (en - P.stop) * sg > 0) o.a.push('tighter'); }
+  const bt = x.strat === 'smc' ? x.target : x.entry + sg * (x.tpR || (typeof PT !== 'undefined' ? PT.cfg.tpR : 3)) * d, span = fin(bt) ? Math.abs(bt - x.entry) : 0;
+  if (fin(P.target) && span) { const q = (P.target - bt) * sg / span; if (q <= -0.3) o.a.push('exitE'); else if (q >= 0.4) o.a.push('hold'); }
+  return o;
 }
 // plain-language reading of a comment, for the form and the review wall
 const YOU_B_TXT = {draw: 'against the draw on liquidity', cont: 'skip continuation setups', poi: 'not at a higher-timeframe zone', room: 'ran into an opposing zone', htf: 'traded against the higher timeframe', ob: 'the order block was poor', gap: 'the FVG was poor', sweep: 'the sweep was weak', depth: 'entered at the zone\'s edge'};
@@ -3191,7 +3210,7 @@ function youTally(L) {
   let nc = 0;
   let den = 0;                                       // reviews that carry an opinion (a reading, a chip, or a disputed point)
   for (const [x, m] of R) {
-    const c = youReadM(m, x.side), quote = String(c.rd && c.rd.txt ? c.rd.txt : mineText(m)).trim().replace(/\s+/g, ' ');
+    const c = youReadM(m, x.side, x), quote = String(c.rd && c.rd.txt ? c.rd.txt : mineText(m)).trim().replace(/\s+/g, ' ');
     if (c.any) nc++;
     if (c.any || (m.alt || []).length || (m.xk || []).length) den++;
     const A = new Set(c.a), D = new Set(c.d);
@@ -4215,7 +4234,9 @@ function drawRace() {
 const RVK = new Map();                            // candles per closed trade
 const RVT = {tags: LS.get('awx_tags', true) !== false}; // show the ✓/✗ tags on trade charts (T at the review wall, or the button on the chart)
 function rvTagsToggle() { RVT.tags = !RVT.tags; LS.set('awx_tags', RVT.tags); try { drawReviewWall(); } catch (_) {} try { document.querySelectorAll('canvas[data-rvchart]').forEach(drawRvCanvas); } catch (_) {} const b = document.querySelector('[data-rvtags]'); if (b) { b.classList.toggle('on', RVT.tags); b.textContent = RVT.tags ? '✓/✗ on chart: ON' : '✓/✗ on chart: OFF'; } }
-const RVS = {key: null, acct: 'all'};             // panel selection
+const RVS = {key: null, acct: 'all'};
+// marking your own setup on a trade's chart: on/off, the tool in hand, a drag in progress, undo history
+const RVP = {on: false, tool: 'entry', drag: null, hist: [], warn: ''};             // panel selection
 const RWS = {i: 0, t: 0, key: null};              // wall rotation
 const isManual = x => /closed by you/.test(x.exitWhy || '');
 const tradeKey = (a, x) => a + '|' + x.s + '|' + x.t1;
@@ -4364,7 +4385,7 @@ function rvLessonsFor(x, acct) {
 
 /* ---- the chart ---- */
 // f = scale (1 for the panel, ~2.2 for the wall)
-function drawTradeChart(c, x, acct, X0, Y0, w, h, f, E) {
+function drawTradeChart(c, x, acct, X0, Y0, w, h, f, E, plan) {
   c.save(); c.beginPath(); c.rect(X0, Y0, w, h); c.clip();
   c.fillStyle = '#060a14'; c.fillRect(X0, Y0, w, h);
   const e = rvBars(x);
@@ -4378,6 +4399,7 @@ function drawTradeChart(c, x, acct, X0, Y0, w, h, f, E) {
   const tgt = acct === 'sm' ? x.target : x.entry + sg * (x.tpR || PT.cfg.tpR) * d;
   const tp1 = x.entry + sg * tp1R * d, best = x.entry + sg * Math.max(0, x.maxR || 0) * d;
   const lv = [x.entry, x.stop0, x.exit, tp1, best].concat(fin(tgt) && Math.abs(tgt - x.entry) < d * 6 ? [tgt] : []).filter(fin);
+  if (plan) lv.push(...planLevels(plan));
   let lo = Math.min(...Bs.map(b => b[3]), ...lv), hi = Math.max(...Bs.map(b => b[2]), ...lv); const sp = hi - lo || hi * 0.01; lo -= sp * 0.07; hi += sp * 0.07;
   const Y = v => Y0 + 10 * f + (hi - clamp(v, lo, hi)) / (hi - lo) * (h - 34 * f);
   const xa = X(x.t0), xb = Math.max(X(x.t1), xa + 2);
@@ -4436,6 +4458,10 @@ function drawTradeChart(c, x, acct, X0, Y0, w, h, f, E) {
     }
     c.textBaseline = 'alphabetic';
   }
+  // your own setup, drawn over the chart
+  const res = plan ? rvPlanSim(x, acct, plan, Bs, e.ms) : null;
+  if (plan) drawPlan(c, plan, x, X, Y, f, X0 + 6 * f, right, Y0, res);
+  c.canvas.__map = {X, Y, X0, Y0, f, pw, h, T0, T1, lo, hi, bars: Bs, ms: e.ms, right}; c.canvas.__res = res;
   // time axis
   c.fillStyle = DIM; c.font = `500 ${10 * f}px ${FM}`;
   const tl = t => new Date(t).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'});
@@ -4480,7 +4506,7 @@ function drawReviewWall() {
     c.fillStyle = hot ? '#04070f' : MINE_C; c.font = `800 27px ${FS}`; c.textAlign = 'center';
     c.fillText(mine ? '✍  EDIT YOUR REVIEW  (E)' : '✍  REVIEW IT YOURSELF  (E)', bx + bw / 2, by + bh / 2 + 1); c.textAlign = 'left';
     const cy = 248, ch = H - cy - 14, cw = 1150;
-    drawTradeChart(c, x, a, 24, cy, cw, ch, 2.1, E);
+    drawTradeChart(c, x, a, 24, cy, cw, ch, 2.1, E, mine && mine.plan);
     // ✓ / ✗ list
     let y = cy + 26; const lx = 24 + cw + 26, lw = split - lx - 22;
     const sect = (title, col, list) => {
@@ -4497,7 +4523,8 @@ function drawReviewWall() {
       c.font = `500 20px ${FS}`; c.fillStyle = '#f3d6ea';
       if (mine.note) { c.font = `italic 500 21px ${FS}`; c.fillStyle = '#f3d6ea'; const n = wrapText(c, '“' + mine.note.trim() + '”', lx, y, lw, 25, 3); y += 25 * (n || 1) + 4; }
       if ((mine.imgs || []).length) { c.font = `600 19px ${FS}`; c.fillStyle = '#f3d6ea'; const n = wrapText(c, `📷 ${mine.imgs.length} chart picture${mine.imgs.length > 1 ? 's' : ''}` + (mine.imgs.some(i => i.cap) ? ': ' + mine.imgs.map(i => i.cap).filter(Boolean).join(' · ') : ' (open the review with E to see them)'), lx, y, lw, 23, 2); y += 23 * (n || 1) + 2; }
-      const rc = youReadM(mine, x.side), rd = youReadTxt(rc); if (rd) { c.font = `700 19px ${FS}`; c.fillStyle = MINE_C; const n = wrapText(c, (rc.rd ? 'Claude read it as: ' : 'Reviewer reads: ') + rd, lx, y, lw, 23, 2); y += 23 * (n || 1) + 2; }
+      const pr = mine.plan && mine.plan.res; if (pr) { c.font = `700 19px ${FS}`; c.fillStyle = MINE_C; const n = wrapText(c, '✏ ' + planResTxt(pr, x, true), lx, y, lw, 23, 2); y += 23 * (n || 1) + 2; }
+      const rc = youReadM(mine, x.side, x), rd = youReadTxt(rc); if (rd) { c.font = `700 19px ${FS}`; c.fillStyle = MINE_C; const n = wrapText(c, (rc.rd ? 'Claude read it as: ' : 'Reviewer reads: ') + rd, lx, y, lw, 23, 2); y += 23 * (n || 1) + 2; }
       const txt = [(mine.alt || []).length ? 'Ticked: ' + mine.alt.map(k => MINE_ALT[k]).join(', ') : '', (mine.x || []).length ? 'disagrees with ' + mine.x.join(', ') : ''].filter(Boolean).join(' · ');
       if (txt) { c.font = `500 18px ${FS}`; c.fillStyle = '#c9b3c2'; const n = wrapText(c, txt, lx, y, lw, 22, 2); y += 22 * (n || 1); } y += 16;
     }
@@ -4604,8 +4631,8 @@ function rvChartHTML() {
       <div><div style="font-size:19px;font-weight:800">${esc(x.b)} <span class="${x.side === 'L' ? 'up' : 'dn'}" style="font-size:13px">${x.side === 'L' ? 'LONG' : 'SHORT'}</span> <span style="font-size:13px;color:${a === 'sm' ? SMCOL : '#ffd166'}">${esc(stratName(a, x))}</span> <span class="mono ${cls(x.R)}">${fmtR(x.R)} · ${fmtMoney(x.pnl, 1)}</span></div>
       ${E.smc ? `<div style="font-size:12px;margin-top:2px;color:${SMCOL}">${esc(smcLine(E))}</div>` : ''}<div style="font-size:13px;margin-top:2px">${esc(g.note)}</div></div>
       <span class="dim" style="margin-left:auto;font-size:12px">${new Date(x.t0).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'})} → ${new Date(x.t1).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})} · held ${held(x)}</span></div>
-    <canvas data-rvchart="${esc(RVS.key)}" style="width:100%;height:360px;display:block;border-radius:8px;border:1px solid var(--line);margin-top:10px"></canvas>
-    <div style="display:flex;gap:10px;align-items:center;margin-top:4px"><span class="dim" style="font-size:11px">▲/▼ entry · ◆ half taken · ● exit · shaded = time in the trade · numbered tags match the lists below</span><span class="chip ${RVT.tags ? 'on' : ''}" data-rvtags="1" style="margin-left:auto;font-size:11px" title="Hide the Reviewer's ✓/✗ tags so you can read the chart yourself (T at the review wall)">${RVT.tags ? '✓/✗ on chart: ON' : '✓/✗ on chart: OFF'}</span></div>
+    ${planBarHTML(a, x)}<canvas data-rvchart="${esc(RVS.key)}" style="width:100%;height:${RVP.on ? 440 : 360}px;touch-action:none;${RVP.on ? 'cursor:crosshair;' : ''}display:block;border-radius:8px;border:1px solid var(--line);margin-top:10px"></canvas>
+    <div style="display:flex;gap:10px;align-items:center;margin-top:4px"><span class="dim" style="font-size:11px">▲/▼ entry · ◆ half taken · ● exit · shaded = time in the trade · numbered tags match the lists below · <span style="color:${MINE_C}">pink = your marks</span></span><span class="chip ${RVT.tags ? 'on' : ''}" data-rvtags="1" style="margin-left:auto;font-size:11px" title="Hide the Reviewer's ✓/✗ tags so you can read the chart yourself (T at the review wall)">${RVT.tags ? '✓/✗ on chart: ON' : '✓/✗ on chart: OFF'}</span></div>
     <div class="grid2" style="margin-top:10px"><div class="card2"><h3 style="color:${UP}">DONE RIGHT</h3>${G.map(item).join('') || '<span class="dim" style="font-size:13px">Nothing stood out.</span>'}</div>
     <div class="card2"><h3 style="color:${DN}">DONE WRONG</h3>${B.map(item).join('') || '<span class="dim" style="font-size:13px">Nothing. A clean trade by the rules.</span>'}</div></div>
     <div class="card2" style="margin-top:12px;border-left:4px solid #c5f05a"><h3 style="color:#c5f05a">WHAT THE REVIEWER CHANGED</h3>${E.les.length ? E.les.map(l => `<div class="chk"><span class="i" style="color:#c5f05a">›</span><span>${esc(l)}</span></div>`).join('') + '<div class="dim" style="font-size:12px;margin-top:4px">These rules are in force now, partly because of trades like this one.</div>' : `<span class="dim" style="font-size:13px">No rule change from trades like this yet. The Reviewer needs a minimum sample before it changes anything (${a === 'sm' ? '5 SMC trades on each side of a comparison' : '3 trades for a setup, 4 for a side, 6 overall'}).</span>`}
@@ -4617,7 +4644,182 @@ function drawRvCanvas(cv) {
   const r = cv.getBoundingClientRect(); if (!r.width) return;
   const dpr = Math.min(devicePixelRatio || 1, 2); cv.width = r.width * dpr; cv.height = r.height * dpr;
   const c = cv.getContext('2d'); c.scale(dpr, dpr);
-  drawTradeChart(c, hit[1], hit[0], 0, 0, r.width, r.height, 1, rvExplain(hit[1], hit[0]));
+  const mine = MD.key === k && MD.d ? MD.d : RVM[k], P = mine && mine.plan ? planWithDrag(mine.plan) : (RVP.drag && MD.key === k ? planWithDrag({}) : null);
+  drawTradeChart(c, hit[1], hit[0], 0, 0, r.width, r.height, 1, rvExplain(hit[1], hit[0]), P);
+  const st = document.getElementById('planRes'); if (st && MD.key === k) st.innerHTML = planStatusHTML(cv.__res, hit[1], MD.d && MD.d.plan);
+}
+/* ---- your own setup on the chart ----
+   plan = {side, entry: {t, p}, stop, target, zones: [{t0, t1, lo, hi}], lines: [{t0, p0, t1, p1}], labels: [{t, p, txt}], res}
+   Prices and times, not pixels, so the marks land in the same place on the panel, the wall and any screen size.
+   The Reviewer replays your entry / stop / target on the trade's candles (worst case first inside a candle, fees and
+   slippage included) and compares your levels with the trader's (planPoints in review.js); those count like a comment. */
+const PLAN_C = '#ff8ad8';
+const planHas = P => !!(P && ((P.entry && fin(P.entry.p)) || fin(P.stop) || fin(P.target) || (P.zones || []).length || (P.lines || []).length || (P.labels || []).length));
+function planLevels(P) {
+  const v = [P.entry && P.entry.p, P.stop, P.target];
+  for (const z of P.zones || []) v.push(z.lo, z.hi); for (const l of P.lines || []) v.push(l.p0, l.p1); for (const l of P.labels || []) v.push(l.p);
+  return v.filter(fin);
+}
+function planWithDrag(P) {
+  const d = RVP.drag; if (!d || !d.b) return P;
+  const Q = Object.assign({}, P, {zones: [...(P.zones || [])], lines: [...(P.lines || [])]});
+  if (d.tool === 'zone') Q.zones.push({t0: Math.min(d.a.t, d.b.t), t1: Math.max(d.a.t, d.b.t), lo: Math.min(d.a.p, d.b.p), hi: Math.max(d.a.p, d.b.p)});
+  else Q.lines.push({t0: d.a.t, p0: d.a.p, t1: d.b.t, p1: d.b.p});
+  return Q;
+}
+function rvPlanSim(x, acct, P, Bs, ms) {
+  if (!P || !P.entry || !fin(P.entry.p)) return null;
+  if (!fin(P.stop)) return {need: 'stop'};
+  const L = (P.side || x.side) === 'L', sg = L ? 1 : -1, en = P.entry.p, st = P.stop, tg = fin(P.target) ? P.target : null, d = Math.abs(en - st);
+  if (!d || (L ? st >= en : st <= en)) return {bad: `Your stop has to be ${L ? 'below' : 'above'} your entry for a ${L ? 'long' : 'short'}.`};
+  if (tg != null && (L ? tg <= en : tg >= en)) return {bad: `Your target has to be ${L ? 'above' : 'below'} your entry for a ${L ? 'long' : 'short'}.`};
+  const cf = acct === 'sm' ? SM.cfg : PT.cfg, cost = 2 * ((cf.feePct || 0.04) + (cf.slipPct || 0.1)) / 100 * en / d, rr = tg != null ? Math.abs(tg - en) / d : null;
+  let i = Bs.findIndex(b => b[0] + ms > P.entry.t), tF = null, mx = 0; if (i < 0) return {st: 'nofill', rr};
+  for (; i < Bs.length; i++) {
+    const b = Bs[i];
+    if (tF == null) { if (b[3] <= en && b[2] >= en) tF = Math.max(b[0], P.entry.t); else continue; }
+    if (L ? b[3] <= st : b[2] >= st) return {st: 'stop', R: -1 - cost, tF, tX: b[0] + ms / 2, pX: st, rr, mx};     // stop first: worst case inside a candle
+    mx = Math.max(mx, ((L ? b[2] : b[3]) - en) * sg / d);
+    if (tg != null && (L ? b[2] >= tg : b[3] <= tg)) return {st: 'target', R: rr - cost, tF, tX: b[0] + ms / 2, pX: tg, rr, mx};
+  }
+  if (tF == null) return {st: 'nofill', rr};
+  const last = Bs[Bs.length - 1];
+  return {st: 'open', R: (last[4] - en) * sg / d - cost, tF, tX: last[0] + ms, pX: last[4], rr, mx};
+}
+function planResTxt(r, x, short) {
+  if (!r) return '';
+  const bot = `${x.strat === 'smc' ? 'the SMC Trader' : 'the Trader'} made ${fmtR(x.R)}`;
+  if (r.st === 'nofill') return `Your plan: price never reached your entry, so no trade${short ? '' : ` (${bot})`}.`;
+  const how = r.st === 'target' ? 'target reached' : r.st === 'stop' ? 'stopped out' : 'still open at the end of the chart';
+  return `Your plan: ${how}, ${fmtR(r.R)}${r.rr ? ` (target ${r.rr.toFixed(1)}R)` : ''} vs ${bot}.`;
+}
+function planStatusHTML(r, x, P) {
+  if (!RVP.on && !planHas(P)) return '';
+  if (RVP.warn) return `<span style="color:#ffd166">${esc(RVP.warn)}</span>`;
+  if (!P || !P.entry) return `<span class="dim">${RVP.on ? 'Start with your entry: pick Long or Short, then click where you would have got in.' : ''}</span>`;
+  if (r && r.need) return '<span class="dim">Now click your stop. Then your target.</span>';
+  if (r && r.bad) return `<span style="color:#ffd166">${esc(r.bad)}</span>`;
+  if (!r) return '';
+  const col = r.st === 'nofill' ? DIM : r.R >= 0 ? UP : DN;
+  return `<span style="color:${col};font-weight:700">${esc(planResTxt(r, x))}</span>${!fin(P.target) && r.st !== 'nofill' ? ' <span class="dim">Add a target to see where you would have taken profit.</span>' : ''}`;
+}
+function drawPlan(c, P, x, X, Y, f, xL, xR, Y0, r) {
+  c.save(); c.lineWidth = 1.6 * f; c.font = `700 ${10 * f}px ${FS}`; c.textBaseline = 'middle';
+  const pill = (txt, px, py, col) => { const w = c.measureText(txt).width + 10 * f; px = clamp(px, xL, xR - w); c.fillStyle = 'rgba(4,7,15,.88)'; rr(c, px, py - 8 * f, w, 16 * f, 4 * f); c.fill(); c.strokeStyle = col || PLAN_C; c.lineWidth = 1 * f; rr(c, px, py - 8 * f, w, 16 * f, 4 * f); c.stroke(); c.fillStyle = col || PLAN_C; c.fillText(txt, px + 5 * f, py + 0.5 * f); };
+  for (const z of P.zones || []) {
+    const x0 = X(z.t0), x1 = Math.max(X(z.t1), x0 + 3), y0 = Y(z.hi), y1 = Y(z.lo);
+    c.fillStyle = 'rgba(255,138,216,.16)'; c.fillRect(x0, y0, x1 - x0, y1 - y0); c.strokeStyle = PLAN_C; c.lineWidth = 1.2 * f; c.strokeRect(x0, y0, x1 - x0, y1 - y0);
+  }
+  for (const l of P.lines || []) { c.strokeStyle = PLAN_C; c.lineWidth = 2 * f; c.beginPath(); c.moveTo(X(l.t0), Y(l.p0)); c.lineTo(X(l.t1), Y(l.p1)); c.stroke(); }
+  const L = (P.side || x.side) === 'L', ex = P.entry ? X(P.entry.t) : xL, en = P.entry && P.entry.p;
+  const lvl = (v, col, txt, dash) => { if (!fin(v)) return; const y = Y(v); c.strokeStyle = col; c.lineWidth = 1.6 * f; c.setLineDash(dash.map(q => q * f)); c.beginPath(); c.moveTo(ex, y); c.lineTo(xR, y); c.stroke(); c.setLineDash([]); pill(txt, ex + 8 * f, y - 10 * f, col); };
+  const dd = fin(en) && fin(P.stop) ? Math.abs(en - P.stop) : null;
+  lvl(P.stop, '#ff5c9d', 'my stop', [5, 3]);
+  lvl(P.target, '#ffc2ec', `my target${dd && fin(en) ? ' ' + (Math.abs(P.target - en) / dd).toFixed(1) + 'R' : ''}`, [7, 4]);
+  if (fin(en)) {
+    lvl(en, PLAN_C, `my ${L ? 'long' : 'short'}`, [2, 3]);
+    const y = Y(en), s = 8 * f; c.fillStyle = PLAN_C; c.beginPath();
+    if (L) { c.moveTo(ex, y - s); c.lineTo(ex - s, y + s * 0.7); c.lineTo(ex + s, y + s * 0.7); } else { c.moveTo(ex, y + s); c.lineTo(ex - s, y - s * 0.7); c.lineTo(ex + s, y - s * 0.7); }
+    c.closePath(); c.fill(); c.strokeStyle = '#04070f'; c.lineWidth = 1.5; c.stroke();
+  }
+  for (const l of P.labels || []) { c.fillStyle = PLAN_C; c.beginPath(); c.arc(X(l.t), Y(l.p), 3 * f, 0, 7); c.fill(); pill(l.txt, X(l.t) + 6 * f, Y(l.p), PLAN_C); }
+  if (r && !r.bad && !r.need) {
+    if (r.tF) { c.strokeStyle = PLAN_C; c.lineWidth = 2 * f; c.beginPath(); c.arc(X(r.tF), Y(en), 6 * f, 0, 7); c.stroke(); }
+    if (r.tX) { const px = X(r.tX), py = Y(r.pX), s = 5 * f; c.strokeStyle = r.R >= 0 ? UP : DN; c.lineWidth = 2.5 * f; c.beginPath(); c.moveTo(px - s, py - s); c.lineTo(px + s, py + s); c.moveTo(px + s, py - s); c.lineTo(px - s, py + s); c.stroke(); }
+    c.font = `800 ${11 * f}px ${FS}`;
+    pill(r.st === 'nofill' ? 'YOUR PLAN: not filled' : `YOUR PLAN: ${r.st === 'target' ? 'target' : r.st === 'stop' ? 'stopped' : 'open'} ${fmtR(r.R)}`, xL + 4 * f, Y0 + 26 * f, r.st === 'nofill' ? DIM : r.R >= 0 ? UP : DN);
+  }
+  c.restore();
+}
+// the toolbar above the chart
+function planBarHTML(a, x) {
+  const k = tradeKey(a, x), d = MD.key === k ? MD.d : RVM[k], P = d && d.plan;
+  if (!RVP.on) return `<div style="display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap"><button class="btn sm" data-plan="on" style="background:${PLAN_C};color:#04070f;border-color:${PLAN_C}">✏️ ${planHas(P) ? 'Edit my setup on this chart' : 'Mark my own setup on this chart'}</button><span class="dim" style="font-size:12px">Draw where you would have entered, your stop, target and zones. The Reviewer replays it on these candles and compares it with the trade.</span><span id="planRes" style="font-size:12px;flex-basis:100%">${planHas(P) && P.res ? `<span style="color:${PLAN_C}">${esc(planResTxt(P.res, x))}</span>` : ''}</span></div>`;
+  const side = (P && P.side) || x.side, tool = RVP.tool;
+  const chip = (attr, v, lab, on, tip) => `<span class="chip ${on ? 'on' : ''}" ${attr}="${v}" title="${esc(tip || '')}" style="${on ? `background:${PLAN_C};color:#04070f;border-color:${PLAN_C}` : ''}">${lab}</span>`;
+  const T = [['entry', 'Entry', 'Click where you would have got in (time and price)'], ['stop', 'Stop', 'Click your stop price'], ['target', 'Target', 'Click your target price'], ['zone', 'Zone', 'Drag a box over your zone: OB, FVG, POI'], ['line', 'Line', 'Drag to draw a line: trendline, level, structure'], ['text', 'Label', 'Type a label below, then click where it goes'], ['erase', 'Erase', 'Click one of your marks to remove it']];
+  const hint = {entry: 'Click where you would have entered. Your candles snap to highs, lows, opens and closes.', stop: 'Click your stop price.', target: 'Click your target price.', zone: 'Drag a box over your zone (order block, FVG, point of interest).', line: 'Drag to draw a line.', text: 'Type the label, then click on the chart where it goes.', erase: 'Click one of your pink marks to remove it.'}[tool];
+  return `<div class="card2" style="margin-top:10px;border-left:4px solid ${PLAN_C};padding:10px 12px">
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><b style="color:${PLAN_C};font-size:13px;margin-right:4px">MY SETUP</b>
+      ${chip('data-plan-side', 'L', '▲ Long', side === 'L', 'Your trade would have been a long')}${chip('data-plan-side', 'S', '▼ Short', side === 'S', 'Your trade would have been a short')}
+      <span style="width:10px"></span>${T.map(([v, l, tip]) => chip('data-plan-tool', v, l, tool === v, tip)).join('')}
+      ${tool === 'text' ? `<input id="planTxt" maxlength="40" placeholder="e.g. BUOB · swept PDL · 1h LH" style="background:#0b1224;color:var(--txt);border:1px solid var(--line);border-radius:7px;padding:4px 8px;font:12px var(--sans);width:190px" value="${esc(RVP.txt || '')}">` : ''}
+      <span style="margin-left:auto"></span><button class="btn ghost sm" data-plan="undo" ${RVP.hist.length ? '' : 'disabled'}>Undo</button><button class="btn ghost sm" data-plan="clear">Clear</button><button class="btn sm" data-plan="off">Done</button></div>
+    <div class="dim" style="font-size:12px;margin-top:6px">${hint} The trader's own ✓/✗ tags can be hidden with the button under the chart. Press <b>Save my review</b> below to keep your marks.</div>
+    <div id="planRes" style="font-size:13px;margin-top:6px">${planStatusHTML(null, x, P)}</div></div>`;
+}
+const planDraft = () => { if (!MD.d) return null; if (!MD.d.plan) MD.d.plan = {side: MD.x ? MD.x.side : 'L', zones: [], lines: [], labels: []}; return MD.d.plan; };
+function planPush() { RVP.hist.push(JSON.stringify(MD.d.plan || null)); if (RVP.hist.length > 40) RVP.hist.shift(); }
+function planChanged() {
+  MD.msg = 'Marks changed. Press "Save my review" to keep them.'; RVP.warn = '';
+  document.querySelectorAll('canvas[data-rvchart]').forEach(drawRvCanvas);
+  const r = document.getElementById('mineRead'); if (r && MD.d) r.innerHTML = mineReadHTML(MD.d, MD.x && MD.x.side, MD.x);
+  const m = document.getElementById('mineMsg'); if (m) m.textContent = MD.msg;
+}
+// canvas pixel → time and price (snapped to the nearest candle open/high/low/close within 7 px)
+function planPt(cv, e, snap) {
+  const m = cv.__map; if (!m) return null; const b = cv.getBoundingClientRect();
+  const px = clamp(e.clientX - b.left, m.X0 + 6 * m.f, m.X0 + 6 * m.f + m.pw), py = e.clientY - b.top;
+  const t = m.T0 + (px - m.X0 - 6 * m.f) / m.pw * (m.T1 - m.T0);
+  let p = m.hi - (py - m.Y0 - 10 * m.f) / (m.h - 34 * m.f) * (m.hi - m.lo);
+  if (snap !== false) { const bar = m.bars.find(q => q[0] <= t && t < q[0] + m.ms); if (bar) { let best = 7; for (const v of bar.slice(1, 5)) { const dy = Math.abs(m.Y(v) - py); if (dy < best) { best = dy; p = v; } } } }
+  return {t, p, px, py};
+}
+function planErase(cv, pt) {
+  const m = cv.__map, P = MD.d && MD.d.plan; if (!m || !P) return false;
+  const near = (a, b) => Math.abs(a - b) < 8, ex = P.entry ? m.X(P.entry.t) : 0;
+  const segD = (x1, y1, x2, y2) => { const dx = x2 - x1, dy = y2 - y1, L2 = dx * dx + dy * dy || 1, u = clamp(((pt.px - x1) * dx + (pt.py - y1) * dy) / L2, 0, 1); return Math.hypot(pt.px - x1 - u * dx, pt.py - y1 - u * dy); };
+  const li = (P.labels || []).findIndex(l => Math.hypot(m.X(l.t) - pt.px, m.Y(l.p) - pt.py) < 14 || (pt.px >= m.X(l.t) && pt.px <= m.X(l.t) + 120 && near(m.Y(l.p), pt.py)));
+  if (li >= 0) { P.labels.splice(li, 1); return true; }
+  const ln = (P.lines || []).findIndex(l => segD(m.X(l.t0), m.Y(l.p0), m.X(l.t1), m.Y(l.p1)) < 7); if (ln >= 0) { P.lines.splice(ln, 1); return true; }
+  for (const k of ['target', 'stop']) if (fin(P[k]) && pt.px >= ex - 8 && near(m.Y(P[k]), pt.py)) { delete P[k]; return true; }
+  if (P.entry && pt.px >= ex - 8 && near(m.Y(P.entry.p), pt.py)) { delete P.entry; return true; }
+  const z = (P.zones || []).findIndex(z => pt.px >= m.X(z.t0) - 4 && pt.px <= m.X(z.t1) + 4 && pt.py >= m.Y(z.hi) - 4 && pt.py <= m.Y(z.lo) + 4); if (z >= 0) { P.zones.splice(z, 1); return true; }
+  return false;
+}
+const planCanvas = e => { const cv = e.target && e.target.closest && e.target.closest('canvas[data-rvchart]'); return cv && RVP.on && MD.d && cv.dataset.rvchart === MD.key ? cv : null; };
+document.getElementById('panel').addEventListener('pointerdown', e => {
+  const cv = planCanvas(e); if (!cv) return; const pt = planPt(cv, e, RVP.tool !== 'erase'); if (!pt) return;
+  e.preventDefault(); e.stopPropagation();
+  const P = planDraft(), tool = RVP.tool;
+  if (tool === 'zone' || tool === 'line') { RVP.drag = {tool, a: pt, b: null, cv}; try { cv.setPointerCapture(e.pointerId); } catch (_) {} return; }
+  if (tool === 'erase') { planPush(); if (!planErase(cv, pt)) { RVP.hist.pop(); return; } planChanged(); return; }
+  if (tool === 'text') { const inp = document.getElementById('planTxt'), txt = String((inp && inp.value) || RVP.txt || '').trim(); if (!txt) { RVP.warn = 'Type the label first, then click where it goes.'; const st = document.getElementById('planRes'); if (st) st.innerHTML = planStatusHTML(null, MD.x, P); return; } planPush(); (P.labels = P.labels || []).push({t: pt.t, p: pt.p, txt}); RVP.txt = ''; if (inp) inp.value = ''; planChanged(); return; }
+  planPush();
+  if (tool === 'entry') { P.entry = {t: pt.t, p: pt.p}; RVP.tool = fin(P.stop) ? (fin(P.target) ? 'entry' : 'target') : 'stop'; }
+  else if (tool === 'stop') { P.stop = pt.p; if (!fin(P.target)) RVP.tool = 'target'; }
+  else if (tool === 'target') P.target = pt.p;
+  planChanged(); if (RVP.tool !== tool) renderPanel();
+}, true);
+document.getElementById('panel').addEventListener('pointermove', e => {
+  const d = RVP.drag; if (!d) return; const pt = planPt(d.cv, e); if (!pt) return; d.b = pt; drawRvCanvas(d.cv);
+}, true);
+document.getElementById('panel').addEventListener('pointerup', e => {
+  const d = RVP.drag; if (!d) return; RVP.drag = null; const pt = planPt(d.cv, e) || d.b;
+  if (pt && Math.hypot(pt.px - d.a.px, pt.py - d.a.py) > 6) {
+    const P = planDraft(); planPush();
+    if (d.tool === 'zone') (P.zones = P.zones || []).push({t0: Math.min(d.a.t, pt.t), t1: Math.max(d.a.t, pt.t), lo: Math.min(d.a.p, pt.p), hi: Math.max(d.a.p, pt.p)});
+    else (P.lines = P.lines || []).push({t0: d.a.t, p0: d.a.p, t1: pt.t, p1: pt.p});
+  }
+  planChanged();
+}, true);
+document.getElementById('panel').addEventListener('input', e => { if (e.target.id === 'planTxt') { RVP.txt = e.target.value; RVP.warn = ''; } }, true);
+document.getElementById('panel').addEventListener('click', e => {
+  const el = e.target.closest('[data-plan],[data-plan-tool],[data-plan-side]'); if (!el) return; e.stopPropagation();
+  if (el.dataset.planTool) { RVP.tool = el.dataset.planTool; RVP.warn = ''; }
+  else if (el.dataset.planSide) { const P = planDraft(); if (P) { planPush(); P.side = el.dataset.planSide; planChanged(); } }
+  else if (el.dataset.plan === 'on') { RVP.on = true; RVP.tool = MD.d && MD.d.plan && MD.d.plan.entry ? 'zone' : 'entry'; }
+  else if (el.dataset.plan === 'off') { RVP.on = false; RVP.drag = null; RVP.warn = ''; }
+  else if (el.dataset.plan === 'undo' && RVP.hist.length && MD.d) { MD.d.plan = JSON.parse(RVP.hist.pop()); planChanged(); }
+  else if (el.dataset.plan === 'clear' && MD.d && MD.d.plan) { planPush(); MD.d.plan = null; planChanged(); }
+  renderPanel();
+}, true);
+// how your marked plans did, against the trader on the same trades
+function rvPlanStats(acct) {
+  const L = rvTrades(acct).map(([, x]) => [x, mineOf(x)]).filter(([, m]) => m && m.plan && m.plan.res && fin(m.plan.res.R));
+  const nf = rvTrades(acct).filter(([, x]) => { const m = mineOf(x); return m && m.plan && m.plan.res && m.plan.res.st === 'nofill'; }).length;
+  if (!L.length && !nf) return null;
+  return {n: L.length, nf, you: rvMean(L.map(([, m]) => m.plan.res.R)), bot: rvMean(L.map(([x]) => x.R))};
 }
 document.getElementById('panel').addEventListener('click', e => {
   if (e.target.closest('[data-rvtags]')) { e.stopPropagation(); rvTagsToggle(); return; }
@@ -4746,7 +4948,7 @@ const MINE_C = '#ff8ad8';
 const MINE_AG = {agree: 'agree with the Reviewer', partly: 'partly agree', disagree: 'disagree with the Reviewer'};
 const MINE_ALT = {same: 'same trade', flip: 'other side', skip: 'skip it', later: 'enter later', earlier: 'enter earlier', exitE: 'exit earlier', hold: 'hold longer', wider: 'wider stop', tighter: 'tighter stop', bigger: 'bigger size', smaller: 'smaller size'};
 const MD = {key: null, d: null, msg: ''};           // the form being filled in (kept across panel refreshes)
-function mineDraft(k) { if (MD.key !== k) { const r = RVM[k]; MD.key = k; MD.d = r ? JSON.parse(JSON.stringify(r)) : {g: '', ag: '', alt: [], x: [], note: '', excl: false, imgs: []}; MD.d.imgs = MD.d.imgs || []; MD.msg = ''; } return MD.d; }
+function mineDraft(k) { if (MD.key !== k) { const r = RVM[k]; MD.key = k; MD.d = r ? JSON.parse(JSON.stringify(r)) : {g: '', ag: '', alt: [], x: [], note: '', excl: false, imgs: [], plan: null}; RVP.hist = []; MD.d.imgs = MD.d.imgs || []; MD.msg = ''; } return MD.d; }
 // chart pictures on a review: shrunk to ≤1600 px JPEG (~150-400 KB) so they sync quickly
 async function mineImgPrep(file) {
   const url = URL.createObjectURL(file), im = new Image();
@@ -4764,7 +4966,7 @@ function mineImgsHTML(d) {
 }
 function mineImgsRefresh() {
   const box = document.getElementById('mineImgs'); if (box && MD.d) box.innerHTML = mineImgsHTML(MD.d);
-  const r = document.getElementById('mineRead'); if (r && MD.d) r.innerHTML = mineReadHTML(MD.d, MD.side);
+  const r = document.getElementById('mineRead'); if (r && MD.d) r.innerHTML = mineReadHTML(MD.d, MD.x && MD.x.side, MD.x);
   const m = document.getElementById('mineMsg'); if (m) m.textContent = MD.msg || '';
   imgFill();
 }
@@ -4786,21 +4988,22 @@ function mineImgView(src, cap) {
   o.onclick = close; addEventListener('keydown', k, true); document.body.appendChild(o);
 }
 // what the Reviewer took from your comment, shown live under the box
-function mineReadHTML(m, side) {
-  const note = mineText(m);
-  if (!String(note || '').trim()) return '<span class="dim">Write what you saw (in the comment or under a picture); the Reviewer will show here what it takes from it.</span>';
+function mineReadHTML(m, side, x) {
+  const note = mineText(m), pp = planPoints(m && m.plan, x), ppTxt = youReadTxt({any: true, a: pp.a, b: pp.b, d: pp.d});
+  const fromChart = ppTxt ? `<br><span style="color:${MINE_C}">From your marks on the chart:</span> <b>${esc(ppTxt)}</b> <span class="dim">(counts like a comment)</span>` : '';
+  if (!String(note || '').trim()) return (ppTxt ? '' : '<span class="dim">Write what you saw (in the comment or under a picture), or mark your own setup on the chart; the Reviewer will show here what it takes from it.</span>') + fromChart;
   const c = youReadM(m, side);
-  if (c.rd) return `<span style="color:${MINE_C}">Claude read this review (comment${(m.imgs || []).length ? ' and pictures' : ''}) and told the Reviewer:</span> <b>${esc(youReadTxt(c) || 'nothing to change')}</b>${c.rd.txt ? `<br><span class="dim">${esc(c.rd.txt)}</span>` : ''}`;
+  if (c.rd) return `<span style="color:${MINE_C}">Claude read this review (comment${(m.imgs || []).length ? ' and pictures' : ''}) and told the Reviewer:</span> <b>${esc(youReadTxt(c) || 'nothing to change')}</b>${c.rd.txt ? `<br><span class="dim">${esc(c.rd.txt)}</span>` : ''}` + fromChart;
   const stale = m && m.rd ? ' <span class="dim">(Claude\'s earlier reading no longer applies because the text changed.)</span>' : '';
-  return (c.any ? `<span style="color:${MINE_C}">The Reviewer reads this as:</span> <b>${esc(youReadTxt(c))}</b>` : '<span style="color:#ffd166">Nothing the Reviewer can act on yet.</span> <span class="dim">It understands phrases like "entered too early", "wait for the retest", "enter when it comes back to the OB", "should have been a short", "1h is dropping", "stop too tight / wicked out", "closed too early", "take profit earlier", "smaller size", "weak OB", "small FVG", "good FVG", "should not have traded" (also 太早入, 等回調, 應該做空, 止蝕太近, 逆勢, 走得太早…). Your note is still saved; for anything longer, ask Claude in the chat to read your reviews (it reads the pictures too).</span>') + stale;
+  return (c.any ? `<span style="color:${MINE_C}">The Reviewer reads this as:</span> <b>${esc(youReadTxt(c))}</b>` : '<span style="color:#ffd166">Nothing the Reviewer can act on yet.</span> <span class="dim">It understands phrases like "entered too early", "wait for the retest", "enter when it comes back to the OB", "should have been a short", "1h is dropping", "stop too tight / wicked out", "closed too early", "take profit earlier", "smaller size", "weak OB", "small FVG", "good FVG", "should not have traded" (also 太早入, 等回調, 應該做空, 止蝕太近, 逆勢, 走得太早…). Your note is still saved; for anything longer, ask Claude in the chat to read your reviews (it reads the pictures too).</span>') + stale + fromChart;
 }
 function mineFormHTML(a, x, E) {
   const k = tradeKey(a, x), d = mineDraft(k), saved = RVM[k];
-  MD.side = x.side; setTimeout(imgFill, 0);
+  MD.x = x; MD.acct = a; setTimeout(imgFill, 0);
   const chip = (attr, v, lab, on, col) => `<span class="chip ${on ? 'on' : ''}" ${attr}="${v}" style="${on ? `background:${col || MINE_C};color:#04070f;border-color:${col || MINE_C}` : ''}">${lab}</span>`;
   return `<div class="card2" id="mineForm" style="margin-top:12px;border-left:4px solid ${MINE_C}"><h3 style="color:${MINE_C}">YOUR REVIEW${saved ? ` <span class="dim" style="font-size:11px;font-weight:500">saved ${ago(saved.t)} ago${saved.by ? ' on ' + esc(saved.by) : ''}</span>` : ''}</h3>
     <div style="display:grid;grid-template-columns:150px 1fr;gap:10px 12px;align-items:center;font-size:13px">
-      <span style="color:${MINE_C};font-weight:700">Your comments<br><span class="dim" style="font-weight:400;font-size:11px">the Reviewer reads these first</span></span><div><textarea id="mineNote" rows="3" placeholder="In your own words (English or 中文): e.g. entered too early, should wait for the midpoint · stop too tight, wicked out · against the 4h · weak OB · good FVG · should have held" style="width:100%;background:#0b1224;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:8px;font:13px var(--sans);resize:vertical">${esc(d.note || '')}</textarea><div id="mineRead" style="font-size:12px;margin-top:4px">${mineReadHTML(d, x.side)}</div></div>
+      <span style="color:${MINE_C};font-weight:700">Your comments<br><span class="dim" style="font-weight:400;font-size:11px">the Reviewer reads these first</span></span><div><textarea id="mineNote" rows="3" placeholder="In your own words (English or 中文): e.g. entered too early, should wait for the midpoint · stop too tight, wicked out · against the 4h · weak OB · good FVG · should have held" style="width:100%;background:#0b1224;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:8px;font:13px var(--sans);resize:vertical">${esc(d.note || '')}</textarea><div id="mineRead" style="font-size:12px;margin-top:4px">${mineReadHTML(d, x.side, x)}</div></div>
       <span style="color:${MINE_C};font-weight:700">Chart pictures<br><span class="dim" style="font-weight:400;font-size:11px">explain your read; the Reviewer reads the captions too</span></span><div id="mineImgs">${mineImgsHTML(d)}</div>
       <span class="dim">Your grade</span><div style="display:flex;gap:6px;flex-wrap:wrap">${['A', 'B', 'C', 'D', 'F'].map(gr => chip('data-mine-g', gr, gr, d.g === gr, GRADE_C[gr])).join('')}<span class="dim" style="font-size:11px;align-self:center">Reviewer said ${E.grade.g}</span></div>
       <span class="dim">The Reviewer's verdict</span><div style="display:flex;gap:6px;flex-wrap:wrap">${Object.entries({agree: 'Agree', partly: 'Partly', disagree: 'Disagree'}).map(([v, l]) => chip('data-mine-ag', v, l, d.ag === v)).join('')}</div>
@@ -4808,14 +5011,15 @@ function mineFormHTML(a, x, E) {
       <span class="dim">What you'd have done <span style="font-size:11px">(½ weight)</span></span><div style="display:flex;gap:6px;flex-wrap:wrap">${Object.entries(MINE_ALT).map(([v, l]) => chip('data-mine-alt', v, l, d.alt.includes(v))).join('')}</div>
       <span></span><label style="display:flex;gap:8px;align-items:center;font-size:12px;cursor:pointer"><input type="checkbox" id="mineExcl" ${d.excl ? 'checked' : ''}> Leave this trade out of the Reviewer's learning (bad data, a fluke, or not a real setup)</label>
     </div>
+    ${(() => { const st = rvPlanStats(a); return st ? `<p class="note" style="margin-top:8px;color:${PLAN_C}">Your marked setups on ${a === 'sm' ? 'SMC' : 'Trader'} trades: ${st.n} filled, averaging ${fmtR(st.you)} vs ${fmtR(st.bot)} for the trader on the same trades${st.nf ? `; ${st.nf} never reached your entry` : ''}.</p>` : ''; })()}
     <div style="display:flex;gap:10px;align-items:center;margin-top:12px"><button class="btn" data-mine="save" style="background:${MINE_C};color:#04070f;border-color:${MINE_C}">Save my review</button>${saved ? '<button class="btn ghost sm" data-mine="del">Delete</button>' : ''}<span style="font-size:12px" id="mineMsg">${esc(MD.msg)}</span></div>
     <p class="note" style="margin-top:8px">${SY.on ? 'Saved to your shared account, so it shows on every computer and on the review wall.' : 'Saved in this browser only (Sync is off).'} </p>
-    <p class="note" style="margin-top:4px"><b>How your review counts:</b> your <b>comments come first</b>. A point the Reviewer reads in a comment counts 1; a chip you tick without saying it in the comment counts ½. When the same point reaches 2 and at least a third of your ${a === 'sm' ? 'SMC' : 'Trader'} reviews that say anything (or 3, whatever the share), the Reviewer applies it at its next review. If you ask Claude in the chat to read your reviews, its reading of the comment and pictures is used instead of the phrase reader. ${a === 'sm' ? 'For the SMC Trader: "too early / wait for the retest / enter when it comes back to…" → enter at the zone\'s midpoint; "should have been a short (long)" → only when the higher timeframe clearly agrees; "against the 1h/4h" → only with the higher timeframe; "weak OB" → FVGs only; "small FVG" or "weak sweep" or "skip" → higher quality bar; "stop too tight" → wider stop; "take profit earlier" → half at +1.2R; "smaller size" → ×0.75. Saying a part was good ("good FVG", "good OB", "HTF was fine") holds the rule built on it.' : '"too early / wait for confirmation" → only at "Reversed"; "should not have traded" → one more sign; "take profit earlier" → half at +1.2R; "closed too early / should have held" → longer hold; "stop too tight / wicked out" → wider stop; "smaller size" → ×0.75. Saying a point was fine ("stop was fine", "forming was fine") holds the rule built on it.'} Trades you mark "leave out" are ignored.</p></div>`;
+    <p class="note" style="margin-top:4px"><b>How your review counts:</b> your <b>comments come first</b>. A point the Reviewer reads in a comment counts 1; a chip you tick without saying it in the comment counts ½. When the same point reaches 2 and at least a third of your ${a === 'sm' ? 'SMC' : 'Trader'} reviews that say anything (or 3, whatever the share), the Reviewer applies it at its next review. If you ask Claude in the chat to read your reviews, its reading of the comment and pictures is used instead of the phrase reader. Your marks on the chart count like a comment: another side → "trade the other side"; an entry deeper than the trade\'s → "enter later"; a stop further out or in → "wider" / "tighter stop"; a nearer or further target → "exit earlier" / "hold longer". ${a === 'sm' ? 'For the SMC Trader: "too early / wait for the retest / enter when it comes back to…" → enter at the zone\'s midpoint; "should have been a short (long)" → only when the higher timeframe clearly agrees; "against the 1h/4h" → only with the higher timeframe; "weak OB" → FVGs only; "small FVG" or "weak sweep" or "skip" → higher quality bar; "stop too tight" → wider stop; "take profit earlier" → half at +1.2R; "smaller size" → ×0.75. Saying a part was good ("good FVG", "good OB", "HTF was fine") holds the rule built on it.' : '"too early / wait for confirmation" → only at "Reversed"; "should not have traded" → one more sign; "take profit earlier" → half at +1.2R; "closed too early / should have held" → longer hold; "stop too tight / wicked out" → wider stop; "smaller size" → ×0.75. Saying a point was fine ("stop was fine", "forming was fine") holds the rule built on it.'} Trades you mark "leave out" are ignored.</p></div>`;
 }
 document.getElementById('panel').addEventListener('input', e => {
   if (!MD.d) return;
-  if (e.target.id === 'mineNote') { MD.d.note = e.target.value; const r = document.getElementById('mineRead'); if (r) r.innerHTML = mineReadHTML(MD.d, MD.side); }
-  if (e.target.dataset && e.target.dataset.mimgCap != null) { const im = (MD.d.imgs || [])[+e.target.dataset.mimgCap]; if (im) im.cap = e.target.value; const r = document.getElementById('mineRead'); if (r) r.innerHTML = mineReadHTML(MD.d, MD.side); }
+  if (e.target.id === 'mineNote') { MD.d.note = e.target.value; const r = document.getElementById('mineRead'); if (r) r.innerHTML = mineReadHTML(MD.d, MD.x && MD.x.side, MD.x); }
+  if (e.target.dataset && e.target.dataset.mimgCap != null) { const im = (MD.d.imgs || [])[+e.target.dataset.mimgCap]; if (im) im.cap = e.target.value; const r = document.getElementById('mineRead'); if (r) r.innerHTML = mineReadHTML(MD.d, MD.x && MD.x.side, MD.x); }
   if (e.target.id === 'mineExcl') MD.d.excl = e.target.checked;
 }, true);
 document.getElementById('panel').addEventListener('change', e => {
@@ -4843,11 +5047,13 @@ document.getElementById('panel').addEventListener('click', async e => {
   else if (el.dataset.mineAlt) tog(d.alt, el.dataset.mineAlt);
   else if (el.dataset.mine === 'save' || el.dataset.mine === 'del') {
     const k = MD.key, del = el.dataset.mine === 'del';
-    if (!del && !d.g && !d.ag && !d.note && !d.alt.length && !d.x.length && !d.excl && !(d.imgs || []).length) { MD.msg = 'Pick a grade or write a note first.'; renderPanel(); return; }
+    if (!del && !d.g && !d.ag && !d.note && !d.alt.length && !d.x.length && !d.excl && !(d.imgs || []).length && !planHas(d.plan)) { MD.msg = 'Pick a grade, write a note or mark your setup first.'; renderPanel(); return; }
     // remember WHICH points you disagreed with (by key, not number), so the Reviewer can count them across trades
     let xk = [], ik = [];
     try { const tr = rvTrades().find(([a, x]) => tradeKey(a, x) === k); if (tr) { const E = rvExplain(tr[1], tr[0]); ik = [...new Set(E.items.map(i => i.k))]; xk = [...new Set(d.x.map(n => (E.items.find(i => i.n === n) || {}).k).filter(Boolean))]; } } catch (_) {}
-    const rec = del ? null : Object.assign({}, d, {imgs: (d.imgs || []).map(({data, ...r}) => r), xk, ik, t: now(), by: SY.name || ''});
+    let plan = planHas(d.plan) ? JSON.parse(JSON.stringify(d.plan)) : null;
+    if (plan) try { const tr = rvTrades().find(([a, x]) => tradeKey(a, x) === k), e = tr && rvBars(tr[1]); const r = e && e.bars ? rvPlanSim(tr[1], tr[0], plan, e.bars, e.ms) : null; plan.res = r && !r.bad ? {st: r.st, R: fin(r.R) ? +r.R.toFixed(2) : null, rr: fin(r.rr) ? +r.rr.toFixed(2) : null, tF: r.tF || null, at: now()} : null; } catch (_) {}
+    const rec = del ? null : Object.assign({}, d, {imgs: (d.imgs || []).map(({data, ...r}) => r), plan, xk, ik, t: now(), by: SY.name || ''});
     const add = del ? [] : (d.imgs || []).filter(i => i.data).map(i => ({p: i.p, data: i.data}));
     MD.msg = 'Saving…'; renderPanel();
     try {
