@@ -7,3 +7,6 @@ A walkable 3D trading workstation for small-cap perps on Aster DEX, with seven r
 - **Setup:** add the repository secret `DATA_TOKEN` (a fine-grained token with *Contents: read and write* on the private data repo only). The data repo defaults to `fredyu1996/aster-desk-data`; override it with the repository variable `DATA_REPO`.
 
 No trades, balances or keys are stored in this repo.
+
+## Development
+Source is in `src/`; `python3 build.py` builds `index.html` and `bot/core.js` (run `npm install` once for three.js). Tests: `node tests/smc-sweep.mjs` and `node tests/desk-smoke.mjs`. Architecture, deploy steps and project history: `CLAUDE.md` and `docs/`.
