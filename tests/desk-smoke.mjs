@@ -3,6 +3,7 @@
 //   npx playwright install chromium   (once)
 //   node tests/desk-smoke.mjs
 import { chromium } from 'playwright';
+import { fileURLToPath } from 'node:url';
 const N=70, now=Date.now();
 const syms=[...Array(N)].map((_,i)=>({s:(['IDOL','AKE','ONE','AIN','PAIR','UAI','DELTA','MAX','LYN','LITE','NIGHT','ZORA','MEW','POPCAT','WIF','BONK','TURBO','GOAT','PNUT','ACT'][i%20])+(i>=20?i:'')+'USDT',i}));
 syms.push({s:'BTCUSDT',i:99,top:true},{s:'ASTERUSDT',i:98,top:true},{s:'MSTRUSDT',i:97,stock:true});
@@ -41,8 +42,9 @@ await page.click('#enter', {timeout: 120000, noWaitAfter: true}); await page.wai
 const ids = await page.evaluate(() => Object.keys(TABS));
 for (const id of ids) { await page.evaluate(i => { openPanel(i); }, id); await page.waitForTimeout(700); for (const [t] of await page.evaluate(i => TABS[i], id)) { await page.evaluate(([i, t]) => { PS.tab[i] = t; setTabs(); renderPanel(); }, [id, t]); await page.waitForTimeout(250); } await page.evaluate(() => closePanel()); }
 console.log('panels checked:', ids.join(', '));
-await page.screenshot({path: new URL('../desk-smoke.png', import.meta.url).pathname});
+await page.screenshot({path: fileURLToPath(new URL('../desk-smoke.png', import.meta.url))});
 const bad = errs.filter(e => /PAGEERR/.test(e));
 await browser.close();
 if (bad.length) { console.error('FAIL\n' + bad.join('\n')); process.exit(1); }
 console.log('PASS: no page errors (screenshot: desk-smoke.png)');
+process.exit(0);   // Playwright's route/websocket handles can keep Node alive after browser.close() on Windows

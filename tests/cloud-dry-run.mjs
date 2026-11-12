@@ -1,0 +1,28 @@
+// One cloud-trader cycle against local state files instead of the data repo.
+// Uses real Aster prices; needs no token and never touches GitHub (STATE_IN switches run.mjs to local mode).
+// Fails if the cycle exits non-zero or writes no state with both paper accounts.
+import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aster-dry-'));
+const IN = path.join(dir, 'in.json'), OUT = path.join(dir, 'out.json');
+fs.writeFileSync(IN, '{}');
+
+const env = { ...process.env, STATE_IN: IN, STATE_OUT: OUT };
+delete env.DATA_REPO; delete env.DATA_TOKEN;   // belt and braces: never reach the real repo from a test
+const r = spawnSync(process.execPath, [path.join(ROOT, 'bot', 'run.mjs')], { env, encoding: 'utf8', timeout: 180000 });
+process.stdout.write(r.stdout || ''); process.stderr.write(r.stderr || '');
+
+const fail = (m) => { console.error('FAIL:', m); process.exit(1); };
+if (r.error) fail(r.error.message);
+if (r.status !== 0) fail(`run.mjs exited ${r.status}`);
+if (!fs.existsSync(OUT)) fail('no state written');
+const st = JSON.parse(fs.readFileSync(OUT, 'utf8'));
+const missing = ['pt', 'sm'].filter(k => !st[k]);
+if (missing.length) fail('state missing ' + missing.join(', '));
+console.log(`PASS: cloud cycle ran locally, state ${Math.round(fs.statSync(OUT).size / 1024)} KB with keys ${Object.keys(st).join(', ')}`);
+fs.rmSync(dir, { recursive: true, force: true });
