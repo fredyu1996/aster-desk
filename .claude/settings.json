@@ -1,0 +1,42 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(py build.py)",
+      "Bash(PYTHONUTF8=1 py build.py)",
+      "Bash(npm test)",
+      "Bash(npm run smoke)",
+      "Bash(node tests/*)",
+      "Bash(git pull --rebase)",
+      "Bash(git pull --rebase --autostash)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/build-on-src-edit.mjs\"",
+            "timeout": 60,
+            "statusMessage": "Rebuilding index.html + bot/core.js"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(git push*)",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/test-before-push.mjs\"",
+            "timeout": 300,
+            "statusMessage": "Checking build + npm test before push"
+          }
+        ]
+      }
+    ]
+  }
+}
