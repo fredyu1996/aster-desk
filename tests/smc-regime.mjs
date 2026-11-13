@@ -85,5 +85,13 @@ X(`smClose(SYM, 1, 'test close');`);
 const row = JSON.parse(X('JSON.stringify(SM.log[0])'));
 check(row.regime === 'up' && row.play === 'trend', 'log row carries regime + play', {regime: row.regime, play: row.play});
 
+// ---- Task 2: the Nov 12 pause (one-time), exits still run
+const mg = JSON.parse(X(`JSON.stringify((() => { const p = smMigrate({cfg: {ownJudge: 1, lev10: 1}, on: true}); const a = {on: p.on, f: p.cfg.pause1113}; p.on = true; smMigrate(p); return Object.assign(a, {again: p.on}); })())`));
+check(mg.on === false && mg.f === 1 && mg.again === true, 'smMigrate pauses once (pause1113), a later resume sticks', mg);
+X(`SM.on = true; S.smC.clear(); SM.cool = {}; smTick(); SM.on = false;`);
+check(X('Object.keys(SM.pos).length') === 1, 'position open before the pause test', X('Object.keys(SM.pos)'));
+X(`S.smC.clear(); SM.cool = {}; S.tk.set(SYM, Object.assign({}, S.tk.get(SYM), {last: SM.pos[SYM].stop * 0.99})); smTick();`);
+check(X('Object.keys(SM.pos).length') === 0 && /stop loss/.test(X('SM.log[0].exitWhy')), 'trading off: open position still stopped out', X('SM.log[0].exitWhy'));
+
 if (fails) { console.error(`FAIL: ${fails} check(s) failed`); process.exit(1); }
 console.log('PASS: SMC regime checks');

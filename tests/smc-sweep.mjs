@@ -25,6 +25,8 @@ S.h1.set(SYM, {t: T, bars: hb});
 S.tk.set(SYM, {last: 1.003, pct: 12, qv: 2e6});
 S.trk[SYM] = {side: 'G', t0: T - 3600e3, px0: 1, rank: 2};
 S.fund.set(SYM, {r: 0}); warm = true; S.started = T - 3600e3;
+SM.on = true;   // a fresh account starts paused since the Nov 12 migration (pause1113); this test checks entries
+
 `);
 
 const snap = () => X(`JSON.stringify((r => ({tf: r.tf, htf: r.htf, bias: r.bias, against: r.against, stage: r.stage, dir: r.dir, q: r.q && {score: r.q.score, grade: r.q.grade, items: r.q.items.map(i => i.ok + ' ' + i.k + ': ' + i.t)}, other: r.other && {tf: r.other.tf, stage: r.other.stage, dir: r.other.dir}}))(smcRead(SYM)))`);
