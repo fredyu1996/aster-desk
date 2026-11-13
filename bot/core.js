@@ -1540,6 +1540,7 @@ function smTick() {
     else if (r.score < SM.cfg.minScore) c.skip = `only ${r.score}/6 confluences (needs ${SM.cfg.minScore})`;
     else if (r.q && r.q.score < smRules().minQ) c.skip = `setup quality ${r.q.grade} (${r.q.score}/100, needs ${smRules().minQ})${r.q.worst ? ': ' + r.q.worst.toLowerCase() : ''}`;
     else if (smRules().fvgOnly && r.zone.kind !== 'FVG') c.skip = 'order block entry: FVG only (Reviewer\'s SMC rule)';
+    else if (r.zone.kind !== 'FVG' && r.q && r.q.score < smRules().obMinQ) c.skip = `order block entry: quality ${r.q.score}/100, order blocks need ${smRules().obMinQ} (Reviewer's SMC rule)`;
     else if (smRules().noTf && smRules().noTf === r.tf) c.skip = `${r.tf} setups paused (Reviewer's SMC rule)`;
     else if (smRules().needDepth && r.q && r.q.dz < 0.5 && !(r.setup && r.setup.zone && r.setup.zone.bg)) c.skip = `waiting for a deeper entry: ${Math.round(Math.max(0, r.q.dz) * 100)}% into the zone, needs 50% (Reviewer's SMC rule)`;
     else if (SM.cfg.minDepth && r.q && r.q.dz < SM.cfg.minDepth / 100 && !(r.setup && r.setup.zone && r.setup.zone.bg) && !(r.conf && r.conf.ok)) c.skip = `at the edge of the zone (${Math.round(Math.max(0, r.q.dz) * 100)}% in): waiting for ${SM.cfg.minDepth}% into it`;
@@ -1599,7 +1600,7 @@ function compareVerdict(a, b) {
 // the SMC rules in force: your settings, plus the Reviewer's SMC-concept adjustments when learning is on (RV.smAdj)
 function smRules() {
   const c = SM.cfg, A = (SM.cfg.learn && typeof RV !== 'undefined' && RV.smAdj) || {};
-  return {minQ: Math.max(c.minQ, A.minQ || 0), needHTF: !!A.needHTF, needPOI: !!A.needPOI, needDraw: !!A.needDraw, noCont: !!A.noCont, fvgOnly: !!A.fvgOnly, needDepth: !!A.needDepth, noTf: A.noTf || null,
+  return {minQ: Math.max(c.minQ, A.minQ || 0), needHTF: !!A.needHTF, needPOI: !!A.needPOI, needDraw: !!A.needDraw, noCont: !!A.noCont, fvgOnly: !!A.fvgOnly, obMinQ: A.obQ ? Math.min(90, Math.max(c.minQ, A.minQ || 0) + 10) : 0, needDepth: !!A.needDepth, noTf: A.noTf || null,
     stopBuf: A.stopBuf || c.stopBuf, tp1R: A.tp1R || c.tp1R, riskMul: A.riskMul || 1, zone: c.zoneLearn === 1 ? A.zone || null : null};   // zone: locked until Fred unlocks it
 }
 
@@ -1973,18 +1974,20 @@ function smLearn() {
   if (Y.flags('poi') && !A.needPOI) { A.needPOI = true; W.needPOI = `Your comments: not at a higher-timeframe zone on ${Y.bad.poi} trades ("${String(Y.q['b:poi']).slice(0, 70)}"). Only trade from a higher-timeframe zone or swing.`; }
   if (Y.flags('room') && !A.minQ) { A.minQ = Math.min(85, SM.cfg.minQ + 10); W.minQ = `Your comments: ran into an opposing zone on ${Y.bad.room} trades ("${String(Y.q['b:room']).slice(0, 70)}"). Raise the quality bar to ${A.minQ}/100.`; }
   if (Y.flags('htf') && !A.needHTF) { A.needHTF = true; W.needHTF = `Your comments: traded against the higher timeframe on ${Y.bad.htf} trades ("${String(Y.q['b:htf']).slice(0, 70)}"). Only trade when the higher timeframe agrees.`; }
-  if (Y.flags('ob') && !A.fvgOnly) { A.fvgOnly = true; W.fvgOnly = `Your comments: the order block was poor on ${Y.bad.ob} trades ("${String(Y.q['b:ob']).slice(0, 70)}"). FVG entries only.`; }
   if ((Y.flags('gap') || Y.flags('sweep')) && !A.minQ) { const k = Y.flags('gap') ? 'gap' : 'sweep'; A.minQ = Math.min(85, SM.cfg.minQ + 10); W.minQ = `Your comments: ${k === 'gap' ? 'a poor FVG' : 'a weak sweep'} on ${Y.bad[k]} trades ("${String(Y.q['b:' + k]).slice(0, 70)}"). Raise the quality bar to ${A.minQ}/100.`; }
   if ((Y.flags('depth') || Y.says('later')) && !A.needDepth) { A.needDepth = true; W.needDepth = (Y.says('later') ? Y.src('later', 'enter later') : `Your comments on ${Y.bad.depth} trades ("${String(Y.q['b:depth']).slice(0, 70)}").`) + ' Wait for the zone\'s midpoint.'; }
   if (Y.says('skip') && !A.minQ) { A.minQ = Math.min(85, SM.cfg.minQ + 10); W.minQ = `${Y.src('skip', 'skip it')} Raise the quality bar to ${A.minQ}/100.`; }
+  // Nov 13 (Fred): "poor OB" means that OB's quality, not "no OBs": order-block entries need 10 more quality points than the general bar
+  if (Y.flags('ob') && !A.obQ) { A.obQ = true; W.obQ = `Your comments: the order block was poor on ${Y.bad.ob} trades ("${String(Y.q['b:ob']).slice(0, 70)}"). Order-block entries need 10 more quality points than other setups.`; }
   if (Y.says('wider')) { A.stopBuf = Math.min(1.5, SM.cfg.stopBuf * 2); W.stopBuf = `${Y.src('wider', 'wider stop')} Stop further beyond the sweep.`; }
   if (Y.says('exitE') && SM.cfg.tp1R > 1.2) { A.tp1R = 1.2; W.tp1R = `${Y.src('exitE', 'exit earlier')} Bank half at +1.2R.`; }
   if (Y.says('smaller')) { A.riskMul = 0.75; W.riskMul = `${Y.src('smaller', 'smaller size')} Size ×0.75.`; }
   const youHeld = new Set();
   for (const k of ['htf', 'depth', 'gap', 'ob', 'poi', 'draw']) if (Y.rejects('smc_' + k)) {
-    const m = {htf: 'needHTF', depth: 'needDepth', gap: 'minQ', ob: 'fvgOnly', poi: 'needPOI', draw: 'needDraw'}[k];
-    if (A[m]) { delete A[m]; W.youHold = (W.youHold ? W.youHold + ' ' : '') + `Held "${SM_FACTOR[k]}" rule: ${Y.disTxt('smc_' + k)}.`; }
-    youHeld.add(m);
+    for (const m of k === 'ob' ? ['fvgOnly', 'obQ'] : [{htf: 'needHTF', depth: 'needDepth', gap: 'minQ', poi: 'needPOI', draw: 'needDraw'}[k]]) {
+      if (A[m]) { delete A[m]; W.youHold = (W.youHold ? W.youHold + ' ' : '') + `Held "${SM_FACTOR[k]}" rule: ${Y.disTxt('smc_' + k)}.`; }
+      youHeld.add(m);
+    }
   }
   // tell the SMC Trader what changed
   // coaching findings with enough trades behind them become rules too (see smCoach)
@@ -1995,14 +1998,15 @@ function smLearn() {
   { const old0 = RV.smAdj || {}, SS = RV.smSticky = RV.smSticky || {}, Ln = L.filter(x => !rvManual(x));
     for (const k in old0) {
       const st = SS[k] || (SS[k] = {last: now(), why: (RV.smWhy || {})[k] || ''}), newer = Ln.filter(x => x.t1 > st.last);
-      const release = youHeld.has(k) || now() - st.last > RV_STICKY_MAX || (newer.length >= 6 && rvMean(newer.map(x => x.R)) >= 0);
+      // shortcut: an FVG-only rule kept from Fred's comments is dropped (Nov 13: comments now set obQ); remove once no state carries it
+      const release = youHeld.has(k) || (k === 'fvgOnly' && /^Your comments: the order block/.test(st.why)) || now() - st.last > RV_STICKY_MAX || (newer.length >= 6 && rvMean(newer.map(x => x.R)) >= 0);
       if (release) continue;
       if (!(k in A)) { A[k] = old0[k]; W[k] = `${st.why || W[k] || ''} (Kept: ${newer.length} SMC trade${newer.length === 1 ? '' : 's'} since, ${newer.length ? fmtR(rvMean(newer.map(x => x.R))) : 'none yet'}; no opposite evidence.)`.trim(); }
-      else if (k === 'minQ' && old0.minQ > A.minQ) A.minQ = old0.minQ;
+      else if (k === 'minQ' && old0.minQ > A.minQ) { A.minQ = old0.minQ; W.minQ = String(W.minQ || '').replace(/\d+\/100/g, A.minQ + '/100') + ' (Kept at the earlier, higher bar.)'; }   // memo said the new, lower bar while the kept higher one was in force
     }
     for (const k in A) if (!(k in old0) || !SS[k] || W[k] && !/\(Kept:/.test(W[k])) SS[k] = {last: now(), why: W[k] || ''};
     for (const k in SS) if (!(k in A)) delete SS[k]; }
-  const lab = {needDraw: 'Only trade with the higher-timeframe draw on liquidity', needPOI: 'Only trade from a higher-timeframe zone or swing', noCont: 'Pause continuation setups', needHTF: 'Only trade when the higher timeframe agrees', fvgOnly: 'FVG entries only (no order blocks)', minQ: `Minimum setup quality ${A.minQ}/100`, noTf: `Pause ${A.noTf} setups`, needDepth: 'Enter at the zone\'s midpoint or deeper', stopBuf: `Stop ${A.stopBuf}% beyond the sweep`, tp1R: `Half at +${A.tp1R}R`, riskMul: `Size ×${A.riskMul}`, zone: 'Zone choice tuned from labelled zones'};
+  const lab = {needDraw: 'Only trade with the higher-timeframe draw on liquidity', needPOI: 'Only trade from a higher-timeframe zone or swing', noCont: 'Pause continuation setups', needHTF: 'Only trade when the higher timeframe agrees', fvgOnly: 'FVG entries only (no order blocks)', obQ: 'Order-block entries need 10 more quality points', minQ: `Minimum setup quality ${A.minQ}/100`, noTf: `Pause ${A.noTf} setups`, needDepth: 'Enter at the zone\'s midpoint or deeper', stopBuf: `Stop ${A.stopBuf}% beyond the sweep`, tp1R: `Half at +${A.tp1R}R`, riskMul: `Size ×${A.riskMul}`, zone: 'Zone choice tuned from labelled zones'};
   const old = RV.smAdj || {}, key = o => JSON.stringify(o);
   if (key(old) !== key(A)) {
     for (const k in A) if (key(A[k]) !== key(old[k])) { rvMemo('rev', 'smc', `SMC review: ${lab[k] || k}. ${W[k] || ''}`); rvMemo('smc', 'rev', k === 'zone' && SM.cfg.zoneLearn !== 1 ? 'Proposed: zone choice from labelled zones (locked until Fred turns it on).' : SM.cfg.learn ? `Applied: ${String(lab[k] || k).charAt(0).toLowerCase() + String(lab[k] || k).slice(1)}.` : 'Noted, but learning from SMC reviews is switched off on my desk.'); }

@@ -620,6 +620,7 @@ function smTick() {
     else if (r.score < SM.cfg.minScore) c.skip = `only ${r.score}/6 confluences (needs ${SM.cfg.minScore})`;
     else if (r.q && r.q.score < smRules().minQ) c.skip = `setup quality ${r.q.grade} (${r.q.score}/100, needs ${smRules().minQ})${r.q.worst ? ': ' + r.q.worst.toLowerCase() : ''}`;
     else if (smRules().fvgOnly && r.zone.kind !== 'FVG') c.skip = 'order block entry: FVG only (Reviewer\'s SMC rule)';
+    else if (r.zone.kind !== 'FVG' && r.q && r.q.score < smRules().obMinQ) c.skip = `order block entry: quality ${r.q.score}/100, order blocks need ${smRules().obMinQ} (Reviewer's SMC rule)`;
     else if (smRules().noTf && smRules().noTf === r.tf) c.skip = `${r.tf} setups paused (Reviewer's SMC rule)`;
     else if (smRules().needDepth && r.q && r.q.dz < 0.5 && !(r.setup && r.setup.zone && r.setup.zone.bg)) c.skip = `waiting for a deeper entry: ${Math.round(Math.max(0, r.q.dz) * 100)}% into the zone, needs 50% (Reviewer's SMC rule)`;
     else if (SM.cfg.minDepth && r.q && r.q.dz < SM.cfg.minDepth / 100 && !(r.setup && r.setup.zone && r.setup.zone.bg) && !(r.conf && r.conf.ok)) c.skip = `at the edge of the zone (${Math.round(Math.max(0, r.q.dz) * 100)}% in): waiting for ${SM.cfg.minDepth}% into it`;
@@ -679,6 +680,6 @@ function compareVerdict(a, b) {
 // the SMC rules in force: your settings, plus the Reviewer's SMC-concept adjustments when learning is on (RV.smAdj)
 function smRules() {
   const c = SM.cfg, A = (SM.cfg.learn && typeof RV !== 'undefined' && RV.smAdj) || {};
-  return {minQ: Math.max(c.minQ, A.minQ || 0), needHTF: !!A.needHTF, needPOI: !!A.needPOI, needDraw: !!A.needDraw, noCont: !!A.noCont, fvgOnly: !!A.fvgOnly, needDepth: !!A.needDepth, noTf: A.noTf || null,
+  return {minQ: Math.max(c.minQ, A.minQ || 0), needHTF: !!A.needHTF, needPOI: !!A.needPOI, needDraw: !!A.needDraw, noCont: !!A.noCont, fvgOnly: !!A.fvgOnly, obMinQ: A.obQ ? Math.min(90, Math.max(c.minQ, A.minQ || 0) + 10) : 0, needDepth: !!A.needDepth, noTf: A.noTf || null,
     stopBuf: A.stopBuf || c.stopBuf, tp1R: A.tp1R || c.tp1R, riskMul: A.riskMul || 1, zone: c.zoneLearn === 1 ? A.zone || null : null};   // zone: locked until Fred unlocks it
 }

@@ -109,5 +109,17 @@ check(eq(g('stopPct', '<2%'), [2, 0.25]) && eq(g('stopPct', '2–4%'), [2, -0.5]
 check(eq(g('rr', '<2.5'), [1, 1]) && eq(g('rr', '2.5–3.5'), [3, -0.5]) && eq(g('rr', '>3.5'), [1, 2]), "smStudy planned RR buckets ('<2.5', '2.5–3.5', '>3.5')", st.rr);
 check(!/null|NaN/.test(JSON.stringify([st.play, st.stopPct, st.rr, st.regime])), 'no NaN in the new groups (old rows without regime → ?)', st.regime);
 
+// ---- Nov 13: Fred's "poor OB" comments raise the bar for order blocks (obMinQ) instead of FVG-only
+const ob = JSON.parse(X(`JSON.stringify((() => {
+  const keep = {log: SM.log, learn: SM.cfg.learn, adj: RV.smAdj, sticky: RV.smSticky, why: RV.smWhy, rvm: RVM};
+  SM.log = [1, 2, 3].map(i => ({s: 'OB' + i + 'USDT', strat: 'smc', side: 'L', t0: i * 1e6, t1: i * 1e6 + 5e5, R: -1, entry: 1, stop0: 0.97, zoneKind: 'OB', q: {items: [], grade: 'C'}}));
+  RVM = {}; for (const x of SM.log) RVM[mineKey(x)] = {note: 'Poor OB', rd: {a: [], b: ['ob'], d: [], txt: 'Poor OB.', n: 7, t: 1, by: 'Claude'}};
+  RV.smAdj = {fvgOnly: true}; RV.smSticky = {fvgOnly: {last: Date.now(), why: 'Your comments: the order block was poor on 4 trades'}}; RV.smWhy = {};
+  SM.cfg.learn = 1; smLearn();
+  const out = {adj: RV.smAdj, rules: smRules()};
+  Object.assign(SM, {log: keep.log}); SM.cfg.learn = keep.learn; RV.smAdj = keep.adj; RV.smSticky = keep.sticky; RV.smWhy = keep.why; RVM = keep.rvm;
+  return out; })())`));
+check(ob.adj.obQ === true && !ob.adj.fvgOnly && ob.rules.obMinQ === Math.min(90, ob.rules.minQ + 10) && ob.rules.fvgOnly === false, '"poor OB" ×3 → order blocks need minQ + 10, kept FVG-only from comments dropped', ob);
+
 if (fails) { console.error(`FAIL: ${fails} check(s) failed`); process.exit(1); }
 console.log('PASS: SMC regime checks');
