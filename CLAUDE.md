@@ -174,7 +174,7 @@ git pull --rebase && git add -A && git commit -m "…" && git push   # Pages + t
   - Specs and plans: `docs/superpowers/`. Replays: `tools/smc-self-review.mjs`, `tools/smc-replay.mjs` (they need a state.json; never commit trade data).
 
 ## Open items
-- **SMC resume:** after the proposed zone rule appears, Fred decides on `zoneLearn` and on turning SMC trading back on.
+- **SMC resumed Nov 13 06:05 UTC** (`resume1113`), with `zoneLearn` still 0. Fred's call: collect ~20 new trades under the regime gate, then check whether the proposed zone rule stays stable before unlocking it. It changed 4 times in the first hour of backfill. Latest proposal: avoid 0.10–1.20 ATR zones (−0.71R n20 vs +0.59R n13) and prefer displacement zones (+0.60R n6).
 - Re-check the two SMC splits above once there are ~20 more SMC trades.
 - Momentum is the Trader's whole loss so far. Fred kept it on; raise it again only with new evidence.
 - **Not done from the audit:**
