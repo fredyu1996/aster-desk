@@ -124,6 +124,25 @@ function smZonePick(Z, W) {
   const ok = Z.filter(z => !(z.zs < ((W && W.minZs) || 0)));
   return ok.length ? best(ok, W) : best(Z, SMZ_DEF);
 }
+// was the zone right? (Fred, Nov 13) touched, then +1R before a close through its far edge. 1R from the zone's midpoint to `stop`.
+// Within a bar the stop / close-through counts first, and the touch bar's own high (low) doesn't count toward the +1R.
+// r: the best R reached (capped at 3) while right; −1 when wrong; touched but neither +1R nor broken by the end: wrong with r 0.
+function smZoneLabel(B, z, dir, stop) {
+  const bull = dir === 'L', e = (z.lo + z.hi) / 2, d = Math.abs(e - stop); let t = false, mx = 0;
+  const right = () => ({lab: 'right', r: smR6(Math.min(mx, 3))});
+  if (!B || !(d > 0)) return {lab: 'untouched', r: 0};
+  for (const b of B) {
+    const first = !t; if (first && !(bull ? b[3] <= z.hi : b[2] >= z.lo)) continue; t = true;
+    if (bull ? b[3] <= stop || b[4] < z.lo : b[2] >= stop || b[4] > z.hi) return mx >= 1 ? right() : {lab: 'wrong', r: -1};
+    if (!first) mx = Math.max(mx, (bull ? b[2] - e : e - b[3]) / d);
+  }
+  return !t ? {lab: 'untouched', r: 0} : mx >= 1 ? right() : {lab: 'wrong', r: 0};
+}
+// the trader's own stop for a zone: beyond the sweep extreme by stopBuf, moved out to the minimum stop % from the zone's midpoint
+function smZoneStop(z, dir, ext) {
+  const bull = dir === 'L', e = (z.lo + z.hi) / 2, sb = smRules().stopBuf / 100, ms = (SM.cfg.minStopPct || 0) / 100, s = bull ? ext * (1 - sb) : ext * (1 + sb);
+  return ms > 0 && (bull ? e - s : s - e) / e < ms ? e * (bull ? 1 - ms : 1 + ms) : s;
+}
 // the chosen candidate as the setup's zone, plus the candidate list (zc) that positions and log rows keep for the Reviewer
 function smZoneSet(r, Z) {
   const kz = smZonePick(Z, smRules().zone), nG = Z.filter(z => z.kind === 'FVG').length; if (kz < 0) return;

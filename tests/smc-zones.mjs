@@ -47,5 +47,20 @@ check(J('smZoneScore(HZ[0], SMZ_DEF)') > J('smZoneScore(HZ[2], SMZ_DEF)'), 'smZo
 const one = J(`smZones(HB.slice(0, 18).concat([[17 * 900e3 + 1, 0.985, 0.99, 0.984, 0.989, 100], [18 * 900e3, 0.989, 0.995, 0.986, 0.99, 100]]), {j: 15, k: 18, ext: 0.97}, 'L')`);
 check(one.length === 1 && one[0].kind === 'OB' && J(`smZonePick(${JSON.stringify(one)})`) === 0, 'leg with only an OB: single candidate, no crash', one);
 
+// ---- Task 2: labels on synthetic 15m paths. Long zone 1.00–1.02, entry 1.01, stop 0.99 → 1R = 0.02, +1R at 1.03
+const lab = bars => J(`smZoneLabel(${JSON.stringify(bars.map((b, i) => [i * 900e3, ...b, 100]))}, {lo: 1.0, hi: 1.02}, 'L', 0.99)`);
+const L1 = lab([[1.04, 1.045, 1.03, 1.035], [1.03, 1.035, 1.015, 1.02], [1.02, 1.04, 1.018, 1.035]]);
+check(L1.lab === 'right' && Math.abs(L1.r - 1.5) < 1e-6, 'touched, then +1.5R → right (r 1.5)', L1);
+const L2 = lab([[1.03, 1.035, 1.015, 1.02], [1.02, 1.025, 1.004, 1.006], [1.006, 1.012, 0.995, 0.997]]);
+check(L2.lab === 'wrong' && L2.r === -1, 'touched, then closed through the far edge → wrong', L2);
+const L3 = lab([[1.03, 1.035, 0.985, 1.0], [1.0, 1.06, 0.999, 1.05]]);
+check(L3.lab === 'wrong', 'touched and stopped in the same bar → wrong (stop first)', L3);
+const L4 = lab([[1.04, 1.05, 1.025, 1.03], [1.03, 1.06, 1.026, 1.05]]);
+check(L4.lab === 'untouched' && L4.r === 0, 'never touched → untouched', L4);
+const L5 = J(`smZoneLabel([[0, 0.97, 0.975, 0.965, 0.97, 1]], {lo: 0.98, hi: 1.0}, 'S', 1.01)`);   // short: touch the zone's low edge, +1R at 0.98
+check(L5.lab === 'untouched', 'short zone above price, never reached → untouched', L5);
+const st1 = J(`smZoneStop({lo: 1.0, hi: 1.02}, 'L', 0.99)`), st2 = J(`smZoneStop({lo: 1.0, hi: 1.02}, 'L', 1.005)`);
+check(Math.abs(st1 - 0.99 * 0.997) < 1e-9 && Math.abs(st2 - 1.01 * 0.985) < 1e-9, 'smZoneStop: sweep − stopBuf, widened to the minimum stop % from the midpoint', [st1, st2]);
+
 if (fails) { console.error(`FAIL: ${fails} check(s)`); process.exit(1); }
 console.log('PASS: smc-zones');
