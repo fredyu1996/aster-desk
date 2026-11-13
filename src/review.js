@@ -326,6 +326,24 @@ function smStudy(L) {
     stopPct: rvGroup(T, x => { const d = Math.abs(x.entry - x.stop0) / x.entry * 100; return !fin(d) ? null : d < 2 ? '<2%' : d <= 4 ? '2–4%' : '>4%'; }),
     rr: rvGroup(T, x => !fin(x.rr) ? null : x.rr < 2.5 ? '<2.5' : x.rr <= 3.5 ? '2.5–3.5' : '>3.5')};
 }
+/* ---- zone choice (Nov 13, Fred: "佢自己再調"): from the labelled candidate zones of past trades (smZoneBackfill), which kind of
+   FVG / OB turned out right. Same gate as the other rules: each side 5+ zones, 0.5R apart, the better side above 0. r per zone:
+   right = the R it reached (≤ 3), wrong = −1 (0 if it just went nowhere). Untouched zones are left out. */
+const SMZ_F = {fvg: ['FVGs (vs order blocks)', z => z.kind === 'FVG'], fresh: ['fresh zones (untouched since they formed)', z => !!z.fresh],
+  pos: ['the newest zone on the leg', z => !!z.last], pd: ['zones in the discount / premium half of the leg', z => !!z.pd],
+  ovl: ['zones overlapping the other kind (FVG inside the OB)', z => !!z.ovl], big: ['zones of 0.3 ATR or more', z => z.zs >= 0.3]};
+function smZoneTune(rows) {
+  const C = [];
+  for (const x of rows || []) { const c = x && x.zc && x.zc.c; if (!c || !c.length) continue; const top = Math.max(...c.map(z => z.pos));
+    for (const z of c) if (z.lab === 'right' || z.lab === 'wrong') C.push(Object.assign({}, z, {last: z.pos === top})); }
+  const W = {}, why = [], agg = A => ({n: A.length, r: rvMean(A.map(z => z.r))}), ok = (a, b) => a.n >= 5 && b.n >= 5 && a.r - b.r >= 0.5 && a.r > 0;
+  for (const k in SMZ_F) {
+    const f = SMZ_F[k][1], a = agg(C.filter(f)), b = agg(C.filter(z => !f(z))), w = Math.round(1000 * Math.abs(a.r - b.r));   // ≥ 500: outweighs the default FVG-first, newest-first order
+    if (ok(a, b)) { if (k === 'big') W.minZs = 0.3; else W[k] = w; } else if (ok(b, a)) W[k] = -w; else continue;
+    why.push({k, n1: a.n, n2: b.n, r1: +a.r.toFixed(3), r2: +b.r.toFixed(3)});
+  }
+  return why.length ? {W: Object.assign({}, SMZ_DEF, W), why} : null;
+}
 function smLearn() {
   const L = SM.log, St = smStudy(L), A = {}, W = {}, ok = (a, b) => a.n >= 5 && b.n >= 5 && a.avgR - b.avgR >= 0.5 && a.avgR > 0;
   const h = St.htf; if (h.agrees && h.unclear && ok(h.agrees, h.unclear)) { A.needHTF = true; W.needHTF = `Higher timeframe agreeing: ${h.agrees.n} trades, ${fmtR(h.agrees.avgR)}; unclear: ${h.unclear.n}, ${fmtR(h.unclear.avgR)}. Only trade with the higher timeframe.`; }
@@ -337,6 +355,8 @@ function smLearn() {
   if (ok(hiQ, loQ)) { A.minQ = 70; W.minQ = `Quality B or better: ${hiQ.n} trades, ${fmtR(hiQ.avgR)}; below B: ${loQ.n}, ${fmtR(loQ.avgR)}. Raise the bar to 70/100.`; }
   const t = St.tf; if (t['15m'] && t['1h']) { if (ok(t['1h'], t['15m'])) { A.noTf = '15m'; W.noTf = `1h setups ${fmtR(t['1h'].avgR)} (${t['1h'].n}) vs 15m ${fmtR(t['15m'].avgR)} (${t['15m'].n}). Pause 15m setups.`; } else if (ok(t['15m'], t['1h'])) { A.noTf = '1h'; W.noTf = `15m setups ${fmtR(t['15m'].avgR)} (${t['15m'].n}) vs 1h ${fmtR(t['1h'].avgR)} (${t['1h'].n}). Pause 1h setups.`; } }
   const d = St.F.depth; if (d && ok(d.good, d.rest)) { A.needDepth = true; W.needDepth = `Entries at the zone's midpoint or deeper: ${fmtR(d.good.avgR)} (${d.good.n}) vs at the edge: ${fmtR(d.rest.avgR)} (${d.rest.n}). Wait for the midpoint.`; }
+  const zt = smZoneTune(L.filter(x => !rvManual(x)));
+  if (zt) { A.zone = zt.W; W.zone = 'Zone choice from labelled zones: ' + zt.why.map(w => `${SMZ_F[w.k][0]} ${fmtR(w.r1)} (${w.n1}) vs the rest ${fmtR(w.r2)} (${w.n2})`).join('; ') + '. The pick now weighs these.'; }
   // your SMC reviews: your comments first (what you'd have done, and which part of the setup you think was poor)
   const Y = youTally(L.slice(0, 40));   // your last 40 reviewed SMC trades
   if (Y.says('flip') && !A.needHTF) { A.needHTF = true; W.needHTF = `${Y.src('flip', 'trade the other side')} Only trade when the higher timeframe clearly agrees.`; }
@@ -374,7 +394,7 @@ function smLearn() {
     }
     for (const k in A) if (!(k in old0) || !SS[k] || W[k] && !/\(Kept:/.test(W[k])) SS[k] = {last: now(), why: W[k] || ''};
     for (const k in SS) if (!(k in A)) delete SS[k]; }
-  const lab = {needDraw: 'Only trade with the higher-timeframe draw on liquidity', needPOI: 'Only trade from a higher-timeframe zone or swing', noCont: 'Pause continuation setups', needHTF: 'Only trade when the higher timeframe agrees', fvgOnly: 'FVG entries only (no order blocks)', minQ: `Minimum setup quality ${A.minQ}/100`, noTf: `Pause ${A.noTf} setups`, needDepth: 'Enter at the zone\'s midpoint or deeper', stopBuf: `Stop ${A.stopBuf}% beyond the sweep`, tp1R: `Half at +${A.tp1R}R`, riskMul: `Size ×${A.riskMul}`};
+  const lab = {needDraw: 'Only trade with the higher-timeframe draw on liquidity', needPOI: 'Only trade from a higher-timeframe zone or swing', noCont: 'Pause continuation setups', needHTF: 'Only trade when the higher timeframe agrees', fvgOnly: 'FVG entries only (no order blocks)', minQ: `Minimum setup quality ${A.minQ}/100`, noTf: `Pause ${A.noTf} setups`, needDepth: 'Enter at the zone\'s midpoint or deeper', stopBuf: `Stop ${A.stopBuf}% beyond the sweep`, tp1R: `Half at +${A.tp1R}R`, riskMul: `Size ×${A.riskMul}`, zone: 'Zone choice tuned from labelled zones'};
   const old = RV.smAdj || {}, key = o => JSON.stringify(o);
   if (key(old) !== key(A)) {
     for (const k in A) if (key(A[k]) !== key(old[k])) { rvMemo('rev', 'smc', `SMC review: ${lab[k] || k}. ${W[k] || ''}`); rvMemo('smc', 'rev', SM.cfg.learn ? `Applied: ${String(lab[k] || k).charAt(0).toLowerCase() + String(lab[k] || k).slice(1)}.` : 'Noted, but learning from SMC reviews is switched off on my desk.'); }
@@ -677,13 +697,7 @@ async function rvFollowOne(x, acct) {
 /* ---- after-the-fact SMC audit: trades opened before the quality read existed are re-read with the candles that existed
    at entry (15m/1h up to the entry time, price = the entry), so the Reviewer can judge their FVG / OB / liquidity too. */
 async function smAudit(x) {
-  const t0 = x.t0, kl = async (iv, ms, n) => (await api(`/fapi/v1/klines?symbol=${x.s}&interval=${iv}&startTime=${t0 - (n + 1) * ms}&endTime=${t0}&limit=${n + 3}`)).map(b => [+b[0], +b[1], +b[2], +b[3], +b[4], +b[7], +b[10]]);
-  const B15 = (await kl('15m', 15 * 60e3, 96)).filter(b => b[0] + 15 * 60e3 <= t0), H1 = (await kl('1h', 3600e3, 96)).filter(b => b[0] + 3600e3 <= t0);
-  // the candle that was still forming at entry, rebuilt from 1-minute candles up to the entry (the desk saw it live)
-  const fb = Math.floor(t0 / (15 * 60e3)) * 15 * 60e3;
-  if (t0 > fb) { const M = (await api(`/fapi/v1/klines?symbol=${x.s}&interval=1m&startTime=${fb}&endTime=${t0 - 1}&limit=20`)).map(b => [+b[0], +b[1], +b[2], +b[3], +b[4], +b[7], +b[10]]).filter(b => b[0] < t0);
-    if (M.length) B15.push([fb, M[0][1], Math.max(...M.map(b => b[2]), x.entry), Math.min(...M.map(b => b[3]), x.entry), x.entry, M.reduce((a, b) => a + b[5], 0), M.reduce((a, b) => a + b[6], 0)]); }
-  if (B15.length < 40 || H1.length < 30) throw new Error('no candles');
+  const t0 = x.t0, {B15, H1} = await smEntryBars(x);
   const zoneOf = x.zone || null, near = r => r && r.dir === x.side && r.q && r.zone && (zoneOf ? r.zone.lo <= zoneOf.hi && r.zone.hi >= zoneOf.lo : x.entry >= r.zone.lo - (r.zone.hi - r.zone.lo) && x.entry <= r.zone.hi + (r.zone.hi - r.zone.lo));
   let hit = null;
   try {
@@ -694,6 +708,44 @@ async function smAudit(x) {
   x.q = {score: hit.q.score, grade: hit.q.grade, items: hit.q.items, zs: hit.q.zs, dz: hit.q.dz, retro: 1};
   if (!x.htfBias && hit.bias) x.htfBias = hit.bias; if (!x.tf) x.tf = hit.tf; x.qa = {t: now(), ok: 1};
   return true;
+}
+/* ---- zone backfill (Nov 13): label every candidate FVG / OB of past SMC trades from the 15m candles in the 48 h after entry,
+   so smZoneTune can learn which zones were right. Rows from before zc existed are re-read at entry, as smAudit does.
+   At most `max` trades per call (API load); a failed fetch leaves the row for the next cycle. */
+const SMZ_LAB_H = 48;
+async function smZoneBackfill(max = 5) {
+  let n = 0;
+  for (const x of SM.log.filter(x => !(x.zc && x.zc.done) && !x.zcSkip && !rvManual(x) && now() - x.t0 >= SMZ_LAB_H * 3600e3 && !(x.zcErr && now() - x.zcErr < 30 * 60e3)).slice(0, max)) {
+    try {
+      if (!x.zone || !fin(x.zone.lo) || !fin(x.sweep)) { x.zcSkip = 'no zone or sweep recorded'; continue; }
+      if (!x.zc) {
+        const {B15, H1} = await smEntryBars(x); let r = null;
+        try { SM_OVR = {s: x.s, '15m': B15, '1h': H1, tk: {last: x.entry}, t: x.t0, dir: x.side}; r = smcReadTf(x.s, x.tf || '15m'); } finally { SM_OVR = null; }
+        const Z = r && r.dir === x.side && r.setup && r.setup.zc ? r.setup.zc.c : null;
+        if (!Z) { x.zcSkip = 'setup not found at entry'; continue; }
+        // the zone actually traded: the overlapping candidate of the same kind nearest to it (-1: the trade's zone isn't among them)
+        const d = z => z.kind === x.zone.kind && z.lo <= x.zone.hi && z.hi >= x.zone.lo ? Math.abs(z.lo - x.zone.lo) + Math.abs(z.hi - x.zone.hi) : Infinity;
+        const k = Z.reduce((b, z, i) => d(z) < (b < 0 ? Infinity : d(Z[b])) ? i : b, -1);
+        x.zc = {c: Z, k};
+      }
+      const B = (await api(`/fapi/v1/klines?symbol=${x.s}&interval=15m&startTime=${x.t0}&limit=${SMZ_LAB_H * 4}`)).map(b => [+b[0], +b[1], +b[2], +b[3], +b[4], +b[7]]);
+      if (B.length < 8) throw new Error('no candles');
+      for (const z of x.zc.c) Object.assign(z, smZoneLabel(B, z, x.side, smZoneStop(z, x.side, x.sweep)));
+      x.zc.done = 1; n++;
+    } catch (e) { x.zcErr = now(); }
+  }
+  return n;
+}
+// the 15m and 1h candles the desk saw at a trade's entry (closed bars, plus the forming 15m rebuilt from 1m up to the entry)
+async function smEntryBars(x) {
+  const t0 = x.t0, kl = async (iv, ms, n) => (await api(`/fapi/v1/klines?symbol=${x.s}&interval=${iv}&startTime=${t0 - (n + 1) * ms}&endTime=${t0}&limit=${n + 3}`)).map(b => [+b[0], +b[1], +b[2], +b[3], +b[4], +b[7], +b[10]]);
+  const B15 = (await kl('15m', 15 * 60e3, 96)).filter(b => b[0] + 15 * 60e3 <= t0), H1 = (await kl('1h', 3600e3, 96)).filter(b => b[0] + 3600e3 <= t0);
+  // the candle that was still forming at entry, rebuilt from 1-minute candles up to the entry (the desk saw it live)
+  const fb = Math.floor(t0 / (15 * 60e3)) * 15 * 60e3;
+  if (t0 > fb) { const M = (await api(`/fapi/v1/klines?symbol=${x.s}&interval=1m&startTime=${fb}&endTime=${t0 - 1}&limit=20`)).map(b => [+b[0], +b[1], +b[2], +b[3], +b[4], +b[7], +b[10]]).filter(b => b[0] < t0);
+    if (M.length) B15.push([fb, M[0][1], Math.max(...M.map(b => b[2]), x.entry), Math.min(...M.map(b => b[3]), x.entry), x.entry, M.reduce((a, b) => a + b[5], 0), M.reduce((a, b) => a + b[6], 0)]); }
+  if (B15.length < 40 || H1.length < 30) throw new Error('no candles');
+  return {B15, H1};
 }
 // runs in the browser that trades (every 2 min) and in the cloud (each cycle): picks up trades whose 24h has passed
 async function rvFollowTick(max = 2) {
@@ -708,6 +760,8 @@ async function rvFollowTick(max = 2) {
     if (typeof SM !== 'undefined') for (const x of SM.log.filter(x => !x.q && !x.qa && !rvManual(x) && !(x.qaErr && now() - x.qaErr < 30 * 60e3)).slice(0, Math.max(1, max - n))) {
       try { await smAudit(x); n++; } catch (e) { x.qaErr = now(); }
     }
+    // label the candidate zones of past SMC trades for the zone tuner (smZoneTune, in smLearn)
+    if (typeof SM !== 'undefined') n += await smZoneBackfill(5);
     if (n) { ptSave(); if (typeof smSave === 'function') smSave(); }
   } finally { RVF.busy = false; }
   return n;
@@ -878,7 +932,7 @@ const scrRec = c => c.scr ? {fit: c.scr.fit.hit.length + '/' + c.scr.fit.of, tes
 function profTick() {
   const nT = critTrades('rev').length + critTrades('mom').length + critTrades('smc').length;
   if (!RV.prof || RV.prof.nT !== nT) { const prev = RV.prof; rvProfile(); RV.prof.nT = nT; if (prev) screenTalk(prev.F || [], RV.prof.F); rvSave(); }
-  const nY = Object.keys(RVM).length + ':' + Object.values(RVM).reduce((a, m) => Math.max(a, m.t || 0), 0) + ':' + SM.log.length + ':' + SM.log.filter(x => x.q).length + ':' + SM.log.filter(x => x.fu).length;
+  const nY = Object.keys(RVM).length + ':' + Object.values(RVM).reduce((a, m) => Math.max(a, m.t || 0), 0) + ':' + SM.log.length + ':' + SM.log.filter(x => x.q).length + ':' + SM.log.filter(x => x.fu).length + ':' + SM.log.filter(x => x.zc && x.zc.done).length;
   if (RV.smKey !== nY) { RV.smKey = nY; smLearn(); rvSave(); }
   if (!RV.prof.F.length) return;
   for (const s of [...S.gainers, ...S.losers]) for (const st of ['rev', 'mom', 'smc']) {

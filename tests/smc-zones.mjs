@@ -62,5 +62,33 @@ check(L5.lab === 'untouched', 'short zone above price, never reached → untouch
 const st1 = J(`smZoneStop({lo: 1.0, hi: 1.02}, 'L', 0.99)`), st2 = J(`smZoneStop({lo: 1.0, hi: 1.02}, 'L', 1.005)`);
 check(Math.abs(st1 - 0.99 * 0.997) < 1e-9 && Math.abs(st2 - 1.01 * 0.985) < 1e-9, 'smZoneStop: sweep − stopBuf, widened to the minimum stop % from the midpoint', [st1, st2]);
 
+// ---- Task 3: tuner behind the evidence gate (each side n ≥ 5, gap ≥ 0.5R, winner > 0), sticky in smLearn, backfill
+X(`var zrow = (fresh, lab, r, t) => ({s: 'ZUSDT', b: 'Z', side: 'L', t0: t - 3600e3, t1: t, entry: 1, exit: 1, stop0: 0.98, R: 0, maxR: 0, rr: 2, tf: '15m', type: 'rev', exitWhy: 'x', strat: 'smc',
+  zc: {done: 1, k: 0, c: [{kind: 'FVG', lo: 1, hi: 1.01, i: 5, zs: 0.5, fresh, pos: 0, pd: 1, ovl: 0, lab, r}]}});
+var zrows = (nf, ns, fl, sl, t = 1e12) => [...Array(nf)].map((_, i) => zrow(1, fl, fl === 'right' ? 1.5 : -1, t + i)).concat([...Array(ns)].map((_, i) => zrow(0, sl, sl === 'right' ? 1.5 : -1, t + 100 + i)));`);
+check(J(`smZoneTune(zrows(4, 4, 'right', 'wrong'))`) === null, 'tuner: 4 vs 4 → null (too few)', J(`smZoneTune(zrows(4, 4, 'right', 'wrong'))`));
+const tu = J(`smZoneTune(zrows(6, 6, 'right', 'wrong'))`);
+check(tu && tu.W && tu.W.fresh > 0 && tu.why.length === 1 && tu.why[0].k === 'fresh' && tu.why[0].n1 === 6 && tu.why[0].n2 === 6, 'tuner: 6 fresh-right vs 6 stale-wrong → prefers fresh, why n 6/6', tu);
+check(J(`smZoneTune(zrows(6, 6, 'right', 'right'))`) === null, 'tuner: no gap between the sides → null', null);
+check(J(`HZ[smZonePick(HZ, smZoneTune(zrows(6, 6, 'right', 'wrong')).W)].i`) === 17, 'tuned weights steer the pick on the hand leg (fresh FVG 17)', null);
+X(`RV.smAdj = {}; RV.smSticky = {}; SM.log = zrows(6, 6, 'right', 'wrong'); smLearn();`);
+check(J('RV.smAdj.zone && RV.smAdj.zone.fresh') > 0 && /fresh/.test(J('RV.smWhy.zone') || ''), 'smLearn: RV.smAdj.zone set from the split, with its reason', J('[RV.smAdj, RV.smWhy.zone]'));
+check(J('smRules().zone && smRules().zone.fresh') > 0, 'smRules().zone feeds the pick', J('smRules().zone'));
+X(`SM.log = zrows(2, 2, 'wrong', 'right'); smLearn();`);
+check(J('RV.smAdj.zone && RV.smAdj.zone.fresh') > 0, 'sticky: thin opposite evidence (2 vs 2) keeps the zone rule', J('RV.smAdj'));
+X(`SM.log = zrows(6, 6, 'wrong', 'right', now() + 1e6); smLearn();`);
+check(J('RV.smAdj.zone && RV.smAdj.zone.fresh') < 0, 'a newer opposite split (6 vs 6) turns it around', J('RV.smAdj.zone'));
+// backfill: a row without a zone is skipped with a reason; a failed kline fetch leaves the row unlabelled for a retry
+X(`RV.smAdj = {}; var apiOk = api; api = async () => { throw new Error('down'); };
+  SM.log = [{s: 'OLDUSDT', side: 'L', t0: now() - 5 * 864e5, t1: now() - 4 * 864e5, entry: 1, R: 0, strat: 'smc'}, Object.assign(zrow(1, null, null, now() - 4 * 864e5), {sweep: 0.97, zone: {lo: 1, hi: 1.01, kind: 'FVG'}})];
+  delete SM.log[1].zc.done; delete SM.log[1].zc.c[0].lab; var bfN = null; smZoneBackfill(5).then(n => { bfN = n; });`);
+await new Promise(r => setTimeout(r, 50));
+check(J('bfN') === 0 && /no zone/.test(J('SM.log[0].zcSkip') || '') && !J('SM.log[0].zc'), 'backfill: row without zone/sweep → skipped with a reason, no throw', J('SM.log[0]'));
+check(J('SM.log[1].zcErr') > 0 && !J('SM.log[1].zc.done'), 'backfill: kline fetch fails → left unlabelled, retried later', J('SM.log[1]'));
+X(`api = async () => [...Array(40)].map((_, i) => [now() - 4 * 864e5 + i * 900e3, '1.03', i === 2 ? '1.05' : '1.035', i === 1 ? '1.005' : '1.025', '1.03', '0', '0', '100']); SM.log[1].zcErr = 0; bfN = null; smZoneBackfill(5).then(n => { bfN = n; });`);
+await new Promise(r => setTimeout(r, 50));
+check(J('bfN') === 1 && J('SM.log[1].zc.done') === 1 && J('SM.log[1].zc.c[0].lab') === 'right', 'backfill: labels the candidates once candles arrive', J('SM.log[1].zc'));
+X('api = apiOk;');
+
 if (fails) { console.error(`FAIL: ${fails} check(s)`); process.exit(1); }
 console.log('PASS: smc-zones');
