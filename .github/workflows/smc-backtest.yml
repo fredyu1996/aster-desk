@@ -1,0 +1,26 @@
+name: SMC backtest
+# Nightly SMC Trader backtest (report only: never changes live rules). Writes branch "backtest" of the data repo.
+on:
+  schedule:
+    - cron: '23 11 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: smc-backtest
+  cancel-in-progress: false
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Backtest the SMC Trader
+        run: node bot/backtest.mjs
+        env:
+          DATA_REPO: ${{ vars.DATA_REPO || 'fredyu1996/aster-desk-data' }}
+          DATA_TOKEN: ${{ secrets.DATA_TOKEN }}
+          TZ: America/Creston

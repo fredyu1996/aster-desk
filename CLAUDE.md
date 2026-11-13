@@ -34,7 +34,8 @@ This repo is **public**: free Pages and Actions need that. It holds no data or k
    - If runs stop, check that token first: cron-job.org's history shows 401/403.
    - Each run uses the `DATA_TOKEN` secret (`aster-desk-data` only, Contents read/write).
 2. **`keepalive.yml`** makes a monthly commit so GitHub doesn't pause schedules.
-3. **Scheduled tasks on claude.ai** (Fred's account; not visible from Claude Code):
+3. **`smc-backtest.yml`** (daily 11:23 UTC + manual): `bot/backtest.mjs` backtests the SMC Trader over the last 7 days and writes branch `backtest` of the data repo. **Report only**: never changes live rules; shown in Reviewer → SMC review. See `docs/smc-backtest.md`.
+4. **Scheduled tasks on claude.ai** (Fred's account; not visible from Claude Code):
    - **"Aster cloud watchdog"**: hourly at :58. Reads the public Actions API; push notification on trouble.
    - **"Aster unlock calendar research"**: daily 4:32 AM America/Creston.
      - Web-searches unlocks and updates the project doc.
@@ -44,7 +45,7 @@ This repo is **public**: free Pages and Actions need that. It holds no data or k
      - So **`git pull` before you commit**; that commit lands every morning.
      - **History:** the Nov 12 run's git push silently didn't land. Claude published that calendar by hand and added the fallback; Nov 13 is the first run with it.
    - **"Aster reversal watch"** (hourly dashboard): **paused** on Fred's request to cut usage. Its script is in `tools/reversal-watch.py`.
-4. **The desk itself** shows "CLOUD QUIET · Xm" when the cloud has been silent for 20+ min. A connected browser takes over trading after 30 min of silence while it stays open.
+5. **The desk itself** shows "CLOUD QUIET · Xm" when the cloud has been silent for 20+ min. A connected browser takes over trading after 30 min of silence while it stays open.
 
 ## Build, test, deploy
 ```bash

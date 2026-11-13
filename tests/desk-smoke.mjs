@@ -20,6 +20,16 @@ const browser=await chromium.launch({args:['--use-gl=angle','--use-angle=swiftsh
 const page=await browser.newPage({viewport:{width:1500,height:860}});
 const errs=[];page.on('pageerror',e=>errs.push('PAGEERR '+e.stack));page.on('console',m=>{if(m.type()==='error')errs.push('CONSOLE '+m.text())});
 await page.addInitScript(s=>localStorage.setItem('awx_oi',s),JSON.stringify(seed));
+// a fake sync token (sync stays off) and a fake backtest file on the data repo: the Reviewer's SMC tab must show it read-only
+await page.addInitScript(()=>localStorage.setItem('awx_sync',JSON.stringify({repo:'test/data',token:'fake',on:false})));
+const btFake={v:1,sum:{t:now,from:now-7*864e5,to:now,days:7,coins:40,runS:300,variants:{base:{n:12,avgR:0.1,win:50,open:0},zone:{n:14,avgR:-0.2,win:40,open:1},noObQ:{n:15,avgR:0.05,win:47,open:0}},
+ decisions:[{k:'flow',lab:'Skip when the 1h taker flow is against the trade',bt:{kept:{n:8,avgR:0.3,win:60},dropped:{n:4,avgR:-0.3,win:25}},live:{kept:{n:21,avgR:0.07,win:48},dropped:{n:17,avgR:-0.32,win:29}}},
+  {k:'obQ',lab:'OB quality bar',blocked:5,bt:{kept:{n:0,avgR:null,win:null},dropped:{n:3,avgR:0,win:33}},live:{kept:{n:2,avgR:-0.21,win:50},dropped:{n:8,avgR:-0.02,win:38}}}],
+ simVsLive:{live:13,matched:2,meanAbsDR:0.6},note:'Backtest: proposal only.'},trades:[]};
+await page.route('https://api.github.com/**',r=>{const u=r.request().url();
+ if(u.includes('/git/ref/heads/backtest'))return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({object:{sha:'bt1'}})});
+ if(u.includes('/contents/smc-backtest.json'))return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify(btFake)});
+ return r.fulfill({status:404,body:'{}'});});
 await page.route('https://fonts.googleapis.com/**',r=>r.abort());await page.route('https://fonts.gstatic.com/**',r=>r.abort());
 let calls=0;
 await page.route('https://fapi.asterdex.com/**',async r=>{calls++;const u=new URL(r.request().url());const p=u.pathname,s=u.searchParams.get('symbol');const o=syms.find(x=>x.s===s);let body;if(s&&!o)return r.fulfill({status:400,body:'{}'});
@@ -42,6 +52,10 @@ await page.click('#enter', {timeout: 120000, noWaitAfter: true}); await page.wai
 const ids = await page.evaluate(() => Object.keys(TABS));
 for (const id of ids) { await page.evaluate(i => { openPanel(i); }, id); await page.waitForTimeout(700); for (const [t] of await page.evaluate(i => TABS[i], id)) { await page.evaluate(([i, t]) => { PS.tab[i] = t; setTabs(); renderPanel(); }, [id, t]); await page.waitForTimeout(250); } await page.evaluate(() => closePanel()); }
 console.log('panels checked:', ids.join(', '));
+await page.evaluate(() => { openPanel('rev'); PS.tab.rev = 'smcr'; setTabs(); renderPanel(); }); await page.waitForTimeout(1500); await page.evaluate(() => renderPanel());
+const bt = await page.evaluate(() => (document.body.innerText.match(/BACKTEST \(PROPOSAL ONLY, NOT APPLIED\)\s*\n[^\n]*/) || [''])[0]);
+console.log('backtest block:', bt.replace(/\s*\n/g, ' | ') || 'MISSING'); if (!bt) errs.push('PAGEERR backtest block missing in Reviewer → SMC review');
+await page.evaluate(() => closePanel());
 await page.screenshot({path: fileURLToPath(new URL('../desk-smoke.png', import.meta.url))});
 const bad = errs.filter(e => /PAGEERR/.test(e));
 await browser.close();

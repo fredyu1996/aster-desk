@@ -632,7 +632,7 @@ function rvSmcStudyHTML() {
     <div class="card2" style="border-left:4px solid #c5f05a"><h3 style="color:#c5f05a">WHAT THE SMC REVIEW CHANGED</h3>${adj}${W.youHold ? `<div class="chk"><span class="i" style="color:${MINE_C}">✍</span><span>${esc(W.youHold)}</span></div>` : ''}
       <div class="dim" style="font-size:12px;margin-top:8px">Learning is <b>${s.learn ? 'on' : 'off'}</b> (SMC desk → Rules &amp; settings). ${s.learn ? '' : 'Changes are shown but not applied.'}</div></div>
     <div class="card2" style="border-left:4px solid ${MINE_C}"><h3 style="color:${MINE_C}">YOUR SMC REVIEWS</h3>${Y.n ? `<div style="font-size:13px;margin-bottom:6px">${Y.n} SMC trade${Y.n > 1 ? 's' : ''} reviewed by you, ${Y.nc} with a comment the Reviewer could read. Counts: comment 1, tick ½; 2 makes a rule.</div>${you ? `<div class="dim" style="font-size:12px;margin:6px 0 4px">What you'd have done</div>${you}` : ''}${poor ? `<div class="dim" style="font-size:12px;margin:8px 0 4px">What you said was poor</div>${poor}` : ''}${dis ? `<div class="dim" style="font-size:12px;margin:8px 0 4px">SMC points you said were fine</div>${dis}` : ''}` : '<span class="dim" style="font-size:13px">None yet. Open an SMC trade in "On the chart" (or press E at the review wall) and review it: what you\'d have done, and which SMC points you disagree with.</span>'}</div>
-  </div>`;
+  </div>${btHTML()}`;
 }
 function rvTfHTML() {
   const blocks = [['pt', 'Trader', '#ffd166', PT.log], ['sm', 'SMC Trader', SMCOL, SM.log]].map(([a, name, col, L]) => {

@@ -5049,7 +5049,7 @@ function rvSmcStudyHTML() {
     <div class="card2" style="border-left:4px solid #c5f05a"><h3 style="color:#c5f05a">WHAT THE SMC REVIEW CHANGED</h3>${adj}${W.youHold ? `<div class="chk"><span class="i" style="color:${MINE_C}">✍</span><span>${esc(W.youHold)}</span></div>` : ''}
       <div class="dim" style="font-size:12px;margin-top:8px">Learning is <b>${s.learn ? 'on' : 'off'}</b> (SMC desk → Rules &amp; settings). ${s.learn ? '' : 'Changes are shown but not applied.'}</div></div>
     <div class="card2" style="border-left:4px solid ${MINE_C}"><h3 style="color:${MINE_C}">YOUR SMC REVIEWS</h3>${Y.n ? `<div style="font-size:13px;margin-bottom:6px">${Y.n} SMC trade${Y.n > 1 ? 's' : ''} reviewed by you, ${Y.nc} with a comment the Reviewer could read. Counts: comment 1, tick ½; 2 makes a rule.</div>${you ? `<div class="dim" style="font-size:12px;margin:6px 0 4px">What you'd have done</div>${you}` : ''}${poor ? `<div class="dim" style="font-size:12px;margin:8px 0 4px">What you said was poor</div>${poor}` : ''}${dis ? `<div class="dim" style="font-size:12px;margin:8px 0 4px">SMC points you said were fine</div>${dis}` : ''}` : '<span class="dim" style="font-size:13px">None yet. Open an SMC trade in "On the chart" (or press E at the review wall) and review it: what you\'d have done, and which SMC points you disagree with.</span>'}</div>
-  </div>`;
+  </div>${btHTML()}`;
 }
 function rvTfHTML() {
   const blocks = [['pt', 'Trader', '#ffd166', PT.log], ['sm', 'SMC Trader', SMCOL, SM.log]].map(([a, name, col, L]) => {
@@ -5523,6 +5523,28 @@ function imgFill() {
 function notesTick() {
   if (!SY.on || now() - (SYS.notesT || 0) < 60e3) return; SYS.notesT = now();
   notesPull().then(r => { RVM = r.m || {}; LS.set('awx_mine', RVM); }).catch(() => {});
+}
+/* ---- SMC nightly backtest (branch "backtest", file smc-backtest.json, written by .github/workflows/smc-backtest.yml) ----
+   Read-only here: a proposal for Fred, never applied to the live rules (Fred, Nov 13: "report only"). */
+const BTS = {t: 0, r: null, err: ''};
+function btPull() {
+  if (!SY.repo || !SY.token || now() - BTS.t < 10 * 60e3) return; BTS.t = now();
+  gh('/git/ref/heads/backtest', {ok404: true}).then(r => r ? gh('/contents/smc-backtest.json?ref=' + r.object.sha, {raw: true}) : null)
+    .then(txt => { BTS.r = txt ? JSON.parse(txt) : null; BTS.err = txt ? '' : 'no backtest has run yet.'; renderPanel(); }).catch(e => { BTS.err = e.message || String(e); });
+}
+function btHTML() {
+  try {
+    btPull(); const b = BTS.r && BTS.r.sum, H3 = '<h3 style="color:#9ad0ff">BACKTEST (PROPOSAL ONLY, NOT APPLIED)</h3>';
+    if (!b) return SY.repo && SY.token && BTS.err ? `<div class="dim" style="font-size:12px;margin-top:12px">Backtest (proposal only, not applied): ${esc(BTS.err)}</div>` : '';
+    const c = s => s && s.n ? `<span class="${cls(s.avgR)}">${fmtR(s.avgR)}</span><br><span class="dim" style="font-size:11px">n ${s.n} · ${s.win}% win</span>` : '<span class="dim">n 0</span>';
+    const V = b.variants || {}, vn = {base: 'Rules in force', zone: 'With the proposed zone weights', noObQ: 'Without the OB quality bar'};
+    const dec = (b.decisions || []).map(d => `<tr><td style="text-align:left;font-family:var(--sans)">${esc(d.lab)}${d.blocked != null ? `<br><span class="dim" style="font-size:11px">${d.blocked} OB setups blocked by the bar (rules in force)</span>` : ''}</td><td>${c(d.bt.kept)}</td><td>${c(d.bt.dropped)}</td><td>${c(d.live.kept)}</td><td>${c(d.live.dropped)}</td></tr>`).join('');
+    const sv = b.simVsLive || {};
+    return `<div class="card2" style="margin-top:12px;border-left:4px solid #9ad0ff">${H3}
+      <div style="font-size:13px;margin-bottom:6px">Run ${esc(new Date(b.t).toLocaleString())} · last ${b.days} days · ${b.coins} coins · ${Object.entries(V).map(([k, s]) => `${esc(vn[k] || k)}: n ${s.n}, avg ${fmtR(s.avgR)}`).join(' · ')}</div>
+      <table class="t"><thead><tr><th style="text-align:left">Parked decision</th><th>Backtest kept</th><th>Backtest dropped</th><th>Live kept</th><th>Live dropped</th></tr></thead><tbody>${dec}</tbody></table>
+      <div class="dim" style="font-size:12px;margin-top:6px">Sim vs live: ${sv.matched || 0}/${sv.live || 0} live trades in the window also taken by the backtest${fin(sv.meanAbsDR) ? `, mean R gap ${sv.meanAbsDR.toFixed(2)}` : ''}. ${esc(b.note || '')} Rules change only when you approve in chat.</div></div>`;
+  } catch (_) { return ''; }
 }
 
 </script>
