@@ -2299,7 +2299,8 @@ async function smZoneBackfill(max = 5) {
       if (!x.zone || !fin(x.zone.lo) || !fin(x.sweep)) { x.zcSkip = 'no zone or sweep recorded'; continue; }
       if (!x.zc) {
         const {B15, H1} = await smEntryBars(x); let r = null;
-        try { SM_OVR = {s: x.s, '15m': B15, '1h': H1, tk: {last: x.entry}, t: x.t0, dir: x.side}; r = smcReadTf(x.s, x.tf || '15m'); } finally { SM_OVR = null; }
+        const px = x.entry / (x.side === 'L' ? 1 + SM.cfg.slipPct / 100 : 1 - SM.cfg.slipPct / 100);   // the price the desk saw (the fill includes slippage)
+        try { SM_OVR = {s: x.s, '15m': B15, '1h': H1, tk: {last: px}, t: x.t0, dir: x.side}; r = smcReadTf(x.s, x.tf || '15m'); } finally { SM_OVR = null; }
         const Z = r && r.dir === x.side && r.setup && r.setup.zc ? r.setup.zc.c : null;
         if (!Z) { x.zcSkip = 'setup not found at entry'; continue; }
         // the zone actually traded: the overlapping candidate of the same kind nearest to it (-1: the trade's zone isn't among them)
