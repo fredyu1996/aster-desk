@@ -939,7 +939,7 @@ const scrRec = c => c.scr ? {fit: c.scr.fit.hit.length + '/' + c.scr.fit.of, tes
 function profTick() {
   const nT = critTrades('rev').length + critTrades('mom').length + critTrades('smc').length;
   if (!RV.prof || RV.prof.nT !== nT) { const prev = RV.prof; rvProfile(); RV.prof.nT = nT; if (prev) screenTalk(prev.F || [], RV.prof.F); rvSave(); }
-  const nY = Object.keys(RVM).length + ':' + Object.values(RVM).reduce((a, m) => Math.max(a, m.t || 0), 0) + ':' + SM.log.length + ':' + SM.log.filter(x => x.q).length + ':' + SM.log.filter(x => x.fu).length + ':' + SM.log.filter(x => x.zc && x.zc.done).length;
+  const nY = Object.keys(RVM).length + ':' + Object.values(RVM).reduce((a, m) => Math.max(a, m.t || 0, (m.rd && m.rd.t) || 0), 0) + ':'   // rd.t: a new Claude reading re-learns too + SM.log.length + ':' + SM.log.filter(x => x.q).length + ':' + SM.log.filter(x => x.fu).length + ':' + SM.log.filter(x => x.zc && x.zc.done).length;
   if (RV.smKey !== nY) { RV.smKey = nY; smLearn(); rvSave(); }
   if (!RV.prof.F.length) return;
   for (const s of [...S.gainers, ...S.losers]) for (const st of ['rev', 'mom', 'smc']) {
