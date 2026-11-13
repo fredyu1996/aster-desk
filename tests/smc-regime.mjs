@@ -88,6 +88,8 @@ check(row.regime === 'up' && row.play === 'trend', 'log row carries regime + pla
 // ---- Task 2: the Nov 12 pause (one-time), exits still run
 const mg = JSON.parse(X(`JSON.stringify((() => { const p = smMigrate({cfg: {ownJudge: 1, lev10: 1}, on: true}); const a = {on: p.on, f: p.cfg.pause1113}; p.on = true; smMigrate(p); return Object.assign(a, {again: p.on}); })())`));
 check(mg.on === false && mg.f === 1 && mg.again === true, 'smMigrate pauses once (pause1113), a later resume sticks', mg);
+const rs = JSON.parse(X(`JSON.stringify((() => { const p = smMigrate({cfg: {ownJudge: 1, lev10: 1, pause1113: 1}, on: false}); const a = {on: p.on, f: p.cfg.resume1113}; p.on = false; smMigrate(p); return Object.assign(a, {again: p.on}); })())`));
+check(rs.on === true && rs.f === 1 && rs.again === false, 'resume1113 turns a paused account back on once; a later turn-off sticks', rs);
 X(`SM.on = true; S.smC.clear(); SM.cool = {}; smTick(); SM.on = false;`);
 check(X('Object.keys(SM.pos).length') === 1, 'position open before the pause test', X('Object.keys(SM.pos)'));
 X(`S.smC.clear(); SM.cool = {}; S.tk.set(SYM, Object.assign({}, S.tk.get(SYM), {last: SM.pos[SYM].stop * 0.99})); smTick();`);
