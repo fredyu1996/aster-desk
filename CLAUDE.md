@@ -160,8 +160,21 @@ git pull --rebase && git add -A && git commit -m "…" && git push   # Pages + t
 - **Nov 12:** wait for ~20 more SMC trades before deciding on:
   - a taker-flow filter (flow against the trade: −0.41R over 12 vs +0.08R over 18);
   - a filter for coins up or down 15–40% on the day (−0.95R over 8).
+- **Nov 12–13 (SMC self-review):**
+  - SMC Trader paused (`pause1113` migration sets `SM.on=false`). Fred resumes it by hand.
+  - HTF regime gate `smRegime` (up = long only, down = short only, range = fade the outer 30%, fakeout = the opposite side, null = no trade).
+  - Option B ("enter 30–60% into the zone, stop ≥ 2%") was tested in replay and **not adopted**: −1.05R over 4 trades.
+  - Zone pick now scores every FVG/OB (`smZones` / `smZoneScore`); the default weights keep the old pick.
+  - The Reviewer labels zones (right = touched, then ≥ 1R before a close through the far edge) and tunes the weights, but **`SM.cfg.zoneLearn=0` locks them**. Fred reviews the proposed rule in the Reviewer panel before unlocking.
+  - From Fred's course PDF (concepts only):
+    - OB = the full candle range;
+    - setup grade A+/A/B/REJ with reason codes (informational, never gates);
+    - PDF gates are tuner features, not hard gates.
+  - 5m MSS/entry: not done.
+  - Specs and plans: `docs/superpowers/`. Replays: `tools/smc-self-review.mjs`, `tools/smc-replay.mjs` (they need a state.json; never commit trade data).
 
 ## Open items
+- **SMC resume:** after the proposed zone rule appears, Fred decides on `zoneLearn` and on turning SMC trading back on.
 - Re-check the two SMC splits above once there are ~20 more SMC trades.
 - Momentum is the Trader's whole loss so far. Fred kept it on; raise it again only with new evidence.
 - **Not done from the audit:**
