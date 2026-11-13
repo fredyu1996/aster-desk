@@ -1200,6 +1200,43 @@ function smRegimeOk(reg, dir, px) {
 // how far into a zone a candle must reach to count as having tested it: the depth an entry needs
 // (the Reviewer's midpoint rule, else the "not at the very edge" setting); stacked-gap (breakaway) zones are taken at the edge
 function smTapDepth(z) { return z && z.bg ? 0 : smRules().needDepth ? 0.5 : (SM.cfg.minDepth || 0) / 100; }
+/* ---- zone candidates (Nov 13, Fred): every FVG on the displacement leg plus the order block, with the features the Reviewer
+   tunes the pick on. SMZ_DEF reproduces the old pick (FVG over OB, newest first); a learned smRules().zone overrides it. */
+const SMZ_DEF = {fvg: 100, pos: 1, fresh: 0, pd: 0, ovl: 0, big: 0, minZs: 0};
+const smR6 = v => fin(v) ? +v.toFixed(6) : null;
+function smZones(B, st, dir) {
+  const n = B.length, bull = dir === 'L', j = st.j, k = st.k, Z = [];
+  for (let i = Math.min(k + 1, n - 2); i >= j + 1; i--)
+    if (bull ? B[i - 1][2] < B[i + 1][3] : B[i - 1][3] > B[i + 1][2]) Z.push(bull ? {kind: 'FVG', lo: B[i - 1][2], hi: B[i + 1][3], i} : {kind: 'FVG', lo: B[i + 1][2], hi: B[i - 1][3], i});
+  let o = st.type === 'cont' ? j : -1;   // continuation: the base candle; reversal: the last opposite candle before the shift
+  if (o < 0) for (let i = k - 1; i >= j; i--) { const down = B[i][4] < B[i][1]; if (bull ? down : !down) { o = i; break; } }
+  if (o >= 0) Z.push(bull ? {kind: 'OB', lo: B[o][3], hi: B[o][1], i: o} : {kind: 'OB', lo: B[o][1], hi: B[o][2], i: o});
+  const atr = smATR(B, j) || (B[j][2] - B[j][3]) || 1e-9, vb = B.slice(Math.max(0, j - 24), j), vAvg = vb.length ? vb.reduce((a, b) => a + b[5], 0) / vb.length : 0;
+  let far = st.ext; for (let m = j; m <= Math.min(k + 2, n - 1); m++) far = bull ? Math.max(far, B[m][2]) : Math.min(far, B[m][3]);
+  const half = (st.ext + far) / 2, ord = Z.map(z => z.i).sort((a, b) => a - b), ob = Z.find(z => z.kind === 'OB');
+  for (const z of Z) {
+    const d = B[z.kind === 'FVG' ? z.i : Math.min(z.i + 1, n - 1)], mid = (z.lo + z.hi) / 2;   // the gap candle; for an OB the departure candle
+    let fresh = 1; for (let m = Math.max(k + 1, z.i + 2); m < n - 1; m++) if (bull ? B[m][3] <= z.hi : B[m][2] >= z.lo) { fresh = 0; break; }
+    Object.assign(z, {zs: smR6((z.hi - z.lo) / atr), body: smR6(Math.abs(d[4] - d[1]) / Math.max(1e-12, d[2] - d[3])), vr: vAvg ? smR6(d[5] / vAvg) : null, fresh,
+      pos: ord.indexOf(z.i), dSw: smR6(Math.abs(mid - st.ext) / atr),
+      ovl: +(z.kind === 'FVG' ? !!ob && z.lo <= ob.hi && z.hi >= ob.lo : Z.some(f => f.kind === 'FVG' && f.lo <= z.hi && f.hi >= z.lo)),
+      pd: +(bull ? mid <= half : mid >= half)});   // in the discount (long) / premium (short) half of the leg
+  }
+  return Z;
+}
+function smZoneScore(z, W) { W = Object.assign({}, SMZ_DEF, W); return (z.kind === 'FVG' ? W.fvg : 0) + W.pos * z.pos + W.fresh * z.fresh + W.pd * z.pd + W.ovl * z.ovl + W.big * (z.zs >= 0.3 ? 1 : 0); }
+// index of the chosen zone (-1: none); if a tuned minimum size leaves no zone, the default pick (tuning never turns a setup into "no zone")
+function smZonePick(Z, W) {
+  const best = (A, w) => A.reduce((b, z) => b < 0 || smZoneScore(z, w) > smZoneScore(Z[b], w) ? Z.indexOf(z) : b, -1);
+  const ok = Z.filter(z => !(z.zs < ((W && W.minZs) || 0)));
+  return ok.length ? best(ok, W) : best(Z, SMZ_DEF);
+}
+// the chosen candidate as the setup's zone, plus the candidate list (zc) that positions and log rows keep for the Reviewer
+function smZoneSet(r, Z) {
+  const kz = smZonePick(Z, smRules().zone), nG = Z.filter(z => z.kind === 'FVG').length; if (kz < 0) return;
+  const c = Z[kz]; r.zone = {lo: c.lo, hi: c.hi, kind: c.kind, i: c.i}; r.nGaps = nG; r.zc = {c: Z, k: kz};
+  if (kz === 0 && c.kind === 'FVG' && nG >= 2) r.zone.bg = true;   // the move left stacked gaps: a breakaway move; the newest gap may never fill deeply
+}
 function smSetup(B, P, dir, live) {
   const n = B.length, bull = dir === 'L';
   for (let j = n - 1; j >= Math.max(n - 32, 3); j--) {
@@ -1215,15 +1252,8 @@ function smSetup(B, P, dir, live) {
     let ext = bull ? Infinity : -Infinity; for (let m = j; m <= end; m++) ext = bull ? Math.min(ext, B[m][3]) : Math.max(ext, B[m][2]);
     const r = {dir, j, k, swept, lvl, ext, stage: k < 0 ? 'sweep' : 'mss', zone: null, taps: 0};
     if (k < 0) { if (bull ? live < ext : live > ext) r.stage = 'none'; return r; }
-    // entry zone: the newest FVG in the displacement leg, else the order block
-    for (let i = Math.min(k + 1, n - 2); i >= j + 1; i--) {
-      if (bull ? B[i - 1][2] < B[i + 1][3] : B[i - 1][3] > B[i + 1][2]) { if (!r.zone) r.zone = bull ? {lo: B[i - 1][2], hi: B[i + 1][3], kind: 'FVG', i} : {lo: B[i + 1][2], hi: B[i - 1][3], kind: 'FVG', i}; r.nGaps = (r.nGaps || 0) + 1; }
-    }
-    if (r.zone && r.nGaps >= 2) r.zone.bg = true;     // the move left stacked gaps: a breakaway move; the newest gap may never fill deeply
-    if (!r.zone) for (let i = k - 1; i >= j; i--) {
-      const down = B[i][4] < B[i][1];
-      if (bull ? down : !down) { r.zone = bull ? {lo: B[i][3], hi: B[i][1], kind: 'OB', i} : {lo: B[i][1], hi: B[i][2], kind: 'OB', i}; break; }
-    }
+    // entry zone: the best-scoring FVG / order block on the displacement leg (by default the newest FVG, else the order block)
+    smZoneSet(r, smZones(B, r, dir));
     if (!r.zone) { r.stage = 'nozone'; return r; }
     // after the shift: broken (closed through the zone) / tapped before / in the zone now
     // (a candle that only wicked the zone's edge, short of the depth an entry needs, hasn't used the zone)
@@ -1257,9 +1287,7 @@ function smContSetup(B, P, dir, live) {
     const atr = smATR(B, i) || 1e-9;
     if (Math.abs(leg - ext) < 1.5 * atr) continue;                            // not an impulsive departure from the base
     const r = {dir, type: 'cont', j: i, k, swept: null, lvl, ext, leg, stage: 'mss', zone: null, taps: 0, touch: -1};
-    let ng = 0; for (let x = Math.min(k + 1, n - 2); x >= i + 1; x--) if (bull ? B[x - 1][2] < B[x + 1][3] : B[x - 1][3] > B[x + 1][2]) { ng++; if (!r.zone) r.zone = bull ? {lo: B[x - 1][2], hi: B[x + 1][3], kind: 'FVG', i: x} : {lo: B[x + 1][2], hi: B[x - 1][3], kind: 'FVG', i: x}; }
-    if (r.zone && ng >= 2) r.zone.bg = true;
-    if (!r.zone) r.zone = bull ? {lo: B[i][3], hi: B[i][1], kind: 'OB', i} : {lo: B[i][1], hi: B[i][2], kind: 'OB', i};
+    smZoneSet(r, smZones(B, r, dir));   // the gap the move left, else the base candle (by default)
     const zh = r.zone.hi - r.zone.lo, dep = smTapDepth(r.zone);
     for (let m = Math.max(k + 1, r.zone.i + 2); m < n; m++) {
       if (bull ? B[m][4] < r.zone.lo : B[m][4] > r.zone.hi) { r.stage = 'invalid'; return r; }
@@ -1565,7 +1593,7 @@ function smClose(s, frac, why) {
   if (frac >= 1 || p.qty <= p.qty0 * 1e-6) {
     const R = p.risk ? p.realized / p.risk : 0;
     SM.log.unshift({s, b: p.b, side: p.side, t0: p.t, t1: now(), entry: p.entry, exit: fill, qty: p.qty0, notional: p.qty0 * p.entry, pnl: p.realized, R, fees: p.fees,
-      funding: p.funding || 0, why: p.why, exitWhy: why, stop0: p.stop0, maxR: p.maxR || 0, sc: p.sc, rr: p.rr, zoneKind: p.zoneKind, target: p.target, zone: p.zone ? {lo: p.zone.lo, hi: p.zone.hi, kind: p.zone.kind} : null, sweep: p.sweep, lvl: p.lvl, unlK: p.unlK || 'none', ceBroke: p.ceBroke || 0, strat: 'smc', tf: p.tf || '15m', htfBias: p.htfBias || null, q: p.q || null, poi: p.poi || null, type: p.type || 'rev', regime: p.regime || null, play: p.play || null, holdH: p.holdH, cx: p.cx, scr: p.scr || null, ex: (p.exits || []).map(e => [e.t, e.px, e.why])});
+      funding: p.funding || 0, why: p.why, exitWhy: why, stop0: p.stop0, maxR: p.maxR || 0, sc: p.sc, rr: p.rr, zoneKind: p.zoneKind, target: p.target, zone: p.zone ? {lo: p.zone.lo, hi: p.zone.hi, kind: p.zone.kind} : null, sweep: p.sweep, lvl: p.lvl, unlK: p.unlK || 'none', ceBroke: p.ceBroke || 0, strat: 'smc', tf: p.tf || '15m', htfBias: p.htfBias || null, q: p.q || null, poi: p.poi || null, type: p.type || 'rev', regime: p.regime || null, play: p.play || null, zc: p.zc || null, holdH: p.holdH, cx: p.cx, scr: p.scr || null, ex: (p.exits || []).map(e => [e.t, e.px, e.why])});
     if (SM.log.length > 500) SM.log.pop();
     delete SM.pos[s]; SM.cool[s] = now();
     raise('smc', s, 'close' + now(), `SMC PAPER ${p.side === 'L' ? 'long' : 'short'} ${p.b} closed ${fmtMoney(p.realized, 1)} (${R >= 0 ? '+' : ''}${R.toFixed(2)}R) — ${why}`, p.realized >= 0 ? 1 : -1, 0, true);
@@ -1586,7 +1614,7 @@ function smTryEnter(c) {
   const why = `${r.dir === 'L' ? 'Bullish' : 'Bearish'} SMC ${r.tf || '15m'} ${r.setup.type === 'cont' ? (r.dir === 'L' ? 'continuation (rally-base-rally) ' : 'continuation (drop-base-drop) ') : ''}${r.score}/6, quality ${r.q ? r.q.grade : '?'} — ${r.setup.type === 'cont' ? `${r.htf} and ${r.tf} trending, base at ${fmtPx(r.setup.ext)}, broke ${fmtPx(r.setup.lvl.px)}` : `swept ${fmtPx(r.setup.swept.px)}, shift through ${fmtPx(r.setup.lvl.px)}`}${r.regime && r.rok ? `, ${r.htf} ${r.regime.reg} (${r.rok.play} play)` : ''}, ${r.zone.kind} ${fmtPx(r.zone.lo)}–${fmtPx(r.zone.hi)}, target ${fmtPx(r.target)} (${rr.toFixed(1)}R)${r.poi && r.poi.ok === 2 ? `, from a fresh ${r.htf} ${r.dir === 'L' ? 'demand' : 'supply'} zone` : r.poi && r.poi.ok === 1 ? `, at ${r.htf} ${r.poi.zone ? 'zone' : 'liquidity'}` : ''}${r.conf && r.conf.ok ? ', 15m confirmed' : ''}${r.room && r.room.capped ? `, target capped at ${r.htf} ${r.dir === 'L' ? 'supply' : 'demand'}` : ''}${r.path && r.path.capped ? `, target in front of a high-resistance ${r.dir === 'L' ? 'high' : 'low'}` : r.path && r.path.fs >= 2 ? `, low-resistance path (${r.path.fs} failure swings)` : ''}`;
   SM.pos[s] = {cx: entryCtx(s, r.checks), scr: typeof scrRec === 'function' ? scrRec(c) : null, side, b: base(s), qty, qty0: qty, entry: fill, stop, stop0: stop, target: r.target, rr, t: now(), risk: qty * Math.abs(fill - stop), realized: -fee, fees: fee, funding: 0,
     why, sc: r.score, zoneKind: r.zone.kind, zone: r.zone, sweep: r.setup.ext, lvl: r.setup.lvl.px, unlK: uc.phase && uc.big ? uc.phase : 'none', nf: null, be: false, tp1: false, maxR: 0, exits: [], dist: dist * 100,
-    tf: r.tf || '15m', htfBias: r.bias || null, holdH: (r.tf === '1h' ? SM.cfg.holdH1h : SM.cfg.holdH), q: r.q ? {score: r.q.score, grade: r.q.grade, items: r.q.items, zs: r.q.zs, dz: r.q.dz} : null, tp1R: smRules().tp1R, poi: r.poi && r.poi.zone ? r.poi.zone : null, type: r.setup.type || 'rev', wid: r.widened ? 1 : 0, regime: r.regime ? r.regime.reg : null, play: r.rok ? r.rok.play : null};
+    tf: r.tf || '15m', htfBias: r.bias || null, holdH: (r.tf === '1h' ? SM.cfg.holdH1h : SM.cfg.holdH), q: r.q ? {score: r.q.score, grade: r.q.grade, items: r.q.items, zs: r.q.zs, dz: r.q.dz} : null, tp1R: smRules().tp1R, poi: r.poi && r.poi.zone ? r.poi.zone : null, type: r.setup.type || 'rev', wid: r.widened ? 1 : 0, regime: r.regime ? r.regime.reg : null, play: r.rok ? r.rok.play : null, zc: r.setup.zc || null};
   raise('smc', s, 'open' + now(), `SMC PAPER ${side === 'L' ? 'LONG' : 'SHORT'} ${base(s)} @ ${fmtPx(fill)} · stop ${fmtPx(stop)} (${(dist * 100).toFixed(1)}%) · target ${fmtPx(r.target)} (${rr.toFixed(1)}R) · ${r.tf || '15m'} ${r.zone.kind} entry, ${r.score}/6, quality ${r.q ? r.q.grade : '?'}`, side === 'L' ? 1 : -1, 0, true);
   smSave(); return true;
 }
@@ -1714,7 +1742,7 @@ function compareVerdict(a, b) {
 function smRules() {
   const c = SM.cfg, A = (SM.cfg.learn && typeof RV !== 'undefined' && RV.smAdj) || {};
   return {minQ: Math.max(c.minQ, A.minQ || 0), needHTF: !!A.needHTF, needPOI: !!A.needPOI, needDraw: !!A.needDraw, noCont: !!A.noCont, fvgOnly: !!A.fvgOnly, needDepth: !!A.needDepth, noTf: A.noTf || null,
-    stopBuf: A.stopBuf || c.stopBuf, tp1R: A.tp1R || c.tp1R, riskMul: A.riskMul || 1};
+    stopBuf: A.stopBuf || c.stopBuf, tp1R: A.tp1R || c.tp1R, riskMul: A.riskMul || 1, zone: A.zone || null};
 }
 
 /* ================= 3D WORLD ================= */
