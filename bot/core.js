@@ -1852,7 +1852,11 @@ function smStudy(L) {
     const G = T.filter(x => x.q.items.some(i => i.k === k && i.ok === 2)), N = T.filter(x => x.q.items.some(i => i.k === k && i.ok < 2));
     if (G.length || N.length) F[k] = {good: rvAgg(G), rest: rvAgg(N), poor: rvAgg(T.filter(x => x.q.items.some(i => i.k === k && i.ok === 0)))};
   }
-  return {n: T.length, F, type: rvGroup(T, x => x.type || 'rev'), tf: rvGroup(T, x => x.tf || '15m'), kind: rvGroup(T, x => x.zoneKind || null), grade: rvGroup(T, x => x.q.grade), htf: rvGroup(T, x => { const i = x.q.items.find(i => i.k === 'htf'); return i ? (i.ok === 2 ? 'agrees' : i.ok === 1 ? 'unclear' : 'against') : null; })};
+  return {n: T.length, F, type: rvGroup(T, x => x.type || 'rev'), tf: rvGroup(T, x => x.tf || '15m'), kind: rvGroup(T, x => x.zoneKind || null), grade: rvGroup(T, x => x.q.grade), htf: rvGroup(T, x => { const i = x.q.items.find(i => i.k === 'htf'); return i ? (i.ok === 2 ? 'agrees' : i.ok === 1 ? 'unclear' : 'against') : null; }),
+    // Nov 12: HTF regime play (rows before the regime gate show as ?), stop distance and planned RR
+    play: rvGroup(T, x => x.play || '?'), regime: rvGroup(T, x => x.regime || '?'),
+    stopPct: rvGroup(T, x => { const d = Math.abs(x.entry - x.stop0) / x.entry * 100; return !fin(d) ? null : d < 2 ? '<2%' : d <= 4 ? '2–4%' : '>4%'; }),
+    rr: rvGroup(T, x => !fin(x.rr) ? null : x.rr < 2.5 ? '<2.5' : x.rr <= 3.5 ? '2.5–3.5' : '>3.5')};
 }
 function smLearn() {
   const L = SM.log, St = smStudy(L), A = {}, W = {}, ok = (a, b) => a.n >= 5 && b.n >= 5 && a.avgR - b.avgR >= 0.5 && a.avgR > 0;

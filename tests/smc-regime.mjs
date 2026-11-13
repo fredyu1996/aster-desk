@@ -93,5 +93,19 @@ check(X('Object.keys(SM.pos).length') === 1, 'position open before the pause tes
 X(`S.smC.clear(); SM.cool = {}; S.tk.set(SYM, Object.assign({}, S.tk.get(SYM), {last: SM.pos[SYM].stop * 0.99})); smTick();`);
 check(X('Object.keys(SM.pos).length') === 0 && /stop loss/.test(X('SM.log[0].exitWhy')), 'trading off: open position still stopped out', X('SM.log[0].exitWhy'));
 
+// ---- Task 3: the Reviewer groups SMC trades by play, stop distance and planned RR
+const st = JSON.parse(X(`JSON.stringify(smStudy([
+  {s: 'AUSDT', t0: 1, R: 1, play: 'trend', regime: 'up', entry: 1, stop0: 0.99, rr: 2.2, q: {items: [], grade: 'B'}},
+  {s: 'BUSDT', t0: 2, R: -1, play: 'trend', regime: 'down', entry: 1, stop0: 1.03, rr: 3, q: {items: [], grade: 'B'}},
+  {s: 'CUSDT', t0: 3, R: 2, play: 'range', regime: 'range', entry: 1, stop0: 0.95, rr: 4, q: {items: [], grade: 'C'}},
+  {s: 'DUSDT', t0: 4, R: 0, play: 'range', regime: 'range', entry: 2, stop0: 1.94, rr: 3.5, q: {items: [], grade: 'C'}},
+  {s: 'EUSDT', t0: 5, R: -0.5, entry: 1, stop0: 0.985, rr: 2.6, q: {items: [], grade: 'D'}},
+  {s: 'FUSDT', t0: 6, R: 0.5, q: {items: [], grade: 'D'}}]))`));
+const g = (k, b) => st[k] && st[k][b] ? [st[k][b].n, +st[k][b].avgR.toFixed(2)] : null, eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+check(eq(g('play', 'trend'), [2, 0]) && eq(g('play', 'range'), [2, 1]) && eq(g('play', '?'), [2, 0]), 'smStudy play groups {trend, range, ?} with n and avg R', st.play);
+check(eq(g('stopPct', '<2%'), [2, 0.25]) && eq(g('stopPct', '2–4%'), [2, -0.5]) && eq(g('stopPct', '>4%'), [1, 2]), "smStudy stop distance buckets ('<2%', '2–4%', '>4%')", st.stopPct);
+check(eq(g('rr', '<2.5'), [1, 1]) && eq(g('rr', '2.5–3.5'), [3, -0.5]) && eq(g('rr', '>3.5'), [1, 2]), "smStudy planned RR buckets ('<2.5', '2.5–3.5', '>3.5')", st.rr);
+check(!/null|NaN/.test(JSON.stringify([st.play, st.stopPct, st.rr, st.regime])), 'no NaN in the new groups (old rows without regime → ?)', st.regime);
+
 if (fails) { console.error(`FAIL: ${fails} check(s) failed`); process.exit(1); }
 console.log('PASS: SMC regime checks');
