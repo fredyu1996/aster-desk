@@ -4,7 +4,8 @@
 //     first entry with the trader's own replay exits (stop, half at tp1R → breakeven, target, time stop; worst case first
 //     inside a candle; fees + slippage as in the account);
 //  2. labels every candidate FVG / OB at the setup right / wrong / untouched (smZoneBackfill → smZoneLabel);
-//  3. runs smZoneTune on those labels.
+//  3. runs smZoneTune on those labels;
+//  4. reports R and zone labels by setup grade (smGrade: read at entry by the backfill; cur-sim: at its own entry).
 // Paper replay only: nothing is written back to the state, and the output stays outside the repo.
 // Usage: node tools/smc-replay.mjs <state.json> <out.json>   (after build.py; needs network to Aster)
 import fs from 'node:fs'; import vm from 'node:vm';
@@ -66,7 +67,7 @@ function sim(x, D, variant) {
       PX_OVR = null; CLOCK_OVR = 0; })()`);
     const r = X('SM.log[0]');
     return {t: T, dt: Math.round((T - x.t0) / 60e3), entry: r.entry, stop: r.stop0, stopPct: +(Math.abs(r.entry - r.stop0) / r.entry * 100).toFixed(2), R: +r.R.toFixed(3), exitWhy: r.exitWhy,
-      zone: r.zone, dz: r.q ? r.q.dz : null, tf: r.tf};
+      zone: r.zone, dz: r.q ? r.q.dz : null, tf: r.tf, grd: r.grd || null};
   }
   return {none: 'no entry from 12 h before to 1 h after the real entry', atT0};
 }
@@ -94,6 +95,7 @@ const ZL = ZX('SM.log'), tune = ZX('smZoneTune(SM.log)');
 ZL.forEach((z, i) => {
   const r = out[i]; if (!z.zc) { r.zones = {skip: z.zcSkip || (/closed by you/.test(z.exitWhy || '') ? 'closed by Fred (left out)' : 'candles not fetched')}; return; }
   const c = z.zc.c, k = z.zc.k, oth = c.filter((_, j) => j !== k).sort((a, b) => (b.r || 0) - (a.r || 0))[0] || null;
+  r.grd = z.grd || null;
   r.zones = {k, chosen: c[k] ? {kind: c[k].kind, lab: c[k].lab, r: c[k].r} : null, bestOther: oth ? {kind: oth.kind, lab: oth.lab, r: oth.r} : null, c};
 });
 
@@ -112,5 +114,10 @@ for (const k of ['FVG', 'OB']) { const A = C.filter(z => z.kind === k); lines.pu
 const Zr = out.filter(r => r.zones && r.zones.c);
 lines.push(`chosen zone right ${Zr.filter(r => r.zones.chosen && r.zones.chosen.lab === 'right').length}/${Zr.length}; best other candidate right ${Zr.filter(r => r.zones.bestOther && r.zones.bestOther.lab === 'right').length}/${Zr.length} (${Zr.filter(r => r.zones.bestOther).length} trades had another candidate; traded zone not among candidates ${Zr.filter(r => r.zones.k < 0).length}; skipped ${out.length - Zr.length})`);
 lines.push(`smZoneTune: ${tune ? tune.why.map(w => `${w.k} ${fmt(w.r1)} (n ${w.n1}) vs ${fmt(w.r2)} (n ${w.n2})`).join('; ') + ' → W ' + JSON.stringify(tune.W) : 'null (no split passes the gate: each side n ≥ 5, gap ≥ 0.5R, winner > 0)'}`);
+{ const G = ['A+', 'A', 'B', 'REJ', '—'], gOf = g => g ? g.g : '—', R2 = A => A.length ? fmt(A.reduce((a, b) => a + b, 0) / A.length) : '—';
+  for (const g of G) { const A = out.filter(r => gOf(r.grd) === g), ch = A.map(r => r.zones && r.zones.chosen).filter(Boolean), S = [...new Map(out.filter(r => r.cur && !r.cur.none && gOf(r.cur.grd) === g).map(r => [r.s + ':' + r.cur.t, r.cur.R])).values()];
+    lines.push(`grade ${g.padEnd(3)}: actual n ${String(A.length).padStart(2)} avg R ${R2(A.map(r => r.actual.R))} · chosen zone right ${ch.filter(c => c.lab === 'right').length} wrong ${ch.filter(c => c.lab === 'wrong').length} untouched ${ch.filter(c => c.lab === 'untouched').length} · cur-sim n ${S.length} avg R ${R2(S)}`); }
+  const why = {}; for (const r of out) for (const c of (r.grd && r.grd.why) || []) why[c] = (why[c] || 0) + 1;
+  lines.push('grade reason codes (actual trades): ' + Object.entries(why).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ${n}`).join(', ')); }
 fs.writeFileSync(outF, JSON.stringify({summary: lines, tune, trades: out}, null, 1));
 console.log(lines.join('\n')); console.log(`→ ${outF}`);

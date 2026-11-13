@@ -186,6 +186,7 @@ document.getElementById('panel').addEventListener('click', e => {
   if (syBlock()) return;
   if (c) { smClose(c.dataset.smClose, 1, 'closed by you'); smSave(); renderPanel(); return; }
   if (b.dataset.sm === 'toggle') { SM.on = !SM.on; sayFor('smc', SM.on ? 'SMC trading on. Waiting for sweeps and structure shifts.' : 'SMC trading off. Open positions are still managed.'); }
+  if (b.dataset.sm === 'zoneLearn') { SM.cfg.zoneLearn = SM.cfg.zoneLearn === 1 ? 0 : 1; sayFor('smc', SM.cfg.zoneLearn ? 'Zone tuning on: the learned zone weights now pick the entry zone.' : 'Zone tuning locked: the default zone pick again (the Reviewer keeps learning).'); }
   if (b.dataset.sm === 'reset') { if (SM._arm) { SM._arm = false; smReset(); sayFor('smc', 'SMC account reset to $1,000.'); } else { SM._arm = true; setTimeout(() => { SM._arm = false; }, 6000); } }
   smSave(); renderPanel();
 }, true);

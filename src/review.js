@@ -320,7 +320,7 @@ function smStudy(L) {
     const G = T.filter(x => x.q.items.some(i => i.k === k && i.ok === 2)), N = T.filter(x => x.q.items.some(i => i.k === k && i.ok < 2));
     if (G.length || N.length) F[k] = {good: rvAgg(G), rest: rvAgg(N), poor: rvAgg(T.filter(x => x.q.items.some(i => i.k === k && i.ok === 0)))};
   }
-  return {n: T.length, F, type: rvGroup(T, x => x.type || 'rev'), tf: rvGroup(T, x => x.tf || '15m'), kind: rvGroup(T, x => x.zoneKind || null), grade: rvGroup(T, x => x.q.grade), htf: rvGroup(T, x => { const i = x.q.items.find(i => i.k === 'htf'); return i ? (i.ok === 2 ? 'agrees' : i.ok === 1 ? 'unclear' : 'against') : null; }),
+  return {n: T.length, F, type: rvGroup(T, x => x.type || 'rev'), tf: rvGroup(T, x => x.tf || '15m'), kind: rvGroup(T, x => x.zoneKind || null), grade: rvGroup(T, x => x.q.grade), grd: rvGroup(T, x => x.grd ? x.grd.g : null), htf: rvGroup(T, x => { const i = x.q.items.find(i => i.k === 'htf'); return i ? (i.ok === 2 ? 'agrees' : i.ok === 1 ? 'unclear' : 'against') : null; }),
     // Nov 12: HTF regime play (rows before the regime gate show as ?), stop distance and planned RR
     play: rvGroup(T, x => x.play || '?'), regime: rvGroup(T, x => x.regime || '?'),
     stopPct: rvGroup(T, x => { const d = Math.abs(x.entry - x.stop0) / x.entry * 100; return !fin(d) ? null : d < 2 ? '<2%' : d <= 4 ? '2–4%' : '>4%'; }),
@@ -331,14 +331,17 @@ function smStudy(L) {
    right = the R it reached (≤ 3), wrong = −1 (0 if it just went nowhere). Untouched zones are left out. */
 const SMZ_F = {fvg: ['FVGs (vs order blocks)', z => z.kind === 'FVG'], fresh: ['fresh zones (untouched since they formed)', z => !!z.fresh],
   pos: ['the newest zone on the leg', z => !!z.last], pd: ['zones in the discount / premium half of the leg', z => !!z.pd],
-  ovl: ['zones overlapping the other kind (FVG inside the OB)', z => !!z.ovl], big: ['zones of 0.3 ATR or more', z => z.zs >= 0.3]};
+  ovl: ['zones overlapping the other kind (FVG inside the OB)', z => !!z.ovl], big: ['zones of 0.3 ATR or more', z => z.zs >= 0.3],
+  // course-spec features (SMZ_B); a split only counts zones that carry the feature (n/a = null, older rows = missing)
+  wOk: ['zones 0.10–1.20 ATR tall', z => !!z.wOk], c2: ['FVGs formed on the structure-shift candle (±1)', z => !!z.c2], disp: ['zones left by a displacement candle', z => !!z.disp],
+  obNear: ['order blocks within 8 candles of the shift', z => !!z.obNear], obConf: ['order blocks with an FVG after them', z => !!z.obConf], mssDisp: ['setups with a displacement shift candle', z => !!z.mssDisp]};
 function smZoneTune(rows) {
   const C = [];
   for (const x of rows || []) { const c = x && x.zc && x.zc.c; if (!c || !c.length) continue; const top = Math.max(...c.map(z => z.pos));
     for (const z of c) if (z.lab === 'right' || z.lab === 'wrong') C.push(Object.assign({}, z, {last: z.pos === top})); }
   const W = {}, why = [], agg = A => ({n: A.length, r: rvMean(A.map(z => z.r))}), ok = (a, b) => a.n >= 5 && b.n >= 5 && a.r - b.r >= 0.5 && a.r > 0;
   for (const k in SMZ_F) {
-    const f = SMZ_F[k][1], a = agg(C.filter(f)), b = agg(C.filter(z => !f(z))), w = Math.round(1000 * Math.abs(a.r - b.r));   // ≥ 500: outweighs the default FVG-first, newest-first order
+    const f = SMZ_F[k][1], D = SMZ_B.includes(k) ? C.filter(z => z[k] != null) : C, a = agg(D.filter(f)), b = agg(D.filter(z => !f(z))), w = Math.round(1000 * Math.abs(a.r - b.r));   // ≥ 500: outweighs the default FVG-first, newest-first order
     if (ok(a, b)) { if (k === 'big') W.minZs = 0.3; else W[k] = w; } else if (ok(b, a)) W[k] = -w; else continue;
     why.push({k, n1: a.n, n2: b.n, r1: +a.r.toFixed(3), r2: +b.r.toFixed(3)});
   }
@@ -356,7 +359,7 @@ function smLearn() {
   const t = St.tf; if (t['15m'] && t['1h']) { if (ok(t['1h'], t['15m'])) { A.noTf = '15m'; W.noTf = `1h setups ${fmtR(t['1h'].avgR)} (${t['1h'].n}) vs 15m ${fmtR(t['15m'].avgR)} (${t['15m'].n}). Pause 15m setups.`; } else if (ok(t['15m'], t['1h'])) { A.noTf = '1h'; W.noTf = `15m setups ${fmtR(t['15m'].avgR)} (${t['15m'].n}) vs 1h ${fmtR(t['1h'].avgR)} (${t['1h'].n}). Pause 1h setups.`; } }
   const d = St.F.depth; if (d && ok(d.good, d.rest)) { A.needDepth = true; W.needDepth = `Entries at the zone's midpoint or deeper: ${fmtR(d.good.avgR)} (${d.good.n}) vs at the edge: ${fmtR(d.rest.avgR)} (${d.rest.n}). Wait for the midpoint.`; }
   const zt = smZoneTune(L.filter(x => !rvManual(x)));
-  if (zt) { A.zone = zt.W; W.zone = 'Zone choice from labelled zones: ' + zt.why.map(w => `${SMZ_F[w.k][0]} ${fmtR(w.r1)} (${w.n1}) vs the rest ${fmtR(w.r2)} (${w.n2})`).join('; ') + '. The pick now weighs these.'; }
+  if (zt) { A.zone = zt.W; W.zone = 'Zone choice from labelled zones: ' + zt.why.map(w => `${SMZ_F[w.k][0]} ${fmtR(w.r1)} (${w.n1}) vs the rest ${fmtR(w.r2)} (${w.n2})`).join('; ') + '. Proposed weights for the zone pick.'; }
   // your SMC reviews: your comments first (what you'd have done, and which part of the setup you think was poor)
   const Y = youTally(L.slice(0, 40));   // your last 40 reviewed SMC trades
   if (Y.says('flip') && !A.needHTF) { A.needHTF = true; W.needHTF = `${Y.src('flip', 'trade the other side')} Only trade when the higher timeframe clearly agrees.`; }
@@ -727,7 +730,7 @@ async function smZoneBackfill(max = 5) {
         // the zone actually traded: the overlapping candidate of the same kind nearest to it (-1: the trade's zone isn't among them)
         const d = z => z.kind === x.zone.kind && z.lo <= x.zone.hi && z.hi >= x.zone.lo ? Math.abs(z.lo - x.zone.lo) + Math.abs(z.hi - x.zone.hi) : Infinity;
         const k = Z.reduce((b, z, i) => d(z) < (b < 0 ? Infinity : d(Z[b])) ? i : b, -1);
-        x.zc = {c: Z, k};
+        x.zc = {c: Z, k}; if (!x.grd && r.grd) x.grd = Object.assign({retro: 1}, r.grd);   // the setup grade, read at entry
       }
       const B = (await api(`/fapi/v1/klines?symbol=${x.s}&interval=15m&startTime=${x.t0}&limit=${SMZ_LAB_H * 4}`)).map(b => [+b[0], +b[1], +b[2], +b[3], +b[4], +b[7]]);
       if (B.length < 8) throw new Error('no candles');
