@@ -120,9 +120,9 @@ git pull --rebase && git add -A && git commit -m "…" && git push   # Pages + t
   - flip → `needHTF`
   - later / depth → `needDepth`
   - skip / poor gap / weak sweep → `minQ` +10
-  - weak OB → `fvgOnly`
+  - weak OB → `obQ` (order-block entries need the general quality bar + 10, max 90). **Not `fvgOnly`** (Fred, Nov 13: "poor OB" means that OB's quality, not "no OBs"). `fvgOnly` now only comes from trade data.
   - not at a POI → `needPOI`
-- **Timing.** Cloud runs read the notes every cycle, so SMC rules update within ~5 min. The Trader re-reviews after 2 new Trader reviews (or every 3 closed trades).
+- **Timing.** Cloud runs read the notes every cycle, so SMC rules update within ~5 min. A new or changed `rd` alone also triggers a re-learn (since Nov 13; before that it waited for new trade data). The Trader re-reviews after 2 new Trader reviews (or every 3 closed trades).
 - **When Fred says "讀吓我啲 review" (read my reviews).** Read `manual-reviews.json` (and `img/*.jpg`) from the `notes` branch. For each review with text, write
   ```
   rd: {a: [...], b: [...], d: [...], txt: "1–2 sentences", n: <length of mineText(review)>, t: <ms>, by: "Claude"}
@@ -131,7 +131,9 @@ git pull --rebase && git add -A && git commit -m "…" && git push   # Pages + t
   - `a` (what he'd have done): same, flip, skip, later, earlier, exitE, hold, wider, tighter, bigger, smaller
   - `b` (poor part): draw, cont, poi, room, htf, ob, gap, sweep, depth
   - `d` (fine / holds a rule): smc_gap, smc_ob, smc_htf, smc_poi, smc_path, smc_draw, tight, quickstop, forming
-  - Done for 11 reviews on Nov 12. He said "other side" 3× (KOMA, AKE, LYN) and "enter lower / wait for the level" 3× (EVAA, LYN ×2).
+  - Done for 11 reviews on Nov 12 and 13 more on Nov 13 (24 of 32; 8 have no text). Tally over 24: other side 7, skip 8, against the HTF 6, enter later / deeper 4, poor OB 4, poor FVG 3, wider stop 3.
+  - "Poor OB" only (AGT ×2, ONE) is read as `a: skip` + `b: ob` (Fred, Nov 13).
+  - Bot read the 1h as bull on longs Fred calls a 1h downtrend (PREDICT, IDOL, ONE).
 
 ## State on Nov 12, 2026 (20:15 UTC, cloud run ~795)
 | | Equity | Trades | Wins | Avg R |
@@ -145,7 +147,7 @@ git pull --rebase && git add -A && git commit -m "…" && git push   # Pages + t
   - HTF must agree;
   - midpoint entries;
   - only from an HTF zone or swing (`needPOI`);
-  - quality ≥ 65;
+  - quality ≥ 70 (Nov 13); order blocks ≥ 80 (`obQ`, Nov 13);
   - half at +1.2R;
   - stop 0.6% beyond the sweep.
 - **Trader rules in force:** target +2R; skip "Short squeeze" setups.
@@ -172,10 +174,12 @@ git pull --rebase && git add -A && git commit -m "…" && git push   # Pages + t
     - PDF gates are tuner features, not hard gates.
   - 5m MSS/entry: not done.
   - Specs and plans: `docs/superpowers/`. Replays: `tools/smc-self-review.mjs`, `tools/smc-replay.mjs` (they need a state.json; never commit trade data).
+- **Nov 13 (reviews):** his "poor OB" comments raise the OB quality bar (`obQ`), not FVG-only. The FVG-only rule from his comments was released (commits 943f208, a424293).
 
 ## Open items
 - **SMC resumed Nov 13 06:05 UTC** (`resume1113`), with `zoneLearn` still 0. Fred's call: collect ~20 new trades under the regime gate, then check whether the proposed zone rule stays stable before unlocking it. It changed 4 times in the first hour of backfill. Latest proposal: avoid 0.10–1.20 ATR zones (−0.71R n20 vs +0.59R n13) and prefer displacement zones (+0.60R n6).
 - Re-check the two SMC splits above once there are ~20 more SMC trades.
+- Re-check OB vs FVG after ~20 more SMC trades: on Nov 13, OB −0.06R (n10) vs FVG −0.12R (n28). The OB bar at 80 may block almost every OB, so check how many OB setups get skipped for `obQ`.
 - Momentum is the Trader's whole loss so far. Fred kept it on; raise it again only with new evidence.
 - **Not done from the audit:**
   - feeding OI / flow into the SMC Trader;
