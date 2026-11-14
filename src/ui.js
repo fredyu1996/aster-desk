@@ -311,7 +311,7 @@ function renderPanel() {
   body.innerHTML = h; body.scrollTop = sc;
   if (id === 'scout' && tab === 'set') bindSettings();
   body.querySelectorAll('canvas[data-spark]').forEach(drawSpark);
-  body.querySelectorAll('canvas[data-smc]').forEach(drawSmcChart);
+  body.querySelectorAll('canvas[data-smc]').forEach(cv => smWith(id === 'smc' && SMV === 'sb' ? SB : SM, () => drawSmcChart(cv)));
   body.querySelectorAll('canvas[data-rvchart]').forEach(cv => { try { drawRvCanvas(cv); } catch (e) { console.warn('rvchart', e.message); } });
   body.querySelectorAll('canvas.cmpchart').forEach(cv => { const r = cv.getBoundingClientRect(), dpr = Math.min(devicePixelRatio || 1, 2); cv.width = r.width * dpr; cv.height = r.height * dpr; const c = cv.getContext('2d'); c.scale(dpr, dpr); drawCmp(c, 0, 0, r.width, r.height, 11); });
   body.querySelectorAll('canvas.ptchart').forEach(cv => { const r = cv.getBoundingClientRect(), dpr = Math.min(devicePixelRatio || 1, 2); cv.width = r.width * dpr; cv.height = r.height * dpr; const c = cv.getContext('2d'); c.scale(dpr, dpr); drawEq(c, 0, 0, r.width, r.height, 11); });
@@ -344,7 +344,7 @@ function bindSettings() {
 }
 function setTabs() {
   const id = PS.open;
-  $('#pTabs').innerHTML = TABS[id].map(([k, l]) => `<div class="tab ${PS.tab[id] === k ? 'on' : ''}" data-tab="${k}">${l}</div>`).join('')
+  $('#pTabs').innerHTML = (id === 'smc' ? smcTabs() : TABS[id]).map(([k, l]) => `<div class="tab ${PS.tab[id] === k ? 'on' : ''}" data-tab="${k}">${l}</div>`).join('')
     + `<div class="navs" style="margin-left:14px">${AGENTS.map(a => `<div class="nav ${a.id === id ? 'on' : ''}" style="--nc:${a.color}" data-nav="${a.id}" title="${a.name}">${a.key}</div>`).join('')}<div class="nav ${id === 'check' ? 'on' : ''}" style="--nc:#6aa8ff;width:auto;padding:0 9px" data-nav="check" title="Check any coin (C)">C · Check</div></div>`;
 }
 function focusCoin(s) { if (setFocus(s, true)) sayFor('scout', `Pulling up ${base(s)}: checking OI, flow, funding and unlocks.`); }

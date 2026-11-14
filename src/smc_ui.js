@@ -1,23 +1,24 @@
 /* ================= SMC TRADER: screens + panel + comparison ================= */
 TABS.smc = [['acct', 'Account'], ['set', 'Setups now'], ['log', 'Trade log'], ['coach', 'Reviewer\'s coaching'], ['cmp', 'Compare with Trader'], ['rules', 'Rules & settings']];
 TABS.trader.push(['cmp', 'Compare with SMC']);
-const SMCOL = '#ff8ad8';
+const SMCOL = '#ff8ad8', SBCOL = '#6ee7ff';
+let SMV = 'sm';   // SMC panel view: 'sm' small caps | 'sb' big caps (not persisted; big mode is read-only)
 function smStats() { return acctStats(SM, smEquity()); }
 // both equity curves as % from each account's $1,000 start, on one time axis
-function drawCmp(c, x, y, w, h, fs = 12) {
-  const A = PT.eqs.concat([[now(), ptEquity()]]), B = SM.eqs.concat([[now(), smEquity()]]);
-  const pa = A.map(([t, v]) => [t, (v / PT.start - 1) * 100]), pb = B.map(([t, v]) => [t, (v / SM.start - 1) * 100]);
+function drawCmp(c, x, y, w, h, fs = 12, big = false) {
+  const A = PT.eqs.concat([[now(), ptEquity()]]), B = SM.eqs.concat([[now(), smEquity()]]), C = big ? SB.eqs.concat([[now(), smWith(SB, smEquity)]]) : [];
+  const pa = A.map(([t, v]) => [t, (v / PT.start - 1) * 100]), pb = B.map(([t, v]) => [t, (v / SM.start - 1) * 100]), pc = C.map(([t, v]) => [t, (v / SB.start - 1) * 100]);
   c.save(); c.translate(x, y);
-  const all = pa.concat(pb);
-  if (A.length < 2 && B.length < 2) { c.fillStyle = DIM; c.font = `500 ${fs + 2}px ${FS}`; c.textAlign = 'center'; c.fillText('both curves start with the first trades', w / 2, h / 2); c.restore(); c.textAlign = 'left'; return; }
+  const all = pa.concat(pb, pc);
+  if (A.length < 2 && B.length < 2 && C.length < 2) { c.fillStyle = DIM; c.font = `500 ${fs + 2}px ${FS}`; c.textAlign = 'center'; c.fillText('both curves start with the first trades', w / 2, h / 2); c.restore(); c.textAlign = 'left'; return; }
   let lo = Math.min(0, ...all.map(p => p[1])), hi = Math.max(0, ...all.map(p => p[1])); const sp = (hi - lo) || 1; lo -= sp * 0.12; hi += sp * 0.12;
   const t0 = Math.min(...all.map(p => p[0])), t1 = Math.max(...all.map(p => p[0])), pad = Math.max(60, fs * 5.6);
   const X = t => 6 + (t - t0) / ((t1 - t0) || 1) * (w - pad - 10), Y = v => 8 + (hi - v) / (hi - lo) * (h - 24);
   c.strokeStyle = 'rgba(124,137,168,.35)'; c.setLineDash([3, 4]); c.beginPath(); c.moveTo(6, Y(0)); c.lineTo(w - pad, Y(0)); c.stroke(); c.setLineDash([]);
-  for (const [pts, col] of [[pa, '#ffd166'], [pb, SMCOL]]) { if (pts.length < 2) continue; c.strokeStyle = col; c.lineWidth = 2.2; c.beginPath(); pts.forEach((p, i) => (i ? c.lineTo(X(p[0]), Y(p[1])) : c.moveTo(X(p[0]), Y(p[1])))); c.stroke(); }
+  for (const [pts, col] of [[pa, '#ffd166'], [pb, SMCOL], [pc, SBCOL]]) { if (pts.length < 2) continue; c.strokeStyle = col; c.lineWidth = 2.2; c.beginPath(); pts.forEach((p, i) => (i ? c.lineTo(X(p[0]), Y(p[1])) : c.moveTo(X(p[0]), Y(p[1])))); c.stroke(); }
   c.fillStyle = DIM; c.font = `500 ${fs}px ${FM}`; c.textBaseline = 'middle';
   c.fillText(fmtPct(hi, 1), w - pad + 4, 12); c.fillText(fmtPct(lo, 1), w - pad + 4, h - 14); c.fillText('0%', w - pad + 4, Y(0));
-  c.font = `700 ${fs}px ${FS}`; c.fillStyle = '#ffd166'; c.fillText('— Trader', 10, 12); c.fillStyle = SMCOL; c.fillText('— SMC Trader', 10 + fs * 6.5, 12);
+  c.font = `700 ${fs}px ${FS}`; c.fillStyle = '#ffd166'; c.fillText('— Trader', 10, 12); c.fillStyle = SMCOL; c.fillText('— SMC Trader', 10 + fs * 6.5, 12); if (big) { c.fillStyle = SBCOL; c.fillText('— SMC Big', 10 + fs * 14.5, 12); }
   c.restore(); c.textAlign = 'left';
 }
 function drawSmcScreens(d) {
@@ -88,18 +89,27 @@ function drawSmcChart(cv) {
   line(live, TXT, fmtPx(live));
 }
 function smcStatus() {
+  const big = SM === SB;
   return `<div class="card2" style="margin-bottom:12px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;border-left:4px solid ${SM.on ? (SM.paused ? WARN : UP) : DIM}">
-    <span class="tag" style="color:var(--warn);border-color:var(--warn)">PAPER ACCOUNT · simulated fills, no real orders</span>
+    <span class="tag" style="color:var(--warn);border-color:var(--warn)">PAPER ACCOUNT · simulated fills, no real orders</span>${big ? '<span class="tag" style="color:' + SBCOL + '">SMC Big · top-10 volume perps · no Reviewer</span>' : ''}
     <b style="color:${SM.on ? (SM.paused ? WARN : UP) : DIM}">${SM.on ? (SM.paused ? 'Paused today: ' + SM.paused : 'Trading is ON') : 'Trading is OFF'}</b>
     <span class="dim" style="font-size:12px">started ${new Date(SM.created).toLocaleDateString()} with $${SM.start.toLocaleString()} · same fees, slippage, 1% risk and unlock guard as the Trader</span>
-    <button class="btn sm" style="margin-left:auto" data-sm="toggle">${SM.on ? 'Turn trading off' : 'Turn trading on'}</button></div>`;
+    ${big ? '' : `<button class="btn sm" style="margin-left:auto" data-sm="toggle">${SM.on ? 'Turn trading off' : 'Turn trading on'}</button>`}</div>`;
 }
+// big mode shows only the read-only tabs; the rest write (settings, close, toggle, reset) or are about the small-cap Reviewer
+const SMC_BIG_TABS = ['acct', 'set', 'log'];
+function smcTabs() { return SMV === 'sb' ? TABS.smc.filter(t => SMC_BIG_TABS.includes(t[0])) : TABS.smc; }
 function smcHTML(tab) {
+  const big = SMV === 'sb'; if (big && !SMC_BIG_TABS.includes(tab)) tab = 'acct';
+  const sw = `<div style="display:flex;gap:8px;margin-bottom:12px">${[['sm', 'Small caps'], ['sb', 'Big caps']].map(([k, l]) => `<button class="btn sm ${SMV === k ? '' : 'ghost'}" data-smv="${k}">${l}</button>`).join('')}</div>`;
+  return sw + (big ? smWith(SB, () => smcBody(tab)) : smcBody(tab));
+}
+function smcBody(tab) {
   const st = smStats(), eq = smEquity(), k = (l, v, cl = '') => `<div class="kpi"><span>${l}</span><b class="${cl}">${v}</b></div>`;
   if (tab === 'cmp') return compareHTML();
   if (tab === 'coach') return smCoachHTML();
   if (tab === 'set') {
-    const rows = Object.keys(S.trk).map(s => [s, S.smC.get(s) || smcRead(s)]).sort((a, b) => (b[1].st ? b[1].st.code : 0) - (a[1].st ? a[1].st.code : 0) || b[1].score - a[1].score);
+    const rows = smCoins().map(s => [s, S.smC.get(s) || smcRead(s)]).sort((a, b) => (b[1].st ? b[1].st.code : 0) - (a[1].st ? a[1].st.code : 0) || b[1].score - a[1].score);
     let h = `<p class="note">The SMC Trader reads every tracked top-5 gainer and loser on <b>15-minute and 1-hour candles</b>. A 15m setup is only taken if the <b>1h structure isn't against it</b>, and a 1h setup only if the <b>4h structure isn't against it</b> (no longs while the higher timeframe is falling, no shorts while it's rising). Each setup also gets a <b>quality score in SMC terms</b>: the sweep, the liquidity taken, the strength of the break, the FVG or order block, premium/discount, the higher timeframe and how deep into the zone the entry is. Setups under ${smRules().minQ}/100 are skipped.</p><p class="note"><b>Playbook from your SMC thesis (Nov 9):</b> it starts from the higher timeframe. A reversal is only taken from a <b>higher-timeframe point of interest</b> (a fresh 1h/4h demand or supply zone, or a 1h/4h swing that gets swept) unless the higher timeframe is already trending its way. A zone counts when it is the last opposite candle before an <b>impulsive departure</b> (1.5+ ATR within 3 candles, or an imbalance), stays valid until a candle closes through it, and is best on its <b>first retest</b>. 1h setups wait for <b>15m confirmation</b> (a 15m close through the last 15m swing inside the 1h zone, the thesis's 1:4 rule). The target must clear the <b>opposing</b> higher-timeframe zone; if that zone is closer than ${SM.cfg.minRR}R, it skips the trade.</p><p class="note"><b>Low- vs high-resistance liquidity (from the failure-swings lesson, Nov 9).</b> Between the entry and the target it looks at the swings in the way. <b>Failure swings</b> (for a long: highs that failed to beat the previous high; for a short: lows that failed to break the previous low) are low-resistance liquidity: price usually runs through them, so a path full of them is good. A swing that <b>ran the previous swing and was rejected</b> is high-resistance liquidity: price tends to stall there, so the target is put in front of it, and the trade is skipped if that leaves under ${SM.cfg.minRR}R. The sweep it trades from is itself a high-resistance swing on its own side, which is why the stop goes beyond it.</p><p class="note"><b>From the market-maker lessons (Nov 9):</b> <b>draw on liquidity</b> — on the higher timeframe, after an old low is taken or a bullish FVG is tagged price draws up to old highs, and the reverse; trades with the draw score higher. <b>Previous day high/low</b> are the easiest pools: they're added as targets, and sweeping one counts as strong liquidity. <b>Market cycle</b>: a reversal should follow an expansion or sweep the edge of a tight range (accumulation → manipulation → distribution); a turn straight out of consolidation is often a trap. <b>Mitigation block</b>: an entry zone inside a failed higher-timeframe zone of the other side is a bonus. <b>Breakaway gaps</b>: when the move leaves stacked gaps the newest may only be tested at its edge, so the "wait for the midpoint" rule doesn't apply. A higher-timeframe swing run in discount (long) or premium (short) counts as a key level, like a fresh zone.</p><p class="note"><b>Two kinds of setup.</b> <b>Reversal</b>: liquidity sweep → change of character → first pullback into the FVG or order block. <b>Continuation</b> (${SM.cfg.cont ? 'on' : 'off'}; rally-base-rally / drop-base-drop): only when the higher timeframe and the entry timeframe already trend the same way; price pauses in a base, breaks structure again with an impulsive move (1.5+ ATR), and it buys/sells the first pullback into the base or the gap the move left. Stop beyond the base.</p><p class="note">On each timeframe it waits for <b>liquidity to be swept</b> (a wick through a prior swing that closes back inside), then a <b>market structure shift</b> (a close through the last opposite swing). It marks the <b>fair value gap</b> or <b>order block</b> that move left behind, and enters on the <b>first pullback into it</b>. The stop goes beyond the sweep, and the target is the next liquidity pool, at least ${SM.cfg.minRR}R away. It also scores the setup on discount/premium, the higher-timeframe structure and volume.</p>`;
     if (!rows.length) return smcStatus() + h + '<div class="empty">No tracked movers yet.</div>';
     for (const [s, r] of rows) {
@@ -153,9 +163,9 @@ function smcHTML(tab) {
   const P = Object.entries(SM.pos);
   const scan = SM.lastScan && SM.lastScan.cands && SM.lastScan.cands.length ? SM.lastScan.cands.map(x => `<div class="chk" style="padding:3px 0"><span class="i ${x.took ? 'up' : 'dim'}">${x.took ? '✓' : '·'}</span><span><b>${esc(x.b)}</b> <span class="dim">${x.side === 'L' ? 'long' : 'short'} · ${x.tf ? x.tf + ' · ' : ''}${x.zone} · ${x.score}/6${x.q ? ' · quality ' + x.q : ''}${x.rr ? ' · ' + x.rr.toFixed(1) + 'R' : ''}</span></span><span class="d">${x.took ? 'entered' : esc(x.skip)}</span></div>`).join('') : '<span class="dim" style="font-size:12px">No tracked mover is pulling back into a fresh zone right now. See "Setups now".</span>';
   return smcStatus() + `<div class="kpis" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr))">${k('Equity', fmtMoney(eq))}${k('Total P&L', `${fmtMoney(eq - SM.start, 1)} (${fmtPct(st.ret, 2)})`, cls(eq - SM.start))}${k('Today', fmtMoney(SM.day ? eq - SM.day.eq0 : 0, 1), cls(SM.day ? eq - SM.day.eq0 : 0))}${k('Open', `${P.length} / ${SM.cfg.maxPos}`)}${k('Closed trades', st.n)}${k('Win rate', st.win == null ? '—' : st.win.toFixed(0) + '%')}${k('Avg result', fmtR(st.avgR), cls(st.avgR))}${k('Max drawdown', fmtPct(st.dd, 1), st.dd < 0 ? 'dn' : '')}</div>
-  <div class="card2" style="margin-top:14px"><h3>OPEN POSITIONS</h3>${P.length ? `<table class="t"><thead><tr><th>Coin</th><th>Side</th><th>Entry</th><th>Now</th><th>Stop</th><th>Target</th><th>P&amp;L</th><th>R</th><th style="text-align:left">Setup</th><th></th></tr></thead><tbody>${P.map(([s, p]) => { const px = ptPx(s), u = px ? smUpnl(p, px) + p.realized : 0, r = px ? smR(p, px) : 0; return `<tr data-sym="${s}"><td class="sym">${esc(p.b)}</td><td class="${p.side === 'L' ? 'up' : 'dn'}">${p.side === 'L' ? 'LONG' : 'SHORT'}</td><td>${fmtPx(p.entry)}</td><td>${fmtPx(px)}</td><td>${fmtPx(p.stop)}${p.trail ? ' <span class="dim">trail</span>' : p.be ? ' <span class="dim">BE</span>' : ''}</td><td>${fmtPx(p.target)}</td><td class="${cls(u)}">${fmtMoney(u, 1)}</td><td class="${cls(r)}">${fmtR(r)}</td><td style="text-align:left;white-space:normal;min-width:240px;font-family:var(--sans);font-size:12px">${esc(p.why)}</td><td><span class="chip" data-sm-close="${s}">close</span></td></tr>`; }).join('')}</tbody></table>` : '<div class="empty" style="padding:14px">Flat.</div>'}</div>
+  <div class="card2" style="margin-top:14px"><h3>OPEN POSITIONS</h3>${P.length ? `<table class="t"><thead><tr><th>Coin</th><th>Side</th><th>Entry</th><th>Now</th><th>Stop</th><th>Target</th><th>P&amp;L</th><th>R</th><th style="text-align:left">Setup</th><th></th></tr></thead><tbody>${P.map(([s, p]) => { const px = ptPx(s), u = px ? smUpnl(p, px) + p.realized : 0, r = px ? smR(p, px) : 0; return `<tr data-sym="${s}"><td class="sym">${esc(p.b)}</td><td class="${p.side === 'L' ? 'up' : 'dn'}">${p.side === 'L' ? 'LONG' : 'SHORT'}</td><td>${fmtPx(p.entry)}</td><td>${fmtPx(px)}</td><td>${fmtPx(p.stop)}${p.trail ? ' <span class="dim">trail</span>' : p.be ? ' <span class="dim">BE</span>' : ''}</td><td>${fmtPx(p.target)}</td><td class="${cls(u)}">${fmtMoney(u, 1)}</td><td class="${cls(r)}">${fmtR(r)}</td><td style="text-align:left;white-space:normal;min-width:240px;font-family:var(--sans);font-size:12px">${esc(p.why)}</td><td>${SM === SB ? '' : `<span class="chip" data-sm-close="${s}">close</span>`}</td></tr>`; }).join('')}</tbody></table>` : '<div class="empty" style="padding:14px">Flat.</div>'}</div>
   <div class="grid2" style="margin-top:14px"><div class="card2"><h3>LAST SCAN · ${SM.lastScan ? ago(SM.lastScan.t) + ' ago' : '—'}</h3>${scan}</div>
-  <div class="card2"><h3>EQUITY · TRADER vs SMC</h3><canvas class="cmpchart" style="width:100%;height:190px;display:block"></canvas></div></div>`;
+  ${SM === SB ? '' : `<div class="card2"><h3>EQUITY · TRADER vs SMC</h3><canvas class="cmpchart" style="width:100%;height:190px;display:block"></canvas></div>`}</div>`;
 }
 function compareHTML() {
   const a = acctStats(PT, ptEquity()), b = acctStats(SM, smEquity()), v = compareVerdict(a, b);
@@ -181,6 +191,7 @@ function compareHTML() {
   </tbody></table><p class="note" style="margin-top:8px">The better value is highlighted once each side has 3+ trades. The verdict waits for 15 each. Note: the Trader's rules are tuned by the Reviewer, while the SMC Trader's stay fixed.</p></div></div>`;
 }
 document.getElementById('panel').addEventListener('click', e => {
+  const v = e.target.closest('[data-smv]'); if (v) { e.stopPropagation(); SMV = v.dataset.smv; setTabs(); renderPanel(); return; }
   const b = e.target.closest('[data-sm]'), c = e.target.closest('[data-sm-close]');
   if (!b && !c) return; e.stopPropagation();
   if (syBlock()) return;
@@ -275,7 +286,7 @@ function drawRace() {
   });
   // both equity curves
   c.textBaseline = 'alphabetic';
-  drawCmp(c, 24, 296, W - 48, 250, 20);
+  drawCmp(c, 24, 296, W - 48, 250, 20, true);
   // the stats side by side
   const rows = [['Win rate', s => s.win == null ? '—' : s.win.toFixed(0) + '%', 1], ['Avg R per trade', s => fmtR(s.avgR), 1], ['Max drawdown', s => fmtPct(s.dd, 1), 1], ['Return ÷ drawdown', s => s.retDD == null ? '—' : s.retDD.toFixed(2), 1], ['Worst losing streak', s => s.streak + '', -1], ['Profit factor', s => s.pf == null ? '—' : s.pf === Infinity ? '∞' : s.pf.toFixed(2), 1]];
   const y0 = 588, rh = 34;

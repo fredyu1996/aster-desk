@@ -54,6 +54,29 @@ await page.click('#enter', {timeout: 120000, noWaitAfter: true}); await page.wai
 const ids = await page.evaluate(() => Object.keys(TABS));
 for (const id of ids) { await page.evaluate(i => { openPanel(i); }, id); await page.waitForTimeout(700); for (const [t] of await page.evaluate(i => TABS[i], id)) { await page.evaluate(([i, t]) => { PS.tab[i] = t; setTabs(); renderPanel(); }, [id, t]); await page.waitForTimeout(250); } await page.evaluate(() => closePanel()); }
 console.log('panels checked:', ids.join(', '));
+// SMC Big view: read-only (awx_sm byte-identical across the switch and every visible tab), race wall draws the third line
+await page.evaluate(() => { openPanel('smc'); PS.tab.smc = 'acct'; setTabs(); renderPanel(); }); await page.waitForTimeout(500);
+const bigRes = await page.evaluate(async () => {
+  const before = localStorage.getItem('awx_sm'), tabs = [], errsB = [];
+  document.querySelector('[data-smv="sb"]').click();
+  tabs.push(...[...document.querySelectorAll('#pTabs [data-tab]')].map(e => e.dataset.tab));
+  for (const t of tabs) { try { PS.tab.smc = t; setTabs(); renderPanel(); } catch (e) { errsB.push(t + ': ' + e.message); } }
+  const bodyHasBig = /SMC Big/.test(document.querySelector('#pbody').textContent);
+  document.querySelector('[data-smv="sm"]').click(); document.querySelector('[data-smv="sb"]').click();
+  const same = localStorage.getItem('awx_sm') === before;
+  SB.eqs = [[now() - 7200e3, 1000], [now() - 3600e3, 1015]]; drawRace();
+  const d = RACE.ctx.getImageData(0, 0, RACE.W, RACE.H).data; let hits = 0;
+  for (let i = 0; i < d.length; i += 4) if (d[i] > 0x40 && d[i] < 0x98 && d[i + 1] > 0xc0 && d[i + 2] > 0xe8) hits++;
+  document.querySelector('[data-smv="sm"]').click();
+  return {tabs, errsB, bodyHasBig, same, hits};
+});
+console.log('big mode:', JSON.stringify(bigRes));
+if (bigRes.errsB.length) errs.push('PAGEERR big-mode tab: ' + bigRes.errsB.join('; '));
+if (!bigRes.same) errs.push('PAGEERR awx_sm changed while viewing Big caps');
+if (bigRes.tabs.join() !== 'acct,set,log') errs.push('PAGEERR big-mode tabs are ' + bigRes.tabs.join());
+if (!bigRes.bodyHasBig) errs.push('PAGEERR big-mode panel does not say SMC Big');
+if (bigRes.hits < 30) errs.push('PAGEERR race wall has no SMC Big line/legend (' + bigRes.hits + ' px)');
+await page.evaluate(() => closePanel());
 await page.evaluate(() => { openPanel('rev'); PS.tab.rev = 'smcr'; setTabs(); renderPanel(); }); await page.waitForTimeout(1500); await page.evaluate(() => renderPanel());
 const bt = await page.evaluate(() => (document.body.innerText.match(/BACKTEST \(PROPOSAL ONLY, NOT APPLIED\)\s*\n[^\n]*/) || [''])[0]);
 console.log('backtest block:', bt.replace(/\s*\n/g, ' | ') || 'MISSING'); if (!bt) errs.push('PAGEERR backtest block missing in Reviewer → SMC review');
