@@ -23,6 +23,7 @@ Fred's walkable 3D trading workstation for small-cap perps on Aster DEX, with ru
 | Cloud trader | `bot/run.mjs` + generated `bot/core.js`, run by `.github/workflows/cloud-trader.yml` |
 | Unlock calendar | `unlocks.json` (root). The desk re-fetches it every 6 h; a snapshot is embedded at build time |
 | Shared paper accounts | private repo `fredyu1996/aster-desk-data`, branch `state`, file `aster-desk-state.json`. Always a single parentless commit, force-updated. Holds `pt, rv, sm, trk, cfg, oi, cloud, lock` |
+| SMC Big account | key `sb` in the same state file; browser copy in localStorage `awx_sb` |
 | Fred's own trade reviews | same private repo, branch `notes`: `manual-reviews.json` + `img/*.jpg` (normal commits; read → merge → write, retry on conflict) |
 | Notes | `docs/`. The claude.ai project "Trading workstation" has the same docs; this repo is now the copy to keep current |
 
@@ -71,7 +72,7 @@ git pull --rebase && git add -A && git commit -m "…" && git push   # Pages + t
 | `track.js` | day tracker (top movers for 24 h), 8-sign reversal read, momentum read, pattern tags |
 | `unlock.js` | token-unlock calendar and guard (`unlocks.json` embedded at `/*UNLOCKS_JSON*/`) |
 | `trader.js` | **Trader** paper account `PT` (reversal + momentum strategies), `ptTick`, `ptManage` |
-| `smc.js` | **SMC Trader** paper account `SM`: `smcRead/smcReadTf/smSetup/smContSetup/smQuality/smTick/smManage`, HTF zones, POI, path, draw, PD high/low |
+| `smc.js` | **SMC Trader** paper account `SM` (and `SB`, SMC Big: `SB_OV` overrides, `smWith(SB, fn)` swaps the global `SM` around `fn`): `smcRead/smcReadTf/smSetup/smContSetup/smQuality/smTick/smManage`, HTF zones, POI, path, draw, PD high/low |
 | `scene.js` | three.js room, desks, wall screens (`SWALL` south wall = SMC positions, `RACE` north wall = return race) |
 | `ui.js` | panels (`TABS`, `openPanel`, `renderPanel`), keys (1–6 agents, C coin check, V review wall, B SMC wall, T toggles ✓/✗ tags at the wall, E review it yourself) |
 | `check.js` | coin check (key C) |
@@ -102,6 +103,13 @@ git pull --rebase && git add -A && git commit -m "…" && git push   # Pages + t
      - stop never closer than 1.5%;
      - exit if a candle closes through the entry gap before the half is taken;
      - draw on liquidity not scored on continuation setups.
+7. **SMC Big** ($1,000 paper, account `SB`, on from the first deploy):
+   - Same strategy and same Reviewer rules (`smRules` / `RV.smAdj`) as the SMC Trader, on the **top 10 Aster perps by 24 h quote volume** (stock perps out unless `CFG.includeStocks`; coins in the small-cap tracker skipped). Recomputed every cycle; held coins keep being managed.
+   - `SB.cfg` = live copy of `SM.cfg` + `SB_OV` (min stop 0.5%, slippage 0.02%, stop buffer ×0.25, tight 0.4%, screens off). Sizing as above.
+   - The Reviewer never learns from SB. No review wall, review form or south wall for it.
+   - Desk: SMC panel (key 6) has a Small caps / Big caps switch with its own on/off toggle; the return race wall has a third line and an SMC BIG stats column.
+   - Nightly backtest also writes `smc-backtest-big.json` (report only).
+   - A browser on the pre-deploy desk that takes the lock saves state without `sb`, and SB restarts fresh: hard refresh after a deploy.
 - Both traders: **10× total leverage cap** (Fred, Nov 11); per-trade size is still set by 1% risk.
 - The tracker follows the top 5 gainers and losers **among coins with ≥ $300K volume that moved ≥ 8%** (GainerLoser → Settings).
 
@@ -176,10 +184,12 @@ git pull --rebase && git add -A && git commit -m "…" && git push   # Pages + t
   - 5m MSS/entry: not done.
   - Specs and plans: `docs/superpowers/`. Replays: `tools/smc-self-review.mjs`, `tools/smc-replay.mjs` (they need a state.json; never commit trade data).
 - **Nov 13 (reviews):** his "poor OB" comments raise the OB quality bar (`obQ`), not FVG-only. The FVG-only rule from his comments was released (commits 943f208, a424293).
+- **Nov 13 (SMC Big):** Fred wants to see if the SMC strategy works better on big caps. Top 10 by volume, `SB_OV` for big-cap sizes, rules follow the small-cap SMC Trader, on at deploy. Leverage option C: 10× is the margin setting, not 10× notional per trade; sizing stays 1% risk with the 10× total cap.
 
 ## Open items
 - **SMC resumed Nov 13 06:05 UTC** (`resume1113`), with `zoneLearn` still 0. Fred's call: collect ~20 new trades under the regime gate, then check whether the proposed zone rule stays stable before unlocking it. It changed 4 times in the first hour of backfill. Latest proposal: avoid 0.10–1.20 ATR zones (−0.71R n20 vs +0.59R n13) and prefer displacement zones (+0.60R n6).
 - Re-check the two SMC splits above once there are ~20 more SMC trades.
+- Compare SMC Big vs SMC Trader in R, net of costs, once each has ~20 trades.
 - Re-check OB vs FVG after ~20 more SMC trades: on Nov 13, OB −0.06R (n10) vs FVG −0.12R (n28). The OB bar at 80 may block almost every OB, so check how many OB setups get skipped for `obQ`.
 - Momentum is the Trader's whole loss so far. Fred kept it on; raise it again only with new evidence.
 - **Not done from the audit:**

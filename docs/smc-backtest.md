@@ -23,6 +23,10 @@ Spec: `docs/superpowers/specs/2026-11-13-smc-backtest-design.md`. Fred chose **r
   - OB q ≥ / < the `obQ` bar, plus the number of OB setups the bar blocked.
 - **Sim vs live.** The script counts the live trades in the window that the backtest also entered (same coin and side, within ±30 min) and their mean |R| gap. For the rest it gives the backtest's read at the live entry time.
 
+## Big-cap mode
+- The same run also backtests the top 10 coins by 24 h volume with the SMC Big settings (`SB_OV`) and writes `smc-backtest-big.json` to branch `backtest`, in the same commit as `smc-backtest.json`.
+- Reviewer → SMC review shows it as a second block, "BIG CAPS · BACKTEST (PROPOSAL ONLY)".
+
 ## Limits
 - Coins delisted since are missing.
 - The tracker updates hourly (live: continuously).

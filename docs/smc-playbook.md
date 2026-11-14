@@ -66,3 +66,6 @@ All were written for forex; the concepts below are the ones that carry over to s
 - Refining the stop to the 15m low inside the 1h zone (tighter stop, bigger RR; risk of quick stop-outs on small caps).
 - Using the re-delivered re-balanced area as an entry array on its own (needs 5m candles to see the balanced part of a 15m candle).
 - Session timing ideas from the course (NY session, Asian session models) aren't used: crypto trades 24/7 and the course's sessions are forex-specific.
+
+## SMC Big (Nov 13)
+The SMC Big account `SB` runs the same strategy on the top 10 coins by volume, with `SB_OV` on top of the live SMC cfg: min stop 0.5%, slippage 0.02%, stop buffer x0.25, tight 0.4%, screens off. Big caps move about 1/5 as much as small caps, so the stop floor, buffer and costs shrink to match. The quality score is ATR-relative, so it needs no scaling.
