@@ -28,6 +28,8 @@ const missing = ['pt', 'sm', 'sb'].filter(k => !st[k]);
 if (missing.length) fail('state missing ' + missing.join(', '));
 if (!(st.sb.on === true && st.sb.start === 1000 && st.sb.cfg.minStopPct === 0.5)) fail('sb state wrong: ' + JSON.stringify({ on: st.sb.on, start: st.sb.start, minStopPct: st.sb.cfg && st.sb.cfg.minStopPct }));
 if (typeof st.cloud.sbEq !== 'number') fail('cloud.sbEq is not a number');
+const smKeys = ['start', 'cash', 'pos', 'log', 'on', 'cfg'];
+if (!smKeys.every(k => k in st.sm) || st.sm.start !== 1000 || st.sm.cfg.minStopPct !== 1.5) fail('sm shape changed: ' + Object.keys(st.sm).join(','));
 fs.copyFileSync(OUT, IN); run();   // second run fed the first run's state back in
 const st2 = JSON.parse(fs.readFileSync(OUT, 'utf8'));
 if (!st.sb.created || st2.sb.created !== st.sb.created) fail('sb.created not kept across runs');

@@ -117,5 +117,15 @@ const snapSM = X => X(`JSON.stringify(Object.assign({}, SM, {eqs: null, lastScan
   check(a === b, 'cache: small-cap S.smC read unchanged');
   check(B.X('JSON.stringify(S.smCB.get(SYM))') !== b, 'cache: the SB read differs (so the test bites)');
 }
+// ---- universe: big caps join S.universe as symbols; S.prio is not touched by SB
+{
+  const {X} = desk(); X(FIX);
+  X('recomputeUniverse();');
+  check(X('S.universe.every(s => typeof s === "string")'), 'universe: every entry is a string', X('JSON.stringify(S.universe.filter(s => typeof s !== "string"))'));
+  check(X('smBigCoins().length > 0 && smBigCoins().every(s => S.universe.includes(s))'), 'universe: every smBigCoins() symbol is in S.universe', X('JSON.stringify([smBigCoins(), S.universe])'));
+  const withSB = X('JSON.stringify([...S.prio].sort())');
+  X('smBigCoins = () => []; recomputeUniverse();');
+  check(withSB === X('JSON.stringify([...S.prio].sort())'), 'universe: S.prio identical with and without SB');
+}
 if (fails) { console.error(fails + ' FAIL'); process.exit(1); }
 console.log('PASS: smc-bigcap');

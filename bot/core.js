@@ -184,7 +184,7 @@ function recomputeUniverse() {
   const prio = new Set([...S.gainers.slice(0, 12), ...S.losers.slice(0, 12), ...Object.keys(S.trk || {}).filter(x => S.meta.has(x)), ...CFG.watch.filter(x => S.meta.has(x))]);
   if (S.focus) prio.add(S.focus);
   S.prio = prio;
-  const uni = new Set([...prio, (typeof smBigCoins === 'function' ? smBigCoins() : [])]);
+  const uni = new Set([...prio, ...(typeof smBigCoins === 'function' ? smBigCoins() : [])]);
   for (const s of [...el].sort((a, b) => S.tk.get(b).qv - S.tk.get(a).qv)) { if (uni.size >= MAX_UNI) break; uni.add(s); }
   S.universe = [...uni];
   if (!S.focus && S.gainers.length) S.focus = CFG.watch.find(x => S.meta.has(x) && S.gainers.includes(x)) || S.gainers[0];
