@@ -83,6 +83,19 @@ const snapSM = X => X(`JSON.stringify(Object.assign({}, SM, {eqs: null, lastScan
   check(!!B.store.awx_sb && !A.store.awx_sb, 'isolation: awx_sb written by the SB tick only');
   check(B.X('JSON.stringify(Object.keys(SB.pos))') === '["BIGUSDT"]', 'isolation: SB trades the big coin only', B.X('JSON.stringify(SB.lastScan)'));
 }
+// ---- tight stop: the same bars give SM a stop pushed out to its 1.5% minimum, while SB takes the setup with a 0.5–1.5% stop
+{
+  const {X} = desk(); X(FIX);
+  // TIGHTUSDT: the fixture's bars squeezed 5× toward the last price, so the sweep stop sits ~1% away (ratios such as R stay the same)
+  X(`{ const k = 0.2, c0 = 1.003, sq = B => B.map(b => [b[0], ...b.slice(1, 5).map(p => c0 + (p - c0) * k), b[5], b[6]]);
+     S.meta.set('TIGHTUSDT', {base: 'TIGHT'}); S.kl.set('TIGHTUSDT', {t: T, bars: sq(kb)}); S.h1.set('TIGHTUSDT', {t: T, bars: sq(hb)});
+     S.tk.set('TIGHTUSDT', {last: c0, pct: 3, qv: 9e8}); S.fund.set('TIGHTUSDT', {r: 0}); }`);
+  const dSM = X(`smcRead('TIGHTUSDT').dist`), dSB = X(`smWith(SB, () => smcRead('TIGHTUSDT').dist)`);
+  check(dSM >= 0.015 - 1e-9, 'tight stop: SM stop pushed out to ≥ 1.5%', dSM);   // widened to exactly 1.5%, less float noise
+  check(dSB >= 0.005 && dSB < 0.015, 'tight stop: SB stop 0.5–1.5%', dSB);
+  X('smWith(SB, smTick);');
+  check(X(`!!SB.pos.TIGHTUSDT && SB.pos.TIGHTUSDT.dist < 1.5`), 'tight stop: SB opens it', X('JSON.stringify(SB.lastScan)'));
+}
 // ---- cache: an SB read of a coin also in S.trk doesn't replace the small-cap read
 {
   const POS = `SB.pos[SYM] = {side: 'S', b: 'SWEEP', qty: 1, qty0: 1, entry: 1.003, stop: 1.5, stop0: 1.5, target: 0.5, t: T, risk: 0.5, realized: 0, fees: 0, exits: [], tf: '15m', holdH: 12, be: false, tp1: false, maxR: 0};`;
