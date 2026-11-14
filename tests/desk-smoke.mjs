@@ -26,9 +26,11 @@ const btFake={v:1,sum:{t:now,from:now-7*864e5,to:now,days:7,coins:40,runS:300,va
  decisions:[{k:'flow',lab:'Skip when the 1h taker flow is against the trade',bt:{kept:{n:8,avgR:0.3,win:60},dropped:{n:4,avgR:-0.3,win:25}},live:{kept:{n:21,avgR:0.07,win:48},dropped:{n:17,avgR:-0.32,win:29}}},
   {k:'obQ',lab:'OB quality bar',blocked:5,bt:{kept:{n:0,avgR:null,win:null},dropped:{n:3,avgR:0,win:33}},live:{kept:{n:2,avgR:-0.21,win:50},dropped:{n:8,avgR:-0.02,win:38}}}],
  simVsLive:{live:13,matched:2,meanAbsDR:0.6},note:'Backtest: proposal only.'},trades:[]};
+const btBig={v:1,sum:{t:now,from:now-7*864e5,to:now,days:7,coins:20,runS:90,variants:{base:{n:6,avgR:0.2,win:50,open:1}},decisions:[],simVsLive:{live:0,matched:0,meanAbsDR:null,why:{}},note:'SMC Big backtest: proposal only.'},trades:[]};
 await page.route('https://api.github.com/**',r=>{const u=r.request().url();
  if(u.includes('/git/ref/heads/backtest'))return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({object:{sha:'bt1'}})});
  if(u.includes('/contents/smc-backtest.json'))return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify(btFake)});
+ if(u.includes('/contents/smc-backtest-big.json'))return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify(btBig)});
  return r.fulfill({status:404,body:'{}'});});
 await page.route('https://fonts.googleapis.com/**',r=>r.abort());await page.route('https://fonts.gstatic.com/**',r=>r.abort());
 let calls=0;
@@ -55,6 +57,8 @@ console.log('panels checked:', ids.join(', '));
 await page.evaluate(() => { openPanel('rev'); PS.tab.rev = 'smcr'; setTabs(); renderPanel(); }); await page.waitForTimeout(1500); await page.evaluate(() => renderPanel());
 const bt = await page.evaluate(() => (document.body.innerText.match(/BACKTEST \(PROPOSAL ONLY, NOT APPLIED\)\s*\n[^\n]*/) || [''])[0]);
 console.log('backtest block:', bt.replace(/\s*\n/g, ' | ') || 'MISSING'); if (!bt) errs.push('PAGEERR backtest block missing in Reviewer → SMC review');
+const bb = await page.evaluate(() => (document.body.innerText.match(/BIG CAPS · BACKTEST \(PROPOSAL ONLY\)\s*\n[^\n]*/) || [''])[0]);
+console.log('big backtest block:', bb.replace(/\s*\n/g, ' | ') || 'MISSING'); if (!bb) errs.push('PAGEERR big-cap backtest block missing in Reviewer → SMC review');
 await page.evaluate(() => closePanel());
 await page.screenshot({path: fileURLToPath(new URL('../desk-smoke.png', import.meta.url))});
 const bad = errs.filter(e => /PAGEERR/.test(e));

@@ -11,7 +11,7 @@ import fs from 'node:fs'; import vm from 'node:vm'; import path from 'node:path'
 process.env.TZ ||= 'America/Creston';   // the daily loss limit resets at Creston midnight, as in the cloud
 const DIR = fileURLToPath(new URL('.', import.meta.url));
 const REPO = process.env.DATA_REPO, TOKEN = process.env.DATA_TOKEN, LOCAL_IN = process.env.STATE_IN, LOCAL_OUT = process.env.BT_OUT;
-const DAYS = +process.env.BT_DAYS || 7, OUT_FILE = 'smc-backtest.json', OUT_BR = 'backtest';
+const DAYS = +process.env.BT_DAYS || 7, OUT_FILE = 'smc-backtest.json', BIG_FILE = 'smc-backtest-big.json', OUT_BR = 'backtest';
 const H = 3600e3, M5 = 300e3, M15 = 900e3, API = 'https://fapi.asterdex.com';
 const T0 = Date.now(), log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a), sleep = ms => new Promise(z => setTimeout(z, ms));
 
@@ -28,12 +28,13 @@ async function readState() {
   if (LOCAL_IN) return JSON.parse(fs.readFileSync(LOCAL_IN, 'utf8').replace(/^﻿/, ''));
   const r = await gh('/git/ref/heads/state'); return JSON.parse(await gh(`/contents/aster-desk-state.json?ref=${r.object.sha}`, {raw: true}));
 }
-async function writeOut(o) {
-  const txt = JSON.stringify(o);
-  if (LOCAL_OUT) { fs.writeFileSync(LOCAL_OUT, txt); return 'local'; }
+// files: {path: object}; all go in one parentless commit. Local: the base file to BT_OUT, the big one next to it as <BT_OUT>-big.json
+async function writeOut(files) {
+  const o = files[OUT_FILE];
+  if (LOCAL_OUT) { for (const [p, x] of Object.entries(files)) fs.writeFileSync(p === OUT_FILE ? LOCAL_OUT : LOCAL_OUT.replace(/(.json)?$/, '-big.json'), JSON.stringify(x)); return 'local'; }
   const cur = await gh('/git/ref/heads/' + OUT_BR, {ok404: true});
-  const blob = await gh('/git/blobs', {method: 'POST', body: {content: Buffer.from(txt).toString('base64'), encoding: 'base64'}});
-  const tree = await gh('/git/trees', {method: 'POST', body: {tree: [{path: OUT_FILE, mode: '100644', type: 'blob', sha: blob.sha}]}});
+  const tr = []; for (const [p, x] of Object.entries(files)) { const blob = await gh('/git/blobs', {method: 'POST', body: {content: Buffer.from(JSON.stringify(x)).toString('base64'), encoding: 'base64'}}); tr.push({path: p, mode: '100644', type: 'blob', sha: blob.sha}); }
+  const tree = await gh('/git/trees', {method: 'POST', body: {tree: tr}});
   const c = await gh('/git/commits', {method: 'POST', body: {message: `SMC backtest ${DAYS}d · ${o.sum.variants.base.n} trades`, tree: tree.sha, parents: []}});
   if (cur) await gh('/git/refs/heads/' + OUT_BR, {method: 'PATCH', body: {sha: c.sha, force: true}});
   else await gh('/git/refs', {method: 'POST', body: {ref: 'refs/heads/' + OUT_BR, sha: c.sha}});
@@ -91,7 +92,9 @@ export function trkHour(X, ctx, H1, h, trk) {
   const [g5, l5] = X(`S.tk.clear(); for (const [s, t] of Object.entries(__TK)) S.tk.set(s, t); recomputeUniverse(); [trkTop('G'), trkTop('L')]`).map(a => [...a]);
   for (const [list, side] of [[g5, 'G'], [l5, 'L']]) list.forEach((s, i) => { let e = trk[s]; if (!e || e.side !== side) e = trk[s] = {side, t0: h, px0: tk[s].last, pct0: tk[s].pct}; e.lastTop = h; e.rank = i + 1; });
   for (const s in trk) { if (!g5.includes(s) && !l5.includes(s)) trk[s].rank = null; if (h - trk[s].lastTop > 24 * H) delete trk[s]; }
-  return {tk, trk: structuredClone(trk)};
+  // big caps: the desk's own smBigList (top 10 by volume, no stocks, not tracked) on this hour's tickers
+  ctx.__TRK = trk; const big = X('S.trk = __TRK; smBigList()').slice();
+  return {tk, trk: structuredClone(trk), big};
 }
 const agg = (B, t) => [t, B[0][1], Math.max(...B.map(b => b[2])), Math.min(...B.map(b => b[3])), B[B.length - 1][4], B.reduce((a, b) => a + b[5], 0), B.reduce((a, b) => a + b[6], 0)];
 // what the desk would hold for a coin at T: closed bars + a forming bar built from the 5m bars closed by T. Right at a 15m / 1h
@@ -104,7 +107,8 @@ export function viewAt(C, T) {
 }
 
 /* ---------- one variant over the whole window ---------- */
-async function simulate(name, st, exInfo, D, U, steps, setup, probe = new Map()) {
+async function simulate(name, st, exInfo, D, U, steps, setup, probe = new Map(), big = false) {
+  const A = big ? 'SB' : 'SM', W = c => big ? `smWith(SB, () => (${c}))` : c;   // big: run as the SMC Big account (smWith swaps SM and S.smC)
   const {ctx, X} = await mkCore(st.cfg, exInfo);
   ctx.__ST = {cfg: (st.sm && st.sm.cfg) || {}, adj: (st.rv && st.rv.smAdj) || {}};
   X(`SM.cfg = Object.assign({}, SM_DEF.cfg, __ST.cfg); RV.smAdj = JSON.parse(JSON.stringify(__ST.adj)); delete RV.smAdj.zone; SM.cfg.zoneLearn = 0;
@@ -116,29 +120,30 @@ async function simulate(name, st, exInfo, D, U, steps, setup, probe = new Map())
          const pts = lv.filter(z => (z - prev) * (z - v) <= 0 && z !== prev).sort((a, b) => Math.abs(a - prev) - Math.abs(b - prev));
          for (const z of [...pts, v]) { if (!SM.pos[s]) break; PX_OVR = {[s]: z}; smManage(CLOCK_OVR, s); } prev = v; }
        PX_OVR = null; CLOCK_OVR = 0; };`);
+  if (big) X(`SB = JSON.parse(JSON.stringify(SB_DEF)); SB.created = 0;`);   // fresh $1,000, on; smWith gives it SM.cfg + SB_OV
   if (setup) X(setup);
   const trades = [], obBlocked = new Set(), seen = {};
   for (const T of steps) {
     // 1. open positions through the 5m candle that just closed
-    for (const s of X('Object.keys(SM.pos)')) { const C = D[s], i = C ? nClosed(C.m5, M5, T) - 1 : -1; if (i >= 0 && C.m5[i][0] === T - M5) { const b = C.m5[i]; ctx.__B = [s, b[1], b[2], b[3], b[4], T - 1]; X('__walk(...__B)'); } }
+    for (const s of X(`Object.keys(${A}.pos)`)) { const C = D[s], i = C ? nClosed(C.m5, M5, T) - 1 : -1; if (i >= 0 && C.m5[i][0] === T - M5) { const b = C.m5[i]; ctx.__B = [s, b[1], b[2], b[3], b[4], T - 1]; X(W('__walk(...__B)')); } }
     // 2. what the desk sees at T: the tracker from the last full hour, bars closed by T
     const u = U.get(Math.floor(T / H) * H); if (!u) continue;
     const F = {};
-    for (const s of new Set([...Object.keys(u.trk), ...X('Object.keys(SM.pos)')])) {
+    for (const s of new Set([...(big ? u.big : Object.keys(u.trk)), ...X(`Object.keys(${A}.pos)`)])) {
       const v = D[s] && viewAt(D[s], T); if (!v) continue; const t24 = u.tk[s];
       F[s] = {k: v.k, h: v.h, tk: {last: v.last, pct: t24 ? (v.last / (t24.last / (1 + t24.pct / 100)) - 1) * 100 : 0, qv: t24 ? t24.qv : 0}};
     }
     ctx.__T = T; ctx.__F = F; ctx.__TRK = u.trk; ctx.__PR = probe.get(T);
-    const r = X(`(() => { CLOCK_OVR = __T; S.trk = __TRK; S.kl.clear(); S.h1.clear(); S.tk.clear(); S.M.clear(); S.smC.clear(); S.alerts.length = 0;
+    const r = X(W(`(() => { CLOCK_OVR = __T; S.trk = __TRK; S.kl.clear(); S.h1.clear(); S.tk.clear(); S.M.clear(); S.smC.clear(); S.smCB.clear(); S.alerts.length = 0;
       for (const [s, f] of Object.entries(__F)) { S.kl.set(s, {t: __T, bars: f.k}); S.h1.set(s, {t: __T, bars: f.h}); S.tk.set(s, f.tk); }
       smTick();
       const ob = ((SM.lastScan && SM.lastScan.t === __T && SM.lastScan.cands) || []).filter(c => /^order block entry: quality/.test(c.skip || '')).map(c => { const s = Object.keys(S.trk).find(k => base(k) === c.b), z = (S.smC.get(s) || {}).zone || {}; return s + '|' + c.tf + '|' + z.lo + '|' + z.hi; });
       const pr = (__PR || []).map(s => { const r = S.smC.get(s), c = ((SM.lastScan && SM.lastScan.t === __T && SM.lastScan.cands) || []).find(c => c.b === base(s));
         return [s, !S.trk[s] ? 'not tracked' : !r ? 'no candles' : r.stage + (c ? ': ' + (c.took ? 'took it' : c.skip) : '')]; });   // why it did or didn't trade where live did
-      CLOCK_OVR = 0; return {L: SM.log.splice(0), ob, pr}; })()`);
+      CLOCK_OVR = 0; return {L: SM.log.splice(0), ob, pr}; })()`));
     trades.push(...r.L); r.ob.forEach(k => obBlocked.add(k)); for (const [s, w] of r.pr) seen[s + '|' + T] = w;
   }
-  const open = X('Object.keys(SM.pos).length');
+  const open = X(`Object.keys(${A}.pos).length`);
   return {name, trades: trades.sort((a, b) => a.t0 - b.t0), open, seen, obBlocked: obBlocked.size, obMinQ: X('smRules().obMinQ') || X('Math.min(90, Math.max(SM.cfg.minQ, RV.smAdj.minQ || 0) + 10)')};
 }
 
@@ -166,10 +171,10 @@ async function main() {
   log(`${syms.length} markets, 1h bars loaded (${((Date.now() - T0) / 1e3).toFixed(0)} s)`);
   const U = new Map(), trk = {};
   for (let h = h0 - 24 * H; h <= END; h += H) { const u = trkHour(uc.X, uc.ctx, H1, h, trk); if (h >= h0) U.set(h, u); }
-  const coins = [...new Set([...U.values()].flatMap(u => Object.keys(u.trk)))];
+  const coins = [...new Set([...U.values()].flatMap(u => Object.keys(u.trk)))], bigCoins = [...new Set([...U.values()].flatMap(u => u.big))], all = [...new Set([...coins, ...bigCoins])];
   const D = {};
-  await pool(coins, 4, async s => { D[s] = {h1: H1[s], m15: await klines(s, '15m', M15, h0 - 100 * M15, END), m5: await klines(s, '5m', M5, h0 - H, END)}; });
-  log(`${coins.length} coins tracked at some point; candles loaded (${((Date.now() - T0) / 1e3).toFixed(0)} s)`);
+  await pool(all, 4, async s => { D[s] = {h1: H1[s], m15: await klines(s, '15m', M15, h0 - 100 * M15, END), m5: await klines(s, '5m', M5, h0 - H, END)}; });
+  log(`${coins.length} coins tracked + ${bigCoins.length} big caps at some point; candles loaded (${((Date.now() - T0) / 1e3).toFixed(0)} s)`);
   const steps = []; for (let T = W0 + M5; T <= END; T += M5) steps.push(T);
   const adj = (st.rv && st.rv.smAdj) || {};
   const live = ((st.sm && st.sm.log) || []).filter(x => x.s && x.t0 && x.side && fin(x.R) && !/closed by you/.test(x.exitWhy || ''));
@@ -207,7 +212,17 @@ async function main() {
     'not matched, backtest state at the live entry: ' + Object.entries(svl.why).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${n}× ${k}`).join(' | ')];
   sum.lines = lines;
   const rows = [...B.map(x => row(x, 'base')), ...(V.zone ? V.zone.trades.map(x => row(x, 'zone')) : []), ...V.noObQ.trades.map(x => row(x, 'noObQ'))];
-  const sha = await writeOut({v: 1, sum, trades: rows});
+  const files = {[OUT_FILE]: {v: 1, sum, trades: rows}};
+  // SMC Big: the same rules and candles on the top-10 volume perps, own account. Same schema; no splits (nothing to compare with live yet). A failure here must not lose the base report.
+  let bl = '';
+  try {
+    const t1 = Date.now(), vb = await simulate('big', st, exInfo, D, U, steps, '', new Map(), true), sb = Object.assign(st3(vb.trades), {open: vb.open});
+    bl = `SMC Big backtest ${DAYS}d · ${bigCoins.length} big caps · ${Math.round((Date.now() - t1) / 1e3)} s: ${f(sb)} (open at end ${vb.open}, not counted)`;
+    files[BIG_FILE] = {v: 1, sum: {t: Date.now(), from: W0, to: END, days: DAYS, coins: bigCoins.length, runS: Math.round((Date.now() - t1) / 1e3), variants: {base: sb}, zoneW: null, obMinQ: vb.obMinQ, decisions: [], simVsLive: {live: 0, matched: 0, meanAbsDR: null, why: {}},
+      note: 'SMC Big backtest — proposal only, never applied. Top-10 volume perps (not tracked), SMC rules + SB overrides; same 5m steps and candles as the small-cap run.', lines: [bl]}, trades: vb.trades.map(x => row(x, 'base'))};
+  } catch (e) { log('big backtest FAILED, writing the base report only:', e.stack || e.message); }
+  const sha = await writeOut(files);
+  if (bl) console.log(bl);
   console.log(lines.join('\n'));
   log(`saved ${sha === 'local' ? LOCAL_OUT : `${OUT_BR} ${sha.slice(0, 7)}`} (${rows.length} rows)`);
 }

@@ -34,3 +34,8 @@ if (closedK.some(b => b[0] + 900e3 > T) || closedH.some(b => b[0] + H > T)) fail
 if (v.k.at(-1)[0] !== Math.floor(T / 900e3) * 900e3 || v.h.at(-1)[0] !== Math.floor(T / H) * H) fail('forming bars must start at the current 15m / 1h period');
 if (v.h.at(-1)[5] !== m5.filter(b => b[0] >= Math.floor(T / H) * H && b[0] + M5 <= T).length * 10) fail('forming 1h bar must sum only the 5m bars closed by T');
 console.log('PASS: tracker picks top 5 per side from closed 1h bars only; the view at T holds no future bar');
+// big-cap list at h: top volume perps outside the tracker, no stocks, at most 10
+if (!Array.isArray(u.big) || u.big.length > 10) fail('trkHour must return big: string[] (<= 10)');
+if (u.big.some(s => s in u.trk)) fail('big list must be disjoint from the tracker: ' + u.big.join());
+if (u.big[0] !== 'BTCUSDT') fail('BTC (highest volume, not tracked) should lead the big list, got ' + u.big.join());
+console.log('PASS: big list', u.big.join(','));

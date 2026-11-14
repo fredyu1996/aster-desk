@@ -5548,13 +5548,21 @@ function notesTick() {
 }
 /* ---- SMC nightly backtest (branch "backtest", file smc-backtest.json, written by .github/workflows/smc-backtest.yml) ----
    Read-only here: a proposal for Fred, never applied to the live rules (Fred, Nov 13: "report only"). */
-const BTS = {t: 0, r: null, err: ''};
+const BTS = {t: 0, r: null, big: null, err: ''};
 function btPull() {
   if (!SY.repo || !SY.token || now() - BTS.t < 10 * 60e3) return; BTS.t = now();
-  gh('/git/ref/heads/backtest', {ok404: true}).then(r => r ? gh('/contents/smc-backtest.json?ref=' + r.object.sha, {raw: true}) : null)
-    .then(txt => { BTS.r = txt ? JSON.parse(txt) : null; BTS.err = txt ? '' : 'no backtest has run yet.'; renderPanel(); }).catch(e => { BTS.err = e.message || String(e); });
+  gh('/git/ref/heads/backtest', {ok404: true}).then(r => r ? Promise.all([gh('/contents/smc-backtest.json?ref=' + r.object.sha, {raw: true}), gh('/contents/smc-backtest-big.json?ref=' + r.object.sha, {raw: true, ok404: true})]) : [null, null])
+    .then(([txt, big]) => { BTS.r = txt ? JSON.parse(txt) : null; BTS.big = big ? JSON.parse(big) : null; BTS.err = txt ? '' : 'no backtest has run yet.'; renderPanel(); }).catch(e => { BTS.err = e.message || String(e); });
 }
-function btHTML() {
+// SMC Big (top-10 volume perps) backtest: one result line, same report-only rules
+function btBigHTML() {
+  const b = BTS.big && BTS.big.sum, s = b && b.variants && b.variants.base; if (!s) return '';
+  return `<div class="card2" style="margin-top:12px;border-left:4px solid #9ad0ff"><h3 style="color:#9ad0ff">BIG CAPS · BACKTEST (PROPOSAL ONLY)</h3>
+    <div style="font-size:13px">Run ${esc(new Date(b.t).toLocaleString())} · last ${b.days} days · ${b.coins} big caps · SMC Big rules: ${s.n ? `n ${s.n}, avg ${fmtR(s.avgR)}, ${s.win}% win` : 'n 0'}${s.open ? ` (${s.open} still open, not counted)` : ''}</div>
+    <div class="dim" style="font-size:12px;margin-top:6px">${esc(b.note || '')}</div></div>`;
+}
+function btHTML() { return btBaseHTML() + btBigHTML(); }
+function btBaseHTML() {
   try {
     btPull(); const b = BTS.r && BTS.r.sum, H3 = '<h3 style="color:#9ad0ff">BACKTEST (PROPOSAL ONLY, NOT APPLIED)</h3>';
     if (!b) return SY.repo && SY.token && BTS.err ? `<div class="dim" style="font-size:12px;margin-top:12px">Backtest (proposal only, not applied): ${esc(BTS.err)}</div>` : '';
