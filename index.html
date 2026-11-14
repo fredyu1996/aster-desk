@@ -1131,13 +1131,14 @@ let SM = (() => {
   return smMigrate(p);
 })();
 function smSave() { LS.set(SM === SB ? 'awx_sb' : 'awx_sm', SM); }
-function smReset() { const cfg = SM.cfg; SM = JSON.parse(JSON.stringify(SM_DEF)); SM.cfg = cfg; SM.created = now(); smSave(); }
+function smReset() { const cfg = SM.cfg, big = SM === SB; SM = JSON.parse(JSON.stringify(SM_DEF)); SM.cfg = cfg; SM.created = now(); if (big) SB = SM; smSave(); }   // big: reset inside smWith(SB) must save to awx_sb
 S.smC = new Map();
 // SMC Big (Nov 13, Fred): the same strategy and Reviewer rules on the top-10 volume perps, its own $1,000 account. Only the percent numbers tuned for small caps change.
 const SB_OV = {minStopPct: 0.5, slipPct: 0.02, stopBufMul: 0.25, tightPct: 0.4, useScreens: 0};   // useScreens 0: screenGate writes Reviewer counters, and the Reviewer never learns from SB
 const SB_DEF = Object.assign(JSON.parse(JSON.stringify(SM_DEF)), {on: true, cfg: {}});
 let SB = Object.assign(JSON.parse(JSON.stringify(SB_DEF)), LS.get('awx_sb', null) || {});
 if (!SB.created) SB.created = now();
+SB.cfg = Object.assign({}, SM.cfg, SB_OV);   // usable outside smWith from load on (smWith rebuilds it each swap)
 S.smCB = new Map();   // SB's per-coin reads, kept apart from the small-cap S.smC (a held SB coin can also be in S.trk)
 // run fn as SB: SM and S.smC point at the big-cap account (cfg = live copy of SM.cfg + SB_OV) and are swapped back even on a throw
 function smWith(acct, fn) {

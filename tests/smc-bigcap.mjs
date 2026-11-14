@@ -96,6 +96,18 @@ const snapSM = X => X(`JSON.stringify(Object.assign({}, SM, {eqs: null, lastScan
   X('smWith(SB, smTick);');
   check(X(`!!SB.pos.TIGHTUSDT && SB.pos.TIGHTUSDT.dist < 1.5`), 'tight stop: SB opens it', X('JSON.stringify(SB.lastScan)'));
 }
+// ---- reset: smWith(SB, smReset) resets SB only; SB.cfg is filled from load on
+{
+  const {X, store} = desk();
+  check(X('SB.cfg.tp1R === SM.cfg.tp1R && SB.cfg.minStopPct === 0.5 && SB.cfg.useScreens === 0'), 'load: SB.cfg = SM.cfg + SB_OV before any swap', X('JSON.stringify(SB.cfg)'));
+  X(FIX); X('smTick(); smWith(SB, smTick);');
+  const sm0 = store.awx_sm;
+  check(X('Object.keys(SB.pos).length') > 0, 'reset: SB holds a trade before the reset');
+  X('smWith(SB, smReset);');
+  check(store.awx_sm === sm0, 'reset: awx_sm unchanged');
+  check(X('Object.keys(SB.pos).length === 0 && SB.cash === 1000 && Object.keys(SM.pos).length === 1'), 'reset: SB reset, SM kept', X('JSON.stringify([Object.keys(SB.pos), SB.cash])'));
+  check(JSON.parse(store.awx_sb).cash === 1000 && !Object.keys(JSON.parse(store.awx_sb).pos).length, 'reset: awx_sb saved reset');
+}
 // ---- cache: an SB read of a coin also in S.trk doesn't replace the small-cap read
 {
   const POS = `SB.pos[SYM] = {side: 'S', b: 'SWEEP', qty: 1, qty0: 1, entry: 1.003, stop: 1.5, stop0: 1.5, target: 0.5, t: T, risk: 0.5, realized: 0, fees: 0, exits: [], tf: '15m', holdH: 12, be: false, tp1: false, maxR: 0};`;
