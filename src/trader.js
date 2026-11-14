@@ -245,7 +245,7 @@ function ptTick() {
   if (!last || t - last[0] >= 5 * 60e3) { PT.eqs.push([t, +ptEquity().toFixed(2)]); if (PT.eqs.length > 3000) PT.eqs.shift(); }
   ptSave();
   if (typeof rvTick === 'function') rvTick();
-  if (typeof smTick === 'function') smTick(); // the second paper trader (SMC), same data, its own account
+  if (typeof smTick === 'function') { smTick(); smWith(SB, smTick); } // the SMC paper traders: small caps (SM), then big caps (SB), same data, own accounts
 }
 function ptStats() {
   const L = PT.log, wins = L.filter(x => x.pnl > 0), eq = ptEquity();
