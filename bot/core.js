@@ -1636,7 +1636,9 @@ const fmtR = r => fin(r) ? (r >= 0 ? '+' : '') + r.toFixed(2) + 'R' : '—';
 // Fred's own reviews of closed trades: {key: {g, ag, alt[], x[], note, excl, t, by}}. Kept on branch "notes" of the data
 // repo (file manual-reviews.json) so any computer, viewer or not, can add one; the cloud reads it each run.
 let RVM = LS.get('awx_mine', {}) || {};
-const mineKey = x => (x.strat === 'smc' ? 'sm' : 'pt') + '|' + x.s + '|' + x.t1;
+// 'sb' = SMC Big trades: reviewable by Fred, but NEVER fed to learning (every learner reads mineOf() of SM/PT trades only, and RVM counts use rvmLearn)
+const mineKey = x => (x.strat === 'smc' ? (typeof SB !== 'undefined' && SB.log.includes(x) ? 'sb' : 'sm') : 'pt') + '|' + x.s + '|' + x.t1;
+const rvmLearn = () => Object.entries(RVM).filter(([k]) => !k.startsWith('sb|')).map(e => e[1]);
 const mineOf = x => RVM[mineKey(x)] || null;
 // trades closed by hand, or that Fred marked "leave out", are not used for grading statistics, rules or criteria
 const rvManual = x => /closed by you/.test(x.exitWhy || '') || !!(RVM[mineKey(x)] && RVM[mineKey(x)].excl);
@@ -2566,7 +2568,7 @@ const scrRec = c => c.scr ? {fit: c.scr.fit.hit.length + '/' + c.scr.fit.of, tes
 function profTick() {
   const nT = critTrades('rev').length + critTrades('mom').length + critTrades('smc').length;
   if (!RV.prof || RV.prof.nT !== nT) { const prev = RV.prof; rvProfile(); RV.prof.nT = nT; if (prev) screenTalk(prev.F || [], RV.prof.F); rvSave(); }
-  const nY = Object.keys(RVM).length + ':' + Object.values(RVM).reduce((a, m) => Math.max(a, m.t || 0, (m.rd && m.rd.t) || 0), 0) + ':'   // rd.t: a new Claude reading re-learns too + SM.log.length + ':' + SM.log.filter(x => x.q).length + ':' + SM.log.filter(x => x.fu).length + ':' + SM.log.filter(x => x.zc && x.zc.done).length;
+  const nY = rvmLearn().length + ':' + rvmLearn().reduce((a, m) => Math.max(a, m.t || 0, (m.rd && m.rd.t) || 0), 0) + ':'   // rd.t: a new Claude reading re-learns too + SM.log.length + ':' + SM.log.filter(x => x.q).length + ':' + SM.log.filter(x => x.fu).length + ':' + SM.log.filter(x => x.zc && x.zc.done).length;
   if (RV.smKey !== nY) { RV.smKey = nY; smLearn(); rvSave(); }
   if (!RV.prof.F.length) return;
   for (const s of [...S.gainers, ...S.losers]) for (const st of ['rev', 'mom', 'smc']) {

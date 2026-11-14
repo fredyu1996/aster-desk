@@ -83,6 +83,32 @@ if (!bigRes.bodyHasBig) errs.push('PAGEERR big-mode panel does not say SMC Big')
 if (!bigRes.toggleOk) errs.push('PAGEERR big-mode toggle must flip awx_sb.on and leave awx_sm untouched');
 if (!bigRes.wording) errs.push('PAGEERR big-mode wording still small-cap');
 if (bigRes.hits < 30) errs.push('PAGEERR race wall has no SMC Big line/legend (' + bigRes.hits + ' px)');
+// SMC Big review path: an SB trade in the Big caps log -> Review chip -> chart + form -> save writes an sb| review; the review wall lists it; no learning change
+const sbRev = await page.evaluate(async () => {
+  const out = {errs: []}, smBefore = localStorage.getItem('awx_sm'), adjBefore = JSON.stringify([RV.smAdj, RV.smWhy, smRules()]);
+  try {
+    const s = [...S.meta.keys()][0], t1 = now() - 3600e3;
+    SB.log = [{s, b: base(s), side: 'S', t0: t1 - 1800e3, t1, entry: 1, exit: 0.98, qty: 100, notional: 100, pnl: 2, R: 1, fees: 0, funding: 0, why: 'test', exitWhy: 'target', stop0: 1.02, maxR: 1.2, strat: 'smc', tf: '15m', htfBias: 'bear', rr: 2, target: 0.95}];
+    openPanel('smc'); PS.tab.smc = 'log'; setTabs(); renderPanel(); document.querySelector('[data-smv="sb"]').click();
+    const chip = document.querySelector('[data-sbrev]'); out.chip = !!chip; chip.click();
+    await new Promise(r => setTimeout(r, 600));
+    out.tab = PS.tab.rev; out.key = RVS.key; out.form = !!document.getElementById('mineForm'); out.canvas = !!document.querySelector('canvas[data-rvchart^="sb|"]');
+    out.label = /SMC Big/.test(document.querySelector('#pbody').textContent);
+    document.getElementById('mineNote').value = 'should have been a long. poor OB'; document.getElementById('mineNote').dispatchEvent(new Event('input', {bubbles: true}));
+    document.querySelector('[data-mine="save"]').click(); await new Promise(r => setTimeout(r, 800));
+    const k = Object.keys(RVM).find(k => k.startsWith('sb|')); out.saved = !!k; out.acct = k ? RVM[k].acct : null; out.onlySb = Object.keys(RVM).every(k => k.startsWith('sb|'));
+    RWS.hold = false; RWS.i = 0; drawReviewWall(); out.wall = !!RWS.cur && RWS.cur[0] === 'sb';
+    out.learnSame = adjBefore === JSON.stringify([RV.smAdj, RV.smWhy, smRules()]) && localStorage.getItem('awx_sm') === smBefore;
+  } catch (e) { out.errs.push(e.message); }
+  SB.log = []; document.querySelector('[data-smv="sm"]') && document.querySelector('[data-smv="sm"]').click();
+  return out;
+});
+console.log('sb review path:', JSON.stringify(sbRev));
+if (sbRev.errs.length) errs.push('PAGEERR sb review: ' + sbRev.errs.join('; '));
+if (!(sbRev.chip && sbRev.tab === 'chart' && /^sb|/.test(sbRev.key || '') && sbRev.form && sbRev.canvas && sbRev.label)) errs.push('PAGEERR Big caps log -> review chart/form not reachable');
+if (!(sbRev.saved && sbRev.acct === 'sb' && sbRev.onlySb)) errs.push('PAGEERR SB review not saved with sb key/acct');
+if (!sbRev.wall) errs.push('PAGEERR review wall does not show the SB trade');
+if (!sbRev.learnSame) errs.push('PAGEERR SB review changed SMC learning or awx_sm');
 await page.evaluate(() => closePanel());
 await page.evaluate(() => { openPanel('rev'); PS.tab.rev = 'smcr'; setTabs(); renderPanel(); }); await page.waitForTimeout(1500); await page.evaluate(() => renderPanel());
 const bt = await page.evaluate(() => (document.body.innerText.match(/BACKTEST \(PROPOSAL ONLY, NOT APPLIED\)\s*\n[^\n]*/) || [''])[0]);
