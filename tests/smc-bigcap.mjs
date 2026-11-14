@@ -38,6 +38,8 @@ S.trk[SYM] = {side: 'G', t0: T - 3600e3, px0: 1, rank: 2};
 warm = true; S.started = T - 3600e3;
 SM.on = true; SM.cfg.minQ = 0;
 `;
+// BIGUSDT is a 'top' coin that the OI/Flow universe skips (smallCapOnly)
+const TOP = `CFG.smallCapOnly = true; S.meta.get('BIGUSDT').top = true;`;
 const snapSM = X => X(`JSON.stringify(Object.assign({}, SM, {eqs: null, lastScan: SM.lastScan && Object.assign({}, SM.lastScan, {t: null})}))`);
 
 // ---- bigList: top n by quote volume, no stocks, no tracker coins
@@ -117,15 +119,32 @@ const snapSM = X => X(`JSON.stringify(Object.assign({}, SM, {eqs: null, lastScan
   check(a === b, 'cache: small-cap S.smC read unchanged');
   check(B.X('JSON.stringify(S.smCB.get(SYM))') !== b, 'cache: the SB read differs (so the test bites)');
 }
-// ---- universe: big caps join S.universe as symbols; S.prio is not touched by SB
+// ---- universe: S.universe (OI/Flow boards) is unchanged by SB; only pickJob's kl/oi loop also covers SB coins
+{
+  const {X} = desk(); X(FIX); X(TOP);
+  X('recomputeUniverse();');
+  const withSB = X('JSON.stringify(S.universe)'), prio = X('JSON.stringify([...S.prio].sort())');
+  const big = JSON.parse(X('JSON.stringify(smBigCoins())'));
+  check(!X('S.universe.includes("BIGUSDT")'), 'universe: a big cap (top, smallCapOnly) is not on the OI/Flow universe');
+  X('smBigCoins = () => []; recomputeUniverse();');
+  check(withSB === X('JSON.stringify(S.universe)'), 'universe: S.universe identical with and without SB');
+  check(prio === X('JSON.stringify([...S.prio].sort())'), 'universe: S.prio identical with and without SB');
+  check(big.length > 0 && big.every(s => typeof s === 'string'), 'universe: smBigCoins() is a list of symbols', big);
+  // pickJob schedules kl jobs for SB coins that are not in S.universe
+  const d = desk(); d.X(FIX); d.X(TOP); d.X('recomputeUniverse(); G.exinfo = G.tickers = G.funding = Infinity;');
+  const only = JSON.parse(d.X('JSON.stringify(smBigCoins().filter(s => !S.universe.includes(s)))'));
+  const seen = new Set();
+  for (let i = 0; i < 100; i++) { const j = d.X('pickJob()'); if (!j) break; if (j.k === 'kl') seen.add(j.s); d.X(`nextRun.set(${JSON.stringify(j.key)}, Infinity)`); }
+  check(only.length > 0 && only.every(s => seen.has(s)), 'pickJob: kl jobs scheduled for SB-only coins', [only, [...seen]]);
+}
+// ---- containment: an SB-only fault must not stop PT/SM (ptTick completes, SM ticks, SM restored)
 {
   const {X} = desk(); X(FIX);
-  X('recomputeUniverse();');
-  check(X('S.universe.every(s => typeof s === "string")'), 'universe: every entry is a string', X('JSON.stringify(S.universe.filter(s => typeof s !== "string"))'));
-  check(X('smBigCoins().length > 0 && smBigCoins().every(s => S.universe.includes(s))'), 'universe: every smBigCoins() symbol is in S.universe', X('JSON.stringify([smBigCoins(), S.universe])'));
-  const withSB = X('JSON.stringify([...S.prio].sort())');
-  X('smBigCoins = () => []; recomputeUniverse();');
-  check(withSB === X('JSON.stringify([...S.prio].sort())'), 'universe: S.prio identical with and without SB');
+  X('SM.lastScan = null; smBigList = () => { throw new Error("SB boom"); };');
+  let err = null; try { X('ptTick()'); } catch (e) { err = e; }
+  check(!err, 'contain: ptTick completes when the SB path throws', err && err.message);
+  check(X('SM.lastScan && SM.lastScan.t > 0'), 'contain: SM still ticked', X('JSON.stringify(SM.lastScan)'));
+  check(X('SM !== SB && S.smC !== S.smCB'), 'contain: SM and S.smC restored');
 }
 if (fails) { console.error(fails + ' FAIL'); process.exit(1); }
 console.log('PASS: smc-bigcap');

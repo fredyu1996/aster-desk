@@ -100,6 +100,7 @@ async function main() {
                       {pos: 'SM.pos', mng: 'smManage', tp1: "q.tp1 ? null : q.entry + dir * SM.cfg.tp1R * d", tgt: "q.target"},
                       {pos: 'SB.pos', mng: '((t, o) => smWith(SB, () => smManage(t, o)))', tp1: "q.tp1 ? null : q.entry + dir * SB.cfg.tp1R * d", tgt: "q.target"}]) {
     for (const s of X(`Object.keys(${acct.pos})`)) {
+      try { // an SMC Big fault must not stop the Trader / SMC cycle
       const p = X(`${acct.pos}[${JSON.stringify(s)}]`), from = Math.max(p.t, since);
       if (Date.now() - from < 90e3) continue;
       const iv = Date.now() - from > 990 * 60e3 ? '5m' : '1m', len = iv === '5m' ? 300e3 : 60e3;
@@ -125,6 +126,7 @@ async function main() {
         }
         PX_OVR = null; CLOCK_OVR = 0; return n;
       })()`);
+      } catch (e) { if (acct.pos !== 'SB.pos') throw e; X('PX_OVR = null; CLOCK_OVR = 0'); log(`SMC Big replay ${s} failed: ${e.message}`); }
     }
   }
 
@@ -142,12 +144,14 @@ async function main() {
   const fresh = X('S.alerts').filter(a => keep.has(a.agent)).map(a => ({t: a.t, agent: a.agent, s: a.s, text: a.text, dir: a.dir}));
   const oiOut = {}; for (const [s, a] of X('[...S.oi.entries()]')) { const k = a.filter(x => Date.now() - x[0] < 3 * 3600e3); if (k.length) oiOut[s] = k.length > 60 ? k.filter((_, i) => i % Math.ceil(k.length / 60) === 0 || i === k.length - 1) : k; }
   const cfg = Object.assign({}, X('CFG'));
+  const sbSafe = c => { try { return X(c); } catch (e) { log('SMC Big: ' + e.message); return null; } };
   const out = {v: 1, t: Date.now(), lock: {dev: 'cloud', name: 'Cloud', t: Date.now()},
     pt: X('PT'), rv: X('RV'), sm: X('SM'), sb: X('SB'), trk: X('S.trk'), cfg, oi: oiOut,
-    cloud: {t: Date.now(), runs: (prevCloud.runs || 0) + 1, dur: (Date.now() - T0) / 1000, eq: X('ptEquity()'), smEq: X('smEquity()'), smOpen: X('Object.keys(SM.pos).length'), sbEq: X('smWith(SB, smEquity)'), sbOpen: X('Object.keys(SB.pos).length'), replayed, open: X('Object.keys(PT.pos).length'),
+    cloud: {t: Date.now(), runs: (prevCloud.runs || 0) + 1, dur: (Date.now() - T0) / 1000, eq: X('ptEquity()'), smEq: X('smEquity()'), smOpen: X('Object.keys(SM.pos).length'), sbEq: sbSafe('smWith(SB, smEquity)'), sbOpen: sbSafe('Object.keys(SB.pos).length'), replayed, open: X('Object.keys(PT.pos).length'),
       alerts: [...fresh, ...(prevCloud.alerts || [])].slice(0, 60), err: ''}};
-  const sha = await writeState(out, head, `cloud · Trader ${X('fmtMoney(ptEquity())')} · SMC ${X('fmtMoney(smEquity())')}`);
-  log(sha ? `saved: Trader ${X('fmtMoney(ptEquity())')} (${out.cloud.open} open), SMC ${X('fmtMoney(smEquity())')} (${out.cloud.smOpen} open), ${fresh.length} new events, ${replayed} candles replayed, ${out.cloud.dur.toFixed(1)} s`
+  const fm = v => v == null ? 'n/a' : X('fmtMoney')(v);
+  const sha = await writeState(out, head, `cloud · Trader ${X('fmtMoney(ptEquity())')} · SMC ${X('fmtMoney(smEquity())')} · SMC Big ${fm(out.cloud.sbEq)}`);
+  log(sha ? `saved: Trader ${X('fmtMoney(ptEquity())')} (${out.cloud.open} open), SMC ${X('fmtMoney(smEquity())')} (${out.cloud.smOpen} open), SMC Big ${fm(out.cloud.sbEq)} (${out.cloud.sbOpen ?? 'n/a'} open), ${fresh.length} new events, ${replayed} candles replayed, ${out.cloud.dur.toFixed(1)} s`
           : 'a browser took over trading during this run; nothing saved');
 }
 
