@@ -371,7 +371,7 @@ function recomputeUniverse() {
   const prio = new Set([...S.gainers.slice(0, 12), ...S.losers.slice(0, 12), ...Object.keys(S.trk || {}).filter(x => S.meta.has(x)), ...CFG.watch.filter(x => S.meta.has(x))]);
   if (S.focus) prio.add(S.focus);
   S.prio = prio;
-  const uni = new Set(prio);
+  const uni = new Set([...prio, (typeof smBigCoins === 'function' ? smBigCoins() : [])]);
   for (const s of [...el].sort((a, b) => S.tk.get(b).qv - S.tk.get(a).qv)) { if (uni.size >= MAX_UNI) break; uni.add(s); }
   S.universe = [...uni];
   if (!S.focus && S.gainers.length) S.focus = CFG.watch.find(x => S.meta.has(x) && S.gainers.includes(x)) || S.gainers[0];
@@ -395,7 +395,7 @@ function pickJob() {
     if (S.prio.has(s)) late += 6e5; if (s === S.focus) late += 6e6;
     if (late > bl) { bl = late; best = {k, s, key}; }
   }
-  for (const s of h1set()) {
+  for (const s of new Set([...h1set(), ...(typeof smBigCoins === 'function' ? smBigCoins() : [])])) {
     const key = 'h1:' + s; let late = t - (nextRun.get(key) || 0); if (late < 0) continue; late += S.h1.has(s) ? 3e5 : 7e5;
     if (late > bl) { bl = late; best = {k: 'h1', s, key}; }
   }
@@ -5329,13 +5329,14 @@ async function syHead() { const r = await gh('/git/ref/heads/' + SY_BRANCH, {ok4
 async function syRead(head) { const txt = await gh('/contents/' + encodeURIComponent(SY.path) + '?ref=' + head, {raw: true}); return JSON.parse(txt); }
 function syBundle() {
   const cfg = Object.assign({}, CFG); delete cfg.sound; delete cfg.notify; // per-computer
-  return Object.assign({}, SYS.extra, {v: 1, t: now(), lock: SYS.handBack ? {dev: 'cloud', name: 'Cloud', t: now()} : {dev: SY.dev, name: SY.name, t: now()}, pt: PT, rv: RV, sm: SM, trk: S.trk, cfg});
+  return Object.assign({}, SYS.extra, {v: 1, t: now(), lock: SYS.handBack ? {dev: 'cloud', name: 'Cloud', t: now()} : {dev: SY.dev, name: SY.name, t: now()}, pt: PT, rv: RV, sm: SM, sb: SB, trk: S.trk, cfg});
 }
 function syApply(b) {
   if (!b) return;
   if (b.pt) { PT = Object.assign(JSON.parse(JSON.stringify(PT_DEF)), b.pt); PT.cfg = Object.assign({}, PT_DEF.cfg, b.pt.cfg || {}); if (!Array.isArray(PT.cands)) PT.cands = []; if (typeof ptMigrate === 'function') ptMigrate(PT); ptSave(); }
   if (b.rv) { RV = Object.assign(JSON.parse(JSON.stringify(RV_DEF)), b.rv); rvSave(); }
   if (b.sm) { SM = Object.assign(JSON.parse(JSON.stringify(SM_DEF)), b.sm); SM.cfg = Object.assign({}, SM_DEF.cfg, b.sm.cfg || {}); if (typeof smMigrate === 'function') smMigrate(SM); smSave(); }
+  if (b.sb) { SB = Object.assign(JSON.parse(JSON.stringify(SB_DEF)), b.sb); smWith(SB, smSave); }
   if (b.trk) { S.trk = b.trk; trkSave(); }
   if (b.cfg) { const keep = {sound: CFG.sound, notify: CFG.notify}; Object.assign(CFG, b.cfg, keep); saveCfg(); }
   SYS.remoteT = b.t || 0; SYS.lock = b.lock || null;

@@ -184,7 +184,7 @@ function recomputeUniverse() {
   const prio = new Set([...S.gainers.slice(0, 12), ...S.losers.slice(0, 12), ...Object.keys(S.trk || {}).filter(x => S.meta.has(x)), ...CFG.watch.filter(x => S.meta.has(x))]);
   if (S.focus) prio.add(S.focus);
   S.prio = prio;
-  const uni = new Set(prio);
+  const uni = new Set([...prio, (typeof smBigCoins === 'function' ? smBigCoins() : [])]);
   for (const s of [...el].sort((a, b) => S.tk.get(b).qv - S.tk.get(a).qv)) { if (uni.size >= MAX_UNI) break; uni.add(s); }
   S.universe = [...uni];
   if (!S.focus && S.gainers.length) S.focus = CFG.watch.find(x => S.meta.has(x) && S.gainers.includes(x)) || S.gainers[0];
@@ -208,7 +208,7 @@ function pickJob() {
     if (S.prio.has(s)) late += 6e5; if (s === S.focus) late += 6e6;
     if (late > bl) { bl = late; best = {k, s, key}; }
   }
-  for (const s of h1set()) {
+  for (const s of new Set([...h1set(), ...(typeof smBigCoins === 'function' ? smBigCoins() : [])])) {
     const key = 'h1:' + s; let late = t - (nextRun.get(key) || 0); if (late < 0) continue; late += S.h1.has(s) ? 3e5 : 7e5;
     if (late > bl) { bl = late; best = {k: 'h1', s, key}; }
   }

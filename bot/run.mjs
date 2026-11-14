@@ -58,7 +58,7 @@ async function writeState(b, head, msg) {
 /* ---------- load the desk's own trading code into a sandbox ---------- */
 function loadCore(b) {
   const store = new Map();
-  for (const [k, v] of [['awx_pt', b && b.pt], ['awx_rv', b && b.rv], ['awx_sm', b && b.sm], ['awx_trk', b && b.trk], ['awx_cfg', b && b.cfg], ['awx_mine', MINE]]) if (v) store.set(k, JSON.stringify(v));
+  for (const [k, v] of [['awx_pt', b && b.pt], ['awx_rv', b && b.rv], ['awx_sm', b && b.sm], ['awx_sb', b && b.sb], ['awx_trk', b && b.trk], ['awx_cfg', b && b.cfg], ['awx_mine', MINE]]) if (v) store.set(k, JSON.stringify(v));
   const el = {addEventListener() {}, style: {setProperty() {}}, classList: {add() {}, remove() {}}, textContent: '', innerHTML: ''};
   const ctx = vm.createContext({console, fetch, URL, TextEncoder, TextDecoder, Date, Math, JSON, Promise, setTimeout, clearTimeout,
     setInterval: () => 0, navigator: {userAgent: 'node'},
@@ -88,7 +88,7 @@ async function main() {
   X('for (const [s, a] of Object.entries(__OI)) S.oi.set(s, a);');
 
   await X('(async () => { await loadExInfo(); await loadTickers(); await loadFunding(); })()');
-  const coins = X('[...new Set([...h1set(), ...Object.keys(PT.pos), ...CFG.watch.filter(x => S.meta.has(x))])]');
+  const coins = X('[...new Set([...h1set(), ...smBigCoins(), ...Object.keys(PT.pos), ...CFG.watch.filter(x => S.meta.has(x))])]');
   log(`markets ${X('S.meta.size')}, eligible ${X('S.eligible.length')}, loading ${coins.length} coins`);
   ctx.__one = async s => { await X('loadOI')(s); await X('loadKl')(s); await X('loadH1')(s); };
   await pool(coins, 4, s => ctx.__one(s));
@@ -97,7 +97,8 @@ async function main() {
   let replayed = 0;
   const since = b && b.t ? b.t - 60e3 : Date.now() - 15 * 60e3;
   for (const acct of [{pos: 'PT.pos', mng: 'ptManage', tp1: "q.tp1 ? null : q.entry + dir * (q.tp1R || 1.5) * d", tgt: "q.entry + dir * (q.tpR || 3) * d"},
-                      {pos: 'SM.pos', mng: 'smManage', tp1: "q.tp1 ? null : q.entry + dir * SM.cfg.tp1R * d", tgt: "q.target"}]) {
+                      {pos: 'SM.pos', mng: 'smManage', tp1: "q.tp1 ? null : q.entry + dir * SM.cfg.tp1R * d", tgt: "q.target"},
+                      {pos: 'SB.pos', mng: '((t, o) => smWith(SB, () => smManage(t, o)))', tp1: "q.tp1 ? null : q.entry + dir * SB.cfg.tp1R * d", tgt: "q.target"}]) {
     for (const s of X(`Object.keys(${acct.pos})`)) {
       const p = X(`${acct.pos}[${JSON.stringify(s)}]`), from = Math.max(p.t, since);
       if (Date.now() - from < 90e3) continue;
@@ -142,8 +143,8 @@ async function main() {
   const oiOut = {}; for (const [s, a] of X('[...S.oi.entries()]')) { const k = a.filter(x => Date.now() - x[0] < 3 * 3600e3); if (k.length) oiOut[s] = k.length > 60 ? k.filter((_, i) => i % Math.ceil(k.length / 60) === 0 || i === k.length - 1) : k; }
   const cfg = Object.assign({}, X('CFG'));
   const out = {v: 1, t: Date.now(), lock: {dev: 'cloud', name: 'Cloud', t: Date.now()},
-    pt: X('PT'), rv: X('RV'), sm: X('SM'), trk: X('S.trk'), cfg, oi: oiOut,
-    cloud: {t: Date.now(), runs: (prevCloud.runs || 0) + 1, dur: (Date.now() - T0) / 1000, eq: X('ptEquity()'), smEq: X('smEquity()'), smOpen: X('Object.keys(SM.pos).length'), replayed, open: X('Object.keys(PT.pos).length'),
+    pt: X('PT'), rv: X('RV'), sm: X('SM'), sb: X('SB'), trk: X('S.trk'), cfg, oi: oiOut,
+    cloud: {t: Date.now(), runs: (prevCloud.runs || 0) + 1, dur: (Date.now() - T0) / 1000, eq: X('ptEquity()'), smEq: X('smEquity()'), smOpen: X('Object.keys(SM.pos).length'), sbEq: X('smWith(SB, smEquity)'), sbOpen: X('Object.keys(SB.pos).length'), replayed, open: X('Object.keys(PT.pos).length'),
       alerts: [...fresh, ...(prevCloud.alerts || [])].slice(0, 60), err: ''}};
   const sha = await writeState(out, head, `cloud · Trader ${X('fmtMoney(ptEquity())')} · SMC ${X('fmtMoney(smEquity())')}`);
   log(sha ? `saved: Trader ${X('fmtMoney(ptEquity())')} (${out.cloud.open} open), SMC ${X('fmtMoney(smEquity())')} (${out.cloud.smOpen} open), ${fresh.length} new events, ${replayed} candles replayed, ${out.cloud.dur.toFixed(1)} s`
