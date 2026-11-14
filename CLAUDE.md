@@ -105,8 +105,8 @@ git pull --rebase && git add -A && git commit -m "…" && git push   # Pages + t
      - draw on liquidity not scored on continuation setups.
 7. **SMC Big** ($1,000 paper, account `SB`, on from the first deploy):
    - Same strategy and same Reviewer rules (`smRules` / `RV.smAdj`) as the SMC Trader, on the **top 10 Aster perps by 24 h quote volume** (stock perps out unless `CFG.includeStocks`; coins in the small-cap tracker skipped). Recomputed every cycle; held coins keep being managed.
-   - `SB.cfg` = live copy of `SM.cfg` + `SB_OV` (min stop 0.5%, slippage 0.02%, stop buffer ×0.25, tight 0.4%, screens off). Sizing as above.
-   - The Reviewer never learns from SB. No review wall, review form or south wall for it.
+   - `SB.cfg` = live copy of `SM.cfg` + `SB_OV` (min stop 0.5%, slippage 0.02%, stop buffer ×0.25, tight 0.4%, screens off, `invExit` 0 = no exit when a candle closes through the entry gap). Sizing as above.
+   - The Reviewer never learns from SB. Fred can review SB trades (review wall, "On the chart" SMC Big filter, Review chip on the Big caps trade log); they are keyed `sb|SYM|t1` and every learner skips them (`rvmLearn`). No south wall for it.
    - Desk: SMC panel (key 6) has a Small caps / Big caps switch with its own on/off toggle; the return race wall has a third line and an SMC BIG stats column.
    - Nightly backtest also writes `smc-backtest-big.json` (report only).
    - A browser on the pre-deploy desk that takes the lock saves state without `sb`, and SB restarts fresh: hard refresh after a deploy.
@@ -184,6 +184,7 @@ git pull --rebase && git add -A && git commit -m "…" && git push   # Pages + t
   - 5m MSS/entry: not done.
   - Specs and plans: `docs/superpowers/`. Replays: `tools/smc-self-review.mjs`, `tools/smc-replay.mjs` (they need a state.json; never commit trade data).
 - **Nov 13 (reviews):** his "poor OB" comments raise the OB quality bar (`obQ`), not FVG-only. The FVG-only rule from his comments was released (commits 943f208, a424293).
+- **Nov 14 (SMC Big exits):** SMC Big only holds through a failed entry gap (`SB_OV.invExit = 0`). 7-day backtest: hold +0.75R n15 vs exit +0.48R n16, but only 5 trades differ (3 better, 2 worse, incl. the live XRP short). Small caps keep the exit: hold made 7 of 9 differing trades worse (net +0.87R from 2 big winners). Re-check after ~20 live SMC Big trades. Wider SMC Big min stop (1.0% / 1.5%) was tested and not adopted: fewer trades, less total R.
 - **Nov 13 (SMC Big):** Fred wants to see if the SMC strategy works better on big caps. Top 10 by volume, `SB_OV` for big-cap sizes, rules follow the small-cap SMC Trader, on at deploy. Leverage option C: 10× is the margin setting, not 10× notional per trade; sizing stays 1% risk with the 10× total cap.
 
 ## Open items

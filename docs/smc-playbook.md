@@ -68,4 +68,4 @@ All were written for forex; the concepts below are the ones that carry over to s
 - Session timing ideas from the course (NY session, Asian session models) aren't used: crypto trades 24/7 and the course's sessions are forex-specific.
 
 ## SMC Big (Nov 13)
-The SMC Big account `SB` runs the same strategy on the top 10 coins by volume, with `SB_OV` on top of the live SMC cfg: min stop 0.5%, slippage 0.02%, stop buffer x0.25, tight 0.4%, screens off. Big caps move about 1/5 as much as small caps, so the stop floor, buffer and costs shrink to match. The quality score is ATR-relative, so it needs no scaling.
+The SMC Big account `SB` runs the same strategy on the top 10 coins by volume, with `SB_OV` on top of the live SMC cfg: min stop 0.5%, slippage 0.02%, stop buffer x0.25, tight 0.4%, screens off, and no exit on a failed entry gap (`invExit` 0, Nov 14). Big caps move about 1/5 as much as small caps, so the stop floor, buffer and costs shrink to match. The quality score is ATR-relative, so it needs no scaling.

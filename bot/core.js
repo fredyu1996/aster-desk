@@ -947,7 +947,7 @@ function smSave() { LS.set(SM === SB ? 'awx_sb' : 'awx_sm', SM); }
 function smReset() { const cfg = SM.cfg, big = SM === SB; SM = JSON.parse(JSON.stringify(SM_DEF)); SM.cfg = cfg; SM.created = now(); if (big) SB = SM; smSave(); }   // big: reset inside smWith(SB) must save to awx_sb
 S.smC = new Map();
 // SMC Big (Nov 13, Fred): the same strategy and Reviewer rules on the top-10 volume perps, its own $1,000 account. Only the percent numbers tuned for small caps change.
-const SB_OV = {minStopPct: 0.5, slipPct: 0.02, stopBufMul: 0.25, tightPct: 0.4, useScreens: 0};   // useScreens 0: screenGate writes Reviewer counters, and the Reviewer never learns from SB
+const SB_OV = {minStopPct: 0.5, slipPct: 0.02, stopBufMul: 0.25, tightPct: 0.4, useScreens: 0, invExit: 0};   // invExit 0 (Fred, Nov 14): big caps hold through a failed entry gap; 7d backtest +0.75R n15 vs +0.48R n16 (5 trades differ, 3 better)   // useScreens 0: screenGate writes Reviewer counters, and the Reviewer never learns from SB
 const SB_DEF = Object.assign(JSON.parse(JSON.stringify(SM_DEF)), {on: true, cfg: {}});
 let SB = Object.assign(JSON.parse(JSON.stringify(SB_DEF)), LS.get('awx_sb', null) || {});
 if (!SB.created) SB.created = now();

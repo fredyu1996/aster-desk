@@ -101,7 +101,7 @@ const snapSM = X => X(`JSON.stringify(Object.assign({}, SM, {eqs: null, lastScan
 // ---- reset: smWith(SB, smReset) resets SB only; SB.cfg is filled from load on
 {
   const {X, store} = desk();
-  check(X('SB.cfg.tp1R === SM.cfg.tp1R && SB.cfg.minStopPct === 0.5 && SB.cfg.useScreens === 0'), 'load: SB.cfg = SM.cfg + SB_OV before any swap', X('JSON.stringify(SB.cfg)'));
+  check(X('SB.cfg.tp1R === SM.cfg.tp1R && SB.cfg.minStopPct === 0.5 && SB.cfg.useScreens === 0 && SB.cfg.invExit === 0 && SM.cfg.invExit === 1'), 'load: SB.cfg = SM.cfg + SB_OV before any swap', X('JSON.stringify(SB.cfg)'));
   X(FIX); X('smTick(); smWith(SB, smTick);');
   const sm0 = store.awx_sm;
   check(X('Object.keys(SB.pos).length') > 0, 'reset: SB holds a trade before the reset');

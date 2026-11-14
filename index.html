@@ -1134,7 +1134,7 @@ function smSave() { LS.set(SM === SB ? 'awx_sb' : 'awx_sm', SM); }
 function smReset() { const cfg = SM.cfg, big = SM === SB; SM = JSON.parse(JSON.stringify(SM_DEF)); SM.cfg = cfg; SM.created = now(); if (big) SB = SM; smSave(); }   // big: reset inside smWith(SB) must save to awx_sb
 S.smC = new Map();
 // SMC Big (Nov 13, Fred): the same strategy and Reviewer rules on the top-10 volume perps, its own $1,000 account. Only the percent numbers tuned for small caps change.
-const SB_OV = {minStopPct: 0.5, slipPct: 0.02, stopBufMul: 0.25, tightPct: 0.4, useScreens: 0};   // useScreens 0: screenGate writes Reviewer counters, and the Reviewer never learns from SB
+const SB_OV = {minStopPct: 0.5, slipPct: 0.02, stopBufMul: 0.25, tightPct: 0.4, useScreens: 0, invExit: 0};   // invExit 0 (Fred, Nov 14): big caps hold through a failed entry gap; 7d backtest +0.75R n15 vs +0.48R n16 (5 trades differ, 3 better)   // useScreens 0: screenGate writes Reviewer counters, and the Reviewer never learns from SB
 const SB_DEF = Object.assign(JSON.parse(JSON.stringify(SM_DEF)), {on: true, cfg: {}});
 let SB = Object.assign(JSON.parse(JSON.stringify(SB_DEF)), LS.get('awx_sb', null) || {});
 if (!SB.created) SB.created = now();
@@ -4241,7 +4241,7 @@ function smcStatus() {
   return `<div class="card2" style="margin-bottom:12px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;border-left:4px solid ${SM.on ? (SM.paused ? WARN : UP) : DIM}">
     <span class="tag" style="color:var(--warn);border-color:var(--warn)">PAPER ACCOUNT · simulated fills, no real orders</span>${big ? '<span class="tag" style="color:' + SBCOL + '">SMC Big · top-10 volume perps · no Reviewer</span>' : ''}
     <b style="color:${SM.on ? (SM.paused ? WARN : UP) : DIM}">${SM.on ? (SM.paused ? 'Paused today: ' + SM.paused : 'Trading is ON') : 'Trading is OFF'}</b>
-    <span class="dim" style="font-size:12px">started ${new Date(SM.created).toLocaleDateString()} with $${SM.start.toLocaleString()} · ${big ? 'top-10 volume perps · slippage ' + SM.cfg.slipPct + '% per side, stop never closer than ' + SM.cfg.minStopPct + '%, stop buffer ×0.25 · same 1% risk, fees, unlock guard and SMC rules as the small-cap SMC Trader' : 'same fees, slippage, 1% risk and unlock guard as the Trader'}</span>
+    <span class="dim" style="font-size:12px">started ${new Date(SM.created).toLocaleDateString()} with $${SM.start.toLocaleString()} · ${big ? 'top-10 volume perps · slippage ' + SM.cfg.slipPct + '% per side, stop never closer than ' + SM.cfg.minStopPct + '%, stop buffer ×0.25, holds through a failed entry gap · same 1% risk, fees, unlock guard and SMC rules as the small-cap SMC Trader' : 'same fees, slippage, 1% risk and unlock guard as the Trader'}</span>
     <button class="btn sm" style="margin-left:auto" ${big ? 'data-smb' : 'data-sm'}="toggle">${SM.on ? 'Turn trading off' : 'Turn trading on'}</button></div>`;
 }
 // big mode shows only the read-only tabs; the rest write (settings, close, toggle, reset) or are about the small-cap Reviewer
