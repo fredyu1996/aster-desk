@@ -309,6 +309,7 @@ function renderPanel() {
   if ((id === 'ivy' || id === 'flo' || (id === 'scout' && ['g', 'l', 'w'].includes(tab))) && typeof critAgentCard === 'function') { try { h = critAgentCard(id) + h; } catch (e) { console.warn('criteria card', e.message); } }
   if ((id === 'trader' || id === 'rev' || id === 'smc') && syViewer()) h = syBanner() + h;
   body.innerHTML = h; body.scrollTop = sc;
+  if (id === 'smc') { const sm = $('#pTtl small'); if (sm) sm.textContent = SMV === 'sb' ? 'Smart Money Paper Desk — the same SMC strategy on the top-10 volume perps; its own $1,000 paper account' : AG.smc.role + ' — ' + AG.smc.blurb; }
   if (id === 'scout' && tab === 'set') bindSettings();
   body.querySelectorAll('canvas[data-spark]').forEach(drawSpark);
   body.querySelectorAll('canvas[data-smc]').forEach(cv => smWith(id === 'smc' && SMV === 'sb' ? SB : SM, () => drawSmcChart(cv)));
