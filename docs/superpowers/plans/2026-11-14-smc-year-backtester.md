@@ -240,6 +240,12 @@ The implementer writes the fixtures: `D` holds 15m bars with a constant range of
 
 ### Task 4: Nightly wiring, runtime measurement, workflow timeout
 
+> **Change (Fred, Nov 14): the nightly 7-day report is paused.** The `smc-backtest.yml` workflow was disabled by hand on Nov 14 (`gh workflow disable`). The nightly job now runs the **year mode only**:
+> - New env `BT_WEEK` (default `1`). When `BT_WEEK=0`, `main()` skips the 7-day small-cap and SMC Big runs (and their kline loading) and writes only `smc-backtest-year.json`. With `BT_WEEK=1` behaviour is exactly as today plus the year file. The workflow sets `BT_WEEK: '0'`.
+> - `writeOut` must **keep files already on branch `backtest` that this run does not write** (read the current ref's tree and carry its other blobs into the new parentless commit), so the last 7-day reports stay readable on the desk.
+> - The deadline guard still applies, but the year run now has the whole job: size the timeout from the year run alone (Step 5), cap 120 min. Stop and report only if the 365-day run is over 90 min (this replaces the 30-min stop rule in Step 5).
+> - After the branch is merged and pushed, the main thread re-enables the workflow (`gh workflow enable smc-backtest.yml`) and dispatches one run. Implementers do not touch the workflow's enabled state.
+
 **Files:**
 - Modify: `bot/backtest.mjs`:
   - header env doc (lines 7–8)
