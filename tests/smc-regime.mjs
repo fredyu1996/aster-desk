@@ -73,6 +73,13 @@ X('S.smC.clear(); smTick();');
 const scan = JSON.parse(X('JSON.stringify(SM.lastScan)'));
 check(X('Object.keys(SM.pos).length') === 0, '1h drop-base-drop: no SMC long opened', X('JSON.stringify(SM.pos)'));
 check(scan.cands.some(c => c.side === 'L' && /regime/.test(c.skip)), 'skip reason mentions the regime', scan);
+check(X('SM_DEF.cfg.regimeGate') === 1, 'SM_DEF.cfg.regimeGate defaults to 1');
+X('SM.cfg.regimeGate = 0; S.smC.clear(); SM.cool = {}; smTick();');
+const scan0 = JSON.parse(X('JSON.stringify(SM.lastScan)'));
+check(!scan0.cands.some(c => /regime/.test(c.skip || '')), 'regimeGate 0: no skip mentions the regime', scan0);
+X('SM.cfg.regimeGate = 1; for (const s of Object.keys(SM.pos)) delete SM.pos[s]; SM.log = []; S.smC.clear(); SM.cool = {}; smTick();');
+check(JSON.parse(X('JSON.stringify(SM.lastScan)')).cands.some(c => c.side === 'L' && /regime/.test(c.skip)), 'regimeGate 1: regime skip back (default-preserving)');
+X('for (const s of Object.keys(SM.pos)) delete SM.pos[s]; SM.log = []; S.smC.clear(); SM.cool = {};');
 // a forming 1h bar (t + 1h > now) that would flip the regime is ignored
 X(`S.h1.set(SYM, {t: T, bars: hDown.concat([[T, hp, 2.5, hp, 2.4, 1e5, 5e4]])}); S.smC.clear();`);
 check(r15().reg === 'down', 'forming 1h bar excluded from the regime', r15());

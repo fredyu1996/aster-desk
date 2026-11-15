@@ -10,7 +10,7 @@
 // Every setup is also audited in SMC terms (sweep, liquidity, break, FVG / OB quality, premium/discount, higher timeframe,
 // entry depth) into a quality score; weak setups are skipped.
 const SM_DEF = {v: 1, start: 1000, cash: 1000, pos: {}, log: [], eqs: [], day: null, cool: {}, on: true, paused: null, created: 0, lastScan: null,
-  cfg: {riskPct: 1, maxPos: 3, maxLev: 10, minScore: 4, dailyLossPct: 3, feePct: 0.04, slipPct: 0.10, holdH: 12, minVol: 300000, maxStopPct: 15, minRR: 2, maxRR: 5, tp1R: 1.5, stopBuf: 0.3, unlGuard: 1, useScreens: 0, tf15: 1, tf1h: 1, holdH1h: 36, minQ: 55, learn: 1, poiRule: 1, ltfConfirm: 1, roomCheck: 1, cont: 1, pathCheck: 1, pdLiq: 1, invExit: 1, minStopPct: 1.5, minDepth: 15, zoneLearn: 0}};
+  cfg: {riskPct: 1, maxPos: 3, maxLev: 10, minScore: 4, dailyLossPct: 3, feePct: 0.04, slipPct: 0.10, holdH: 12, minVol: 300000, maxStopPct: 15, minRR: 2, maxRR: 5, tp1R: 1.5, stopBuf: 0.3, unlGuard: 1, useScreens: 0, tf15: 1, tf1h: 1, holdH1h: 36, minQ: 55, learn: 1, poiRule: 1, ltfConfirm: 1, roomCheck: 1, cont: 1, pathCheck: 1, pdLiq: 1, invExit: 1, minStopPct: 1.5, minDepth: 15, zoneLearn: 0, regimeGate: 1}};
 // Nov 8: the SMC Trader trades on its own SMC judgement, without the Reviewer's screens (one-time switch-off for saved accounts)
 function smMigrate(p) { if (p.cfg.ownJudge !== 1) { p.cfg.useScreens = 0; p.cfg.ownJudge = 1; } if (p.cfg.lev10 !== 1) { p.cfg.maxLev = 10; p.cfg.lev10 = 1; } // Nov 11 (Fred): 10× leverage cap
   if (p.cfg.resume1113 !== 1) { if (p.cfg.pause1113 === 1) p.on = true; p.cfg.resume1113 = 1; } // Nov 13 (Fred): self-review done, resume SMC trading (zone tuning stays locked)
@@ -401,7 +401,8 @@ function smConfirm15(s, r) {
 function smcRead(s) {
   const R = ['15m', '1h'].filter(tf => SM.cfg[tf === '15m' ? 'tf15' : 'tf1h']).map(tf => smcReadTf(s, tf));
   if (!R.length) return {stage: 'none', st: SMST.none, checks: [], score: 0};
-  const rank = r => (SMST[r.stage] || SMST.none).code * 1e3 + (r.against || (r.rok && !r.rok.ok) ? -500 : 0) + (r.q ? r.q.score : 0);
+  // regimeGate 0 only for the year backtest's ablation (Nov 14); live stays 1
+  const rank = r => (SMST[r.stage] || SMST.none).code * 1e3 + (r.against || (SM.cfg.regimeGate !== 0 && r.rok && !r.rok.ok) ? -500 : 0) + (r.q ? r.q.score : 0);
   const best = R.slice().sort((a, b) => rank(b) - rank(a))[0];
   best.other = R.find(r => r !== best) || null;
   return best;
@@ -630,7 +631,7 @@ function smTick() {
     const u = unlCtx(s), fk = !!(r.rok && r.rok.play === 'fakeout');   // a fakeout trades against the last break by definition: skip the bias checks
     if (SM.pos[s]) c.skip = 'already in a position';
     else if (SM.cool[s] && t - SM.cool[s] < 2 * 3600e3) c.skip = 'cooling down after a recent trade';
-    else if (!r.rok || !r.rok.ok) c.skip = `${r.htf} regime ${(r.regime && r.regime.reg) || 'unclear'}: ${r.rok ? r.rok.why : 'regime unclear'}`;
+    else if (SM.cfg.regimeGate !== 0 && (!r.rok || !r.rok.ok)) c.skip = `${r.htf} regime ${(r.regime && r.regime.reg) || 'unclear'}: ${r.rok ? r.rok.why : 'regime unclear'}`;
     else if (r.against && !fk) c.skip = `${r.htf} structure is ${r.bias === 'bear' ? 'falling' : 'rising'}: no ${r.dir === 'L' ? 'longs' : 'shorts'} on the ${r.tf} against it`;
     else if (smRules().needHTF && !fk && !(r.bias && (r.dir === 'L' ? r.bias === 'bull' : r.bias === 'bear'))) c.skip = `${r.htf} structure must agree (Reviewer's SMC rule); it's ${r.bias ? (r.bias === 'bull' ? 'rising' : 'falling') : 'unclear'}`;
     else if (smRules().needDraw && !(r.setup && r.setup.type === 'cont') && r.draw && r.draw.draw && r.draw.draw !== (r.dir === 'L' ? 'up' : 'down')) c.skip = `against the ${r.htf} draw on liquidity (${r.draw.ev}; Reviewer's SMC rule)`;
