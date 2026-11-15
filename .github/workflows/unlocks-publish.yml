@@ -1,0 +1,56 @@
+name: Publish unlock calendar
+# The daily claude.ai research task ("Aster unlock calendar research") can create new branches but its pushes to
+# main have not landed (Nov 12, 14, 15), and it cannot delete branches (HTTP 403). So it pushes unlocks.json to a
+# NEW branch unlock-calendar/<date>-<time>; this workflow checks the file, copies it to main (where Pages and the
+# cloud trader read it) and deletes the unlock-calendar/* branches.
+on:
+  push:
+    branches: ['unlock-calendar/**']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: unlocks-publish
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 1
+      - name: Check the newest calendar branch and copy it to main
+        run: |
+          BRS=$(git ls-remote --heads origin 'unlock-calendar/*' | awk '{print $2}' | sed 's#refs/heads/##' | sort)
+          if [ -z "$BRS" ]; then echo "no unlock-calendar/* branch"; exit 0; fi
+          NEW=$(echo "$BRS" | tail -1)
+          echo "newest: $NEW"
+          git fetch --depth 1 origin "refs/heads/$NEW"
+          git show FETCH_HEAD:unlocks.json > /tmp/new.json
+          python3 - <<'EOF'
+          import json, sys
+          new = json.load(open('/tmp/new.json'))
+          old = json.load(open('unlocks.json'))
+          ev = new.get('events')
+          if not isinstance(ev, list) or len(ev) < 5: sys.exit('refused: fewer than 5 events')
+          for e in ev:
+              if not e.get('b') or len(str(e.get('date', ''))) != 10: sys.exit('refused: bad event %r' % e)
+          if len(ev) < len(old.get('events', [])) / 2: sys.exit('refused: %d events vs %d on main (more than half gone)' % (len(ev), len(old['events'])))
+          if str(new.get('updated', '')) < str(old.get('updated', '')): sys.exit('refused: older than the calendar on main (%s < %s)' % (new.get('updated'), old.get('updated')))
+          print('ok:', len(ev), 'events, updated', new.get('updated'))
+          EOF
+          cp /tmp/new.json unlocks.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- unlocks.json; then
+            echo "main already has this calendar"
+          else
+            git add unlocks.json
+            git commit -m "unlock calendar $(date -u +%F) (from $NEW)"
+            ok=0
+            for i in 1 2 3; do git push origin HEAD:main && { ok=1; break; }; sleep 5; git pull --rebase origin main; done
+            [ $ok = 1 ] || exit 1
+          fi
+          for b in $BRS; do git push origin --delete "$b" || true; done

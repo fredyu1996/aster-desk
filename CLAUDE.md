@@ -40,11 +40,11 @@ This repo is **public**: free Pages and Actions need that. It holds no data or k
    - **"Aster cloud watchdog"**: hourly at :58. Reads the public Actions API; push notification on trouble.
    - **"Aster unlock calendar research"**: daily 4:32 AM America/Creston.
      - Web-searches unlocks and updates the project doc.
-     - **Clones this repo and pushes `unlocks.json`** ("unlock calendar <date>").
-     - If the git push fails it falls back to the GitHub MCP file tool.
-     - Its message ends with "Desk repo updated via git / via GitHub tool", "already up to date" or "DESK REPO NOT UPDATED: …".
+     - **Clones this repo and pushes `unlocks.json` to a new branch `unlock-calendar/<date>-<time>`** (since Nov 16). The workflow `unlocks-publish.yml` checks the file (≥5 events, dates valid, not older than main, not less than half the events), commits it to main as "unlock calendar <date> (from unlock-calendar/…)" by github-actions[bot], and deletes the `unlock-calendar/*` branches.
+     - Why a branch: a test on Nov 15 showed scheduled sessions **can create new branches but cannot delete them (HTTP 403)**, and their pushes to main did not land on Nov 12, 14 and 15.
+     - Its message ends with "Desk repo updated via branch", "already up to date" or "DESK REPO NOT UPDATED: …".
      - So **`git pull` before you commit**; that commit lands every morning.
-     - **History:** the Nov 12 run's git push silently didn't land. Claude published that calendar by hand and added the fallback; Nov 13 is the first run with it.
+     - **History:** Nov 12, 14, 15 pushes to main did not land; Claude published those calendars by hand. Nov 13 landed (GitHub tool fallback).
    - **"Aster reversal watch"** (hourly dashboard): **paused** on Fred's request to cut usage. Its script is in `tools/reversal-watch.py`.
 5. **The desk itself** shows "CLOUD QUIET · Xm" when the cloud has been silent for 20+ min. A connected browser takes over trading after 30 min of silence while it stays open.
 
@@ -210,7 +210,7 @@ git pull --rebase && git add -A && git commit -m "…" && git push   # Pages + t
   - feeding OI / flow into the SMC Trader;
   - flagging when the two traders hold opposite sides of a coin;
   - trimming the state file (~700 KB; the browser's localStorage write fails silently if it fills).
-- **Unlock publish:** after 4:32 AM Creston each day, check the repo has a fresh "unlock calendar" commit (`git log -3 -- unlocks.json`). If not, the calendar on the desk is stale: copy the claude.ai project doc `claude/unlocks.json` here, run `python3 build.py` and push. Or ask Fred to run that research from Claude Code instead.
+- **Unlock publish:** after 4:32 AM Creston each day, check the repo has a fresh "unlock calendar" commit (`git log -3 -- unlocks.json`). If not, look at the `unlocks-publish.yml` run (a refusal says why) and for leftover `unlock-calendar/*` branches; otherwise the calendar on the desk is stale: copy the claude.ai project doc `claude/unlocks.json` here, run `python3 build.py` and push. Or ask Fred to run that research from Claude Code instead.
 
 ## Gotchas
 - `renderPanel()` skips re-rendering while an input is focused or a chart drag is in progress (`RVP.drag`).
