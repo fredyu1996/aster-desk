@@ -247,11 +247,11 @@ function notesTick() {
 }
 /* ---- SMC nightly backtest (branch "backtest", file smc-backtest.json, written by .github/workflows/smc-backtest.yml) ----
    Read-only here: a proposal for Fred, never applied to the live rules (Fred, Nov 13: "report only"). */
-const BTS = {t: 0, r: null, big: null, err: ''};
+const BTS = {t: 0, r: null, big: null, year: null, err: ''};
 function btPull() {
   if (!SY.repo || !SY.token || now() - BTS.t < 10 * 60e3) return; BTS.t = now();
-  gh('/git/ref/heads/backtest', {ok404: true}).then(r => r ? Promise.all([gh('/contents/smc-backtest.json?ref=' + r.object.sha, {raw: true}), gh('/contents/smc-backtest-big.json?ref=' + r.object.sha, {raw: true, ok404: true})]) : [null, null])
-    .then(([txt, big]) => { BTS.r = txt ? JSON.parse(txt) : null; BTS.big = big ? JSON.parse(big) : null; BTS.err = txt ? '' : 'no backtest has run yet.'; renderPanel(); }).catch(e => { BTS.err = e.message || String(e); });
+  gh('/git/ref/heads/backtest', {ok404: true}).then(r => r ? Promise.all([gh('/contents/smc-backtest.json?ref=' + r.object.sha, {raw: true}), gh('/contents/smc-backtest-big.json?ref=' + r.object.sha, {raw: true, ok404: true}), gh('/contents/smc-backtest-year.json?ref=' + r.object.sha, {raw: true, ok404: true})]) : [null, null, null])
+    .then(([txt, big, yr]) => { BTS.year = yr ? JSON.parse(yr) : null; BTS.r = txt ? JSON.parse(txt) : null; BTS.big = big ? JSON.parse(big) : null; BTS.err = txt ? '' : 'no backtest has run yet.'; renderPanel(); }).catch(e => { BTS.err = e.message || String(e); });
 }
 // SMC Big (top-10 volume perps) backtest: one result line, same report-only rules
 function btBigHTML() {

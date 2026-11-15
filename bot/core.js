@@ -10,6 +10,7 @@ const AGENTS = [
   {id:'flo',   key:'3', name:'Flow',     role:'Money Flow & Positioning',    color:'#2ee59d', blurb:'Net taker flow, buy/sell pressure, funding crowding, whales, liquidations'},
   {id:'trader', key:'4', name:'Trader',  role:'Paper Trading Desk',          color:'#ffd166', blurb:'Trades reversal and momentum signals on a $1,000 paper account'},
   {id:'smc',   key:'6', name:'SMC Trader', role:'Smart Money Paper Desk',  color:'#ff8ad8', blurb:'Trades liquidity sweeps, structure shifts and FVG / order-block pullbacks on the top-5 movers; its own $1,000 paper account'},
+  {id:'bt',    key:'7', name:'Backtester', role:'SMC Year Backtest · BTC / ETH', color:'#9ad0ff', blurb:'Re-runs the SMC strategy over the past year on BTC and ETH every night: rule ablation and patterns. Report only, never changes live rules'},
   {id:'rev',   key:'5', name:'Reviewer', role:'Trade Review & Rules',        color:'#c5f05a', blurb:'Grades every trade and tunes the Trader\'s rules'},
 ];
 const AG = Object.fromEntries(AGENTS.map(a => [a.id, a]));

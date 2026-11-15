@@ -33,6 +33,7 @@ function drawScreens(d) {
   const a = d.a, [A, B, C] = d.mons;
   if (a.id === 'trader') return drawTraderScreens(d);
   if (a.id === 'rev') return drawReviewerScreens(d);
+  if (a.id === 'bt') { try { return drawBtScreens(d); } catch (_) { return; } }
   if (a.id === 'smc') { try { return drawSmcScreens(d); } catch (_) { return; } } // may be called before the SMC code has loaded
   if (a.id === 'scout') {
     drawUnlockScreen(B, a.color);
@@ -303,6 +304,8 @@ function renderPanel() {
     h += smcHTML(tab);
   } else if (id === 'rev') {
     h += reviewerHTML(tab);
+  } else if (id === 'bt') {
+    h += btYearHTML(tab);
   } else if (id === 'sync') {
     h += syncHTML();
   }

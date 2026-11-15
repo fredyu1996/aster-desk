@@ -27,10 +27,20 @@ const btFake={v:1,sum:{t:now,from:now-7*864e5,to:now,days:7,coins:40,runS:300,va
   {k:'obQ',lab:'OB quality bar',blocked:5,bt:{kept:{n:0,avgR:null,win:null},dropped:{n:3,avgR:0,win:33}},live:{kept:{n:2,avgR:-0.21,win:50},dropped:{n:8,avgR:-0.02,win:38}}}],
  simVsLive:{live:13,matched:2,meanAbsDR:0.6},note:'Backtest: proposal only.'},trades:[]};
 const btBig={v:1,sum:{t:now,from:now-7*864e5,to:now,days:7,coins:20,runS:90,variants:{base:{n:6,avgR:0.2,win:50,open:1}},decisions:[],simVsLive:{live:0,matched:0,meanAbsDR:null,why:{}},note:'SMC Big backtest: proposal only.'},trades:[]};
+const btYear={v:1,sum:{t:now,from:now-365*864e5,to:now,split:now-120*864e5,days:365,coins:['BTCUSDT','ETHUSDT'],runS:100,snap:{cfg:{minQ:55},adj:{minQ:70}},
+ base:{all:{n:20,avgR:0.2,win:60,totR:4,maxDD:2},a:{n:14,avgR:0.1,win:55,totR:1.4,maxDD:2},b:{n:6,avgR:0.43,win:70,totR:2.6,maxDD:1},coin:{BTCUSDT:{n:8,avgR:0.3,win:62,totR:2.4,maxDD:1},ETHUSDT:{n:12,avgR:0.13,win:58,totR:1.6,maxDD:2}},open:0},
+ raw:{all:{n:40,avgR:-0.1,win:40,totR:-4,maxDD:6},a:{n:28,avgR:-0.05,win:42,totR:-1.4,maxDD:5},b:{n:12,avgR:null,win:null,totR:0,maxDD:0},coin:{BTCUSDT:{n:20,avgR:-0.1,win:40,totR:-2,maxDD:3},ETHUSDT:{n:20,avgR:-0.1,win:40,totR:-2,maxDD:3}},open:0},
+ note:'Backtest — report only, never changes live rules.',fundingNote:'Funding not modelled.'},
+ abl:[{k:'cont',lab:'Continuation setups',base:{all:{n:20,avgR:0.2},a:{},b:{}},sw:{all:{n:9,avgR:0.1},a:{},b:{}},dAvg:-0.1,dA:-0.1,dB:0.2,dTot:-2,label:'helpful'},{k:'poi',lab:'POI rule',base:{all:{n:20,avgR:0.2},a:{},b:{}},sw:{all:{n:30,avgR:0.3},a:{},b:{}},dAvg:0.1,dA:0.1,dB:0.1,dTot:2,label:'harmful'}],
+ skipped:[{k:'flow',lab:'Taker flow filter',why:'needs data not in the history'}],
+ pat:{held:[{f:'wd',v:'Fri',dA:0.8,dB:0.3,inA:{n:22,avgR:0.6},inB:{n:11,avgR:0.1},outA:{n:109,avgR:-0.2},outB:{n:42,avgR:-0.19}}],notHeld:[{f:'hour',v:'late',dA:-0.4,dB:0.6,inA:{n:24,avgR:-0.39},inB:{n:6,avgR:0.46},outA:{n:107,avgR:0},outB:{n:47,avgR:-0.2}}]},
+ months:{base:[{m:'2026-01',n:3,avgR:0.5},{m:'2026-02',n:2,avgR:-0.2}],raw:[{m:'2026-01',n:5,avgR:null},{m:'2026-02',n:4,avgR:-0.1}]},exits:{base:[{why:'stop loss hit',n:5,avgR:-1}],raw:[{why:'stop loss hit',n:9,avgR:-1}]},
+ trades:[1,2,3].map(i=>({v:'base',s:'BTCUSDT',side:i%2?'S':'L',t0:now-i*864e5,t1:now,tf:'15m',type:'cont',zk:'FVG',q:80,g:'B',reg:'down',R:i-1.5,why:'target hit',f:{hour:'Asia'}}))};
 await page.route('https://api.github.com/**',r=>{const u=r.request().url();
  if(u.includes('/git/ref/heads/backtest'))return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({object:{sha:'bt1'}})});
  if(u.includes('/contents/smc-backtest.json'))return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify(btFake)});
  if(u.includes('/contents/smc-backtest-big.json'))return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify(btBig)});
+ if(u.includes('/contents/smc-backtest-year.json'))return r.fulfill({status:200,contentType:'application/json',body:JSON.stringify(btYear)});
  return r.fulfill({status:404,body:'{}'});});
 await page.route('https://fonts.googleapis.com/**',r=>r.abort());await page.route('https://fonts.gstatic.com/**',r=>r.abort());
 let calls=0;
@@ -115,6 +125,20 @@ const bt = await page.evaluate(() => (document.body.innerText.match(/BACKTEST \(
 console.log('backtest block:', bt.replace(/\s*\n/g, ' | ') || 'MISSING'); if (!bt) errs.push('PAGEERR backtest block missing in Reviewer → SMC review');
 const bb = await page.evaluate(() => (document.body.innerText.match(/BIG CAPS · BACKTEST \(PROPOSAL ONLY\)\s*\n[^\n]*/) || [''])[0]);
 console.log('big backtest block:', bb.replace(/\s*\n/g, ' | ') || 'MISSING'); if (!bb) errs.push('PAGEERR big-cap backtest block missing in Reviewer → SMC review');
+const by = await page.evaluate(async () => {
+  const before = [localStorage.getItem('awx_sm'), localStorage.getItem('awx_sb'), JSON.stringify(RV.smAdj)];
+  window.dispatchEvent(new KeyboardEvent('keydown', {key: '7'})); await new Promise(r => setTimeout(r, 1500)); renderPanel();
+  const out = {open: PS.open, txt: {}};
+  for (const t of ['sum', 'pat', 'tr']) { PS.tab.bt = t; setTabs(); renderPanel(); out.txt[t] = document.querySelector('#pbody').innerText; }
+  const keep = BTS.year; BTS.year = null; PS.tab.bt = 'sum'; renderPanel(); out.empty = document.querySelector('#pbody').innerText; drawAllScreens(); BTS.year = keep;
+  out.same = JSON.stringify(before) === JSON.stringify([localStorage.getItem('awx_sm'), localStorage.getItem('awx_sb'), JSON.stringify(RV.smAdj)]);
+  return out; });
+if (by.open !== 'bt') errs.push('PAGEERR key 7 does not open the Backtester');
+if (!/Backtest — report only, never changes live rules/.test(by.txt.sum) || !/helpful/i.test(by.txt.sum) || !/skipped/i.test(by.txt.sum)) errs.push('PAGEERR Backtester summary/ablation missing');
+if (!/raw run/i.test(by.txt.pat) || !/did not hold/i.test(by.txt.pat) || !/first 8 months/i.test(by.txt.pat)) errs.push('PAGEERR Backtester patterns missing run label or per-half numbers');
+if (by.txt.tr.split(String.fromCharCode(10)).length < 4) errs.push('PAGEERR Backtester trades table empty');
+if (!/no year backtest has run yet|Connect Sync/i.test(by.empty)) errs.push('PAGEERR Backtester has no empty-state message');
+if (!by.same) errs.push('PAGEERR Backtester changed live state');
 await page.evaluate(() => closePanel());
 await page.screenshot({path: fileURLToPath(new URL('../desk-smoke.png', import.meta.url))});
 const bad = errs.filter(e => /PAGEERR/.test(e));

@@ -9,7 +9,7 @@ three = open(P('node_modules', 'three', 'build', 'three.min.js')).read()
 unl = json.dumps(json.load(open(P('unlocks.json'))), separators=(',', ':'))   # snapshot embedded so the desk works as a local file
 unlock_js = open(P('src', 'unlock.js')).read().replace('/*UNLOCKS_JSON*/null', unl)
 src = lambda f: unlock_js if f == 'unlock.js' else open(P('src', f)).read()
-order = ['engine.js', 'track.js', 'unlock.js', 'trader.js', 'smc.js', 'scene.js', 'ui.js', 'check.js', 'trader_ui.js', 'review.js', 'smc_ui.js', 'lessons.js', 'sync.js']
+order = ['engine.js', 'track.js', 'unlock.js', 'trader.js', 'smc.js', 'scene.js', 'ui.js', 'check.js', 'trader_ui.js', 'review.js', 'smc_ui.js', 'lessons.js', 'sync.js', 'bt_ui.js']
 app = '\n'.join(src(f) for f in order)
 assert '</script' not in app.lower()
 h = h.replace('/*THREE_INLINE*/', three).replace('/*APP_JS*/', app)
