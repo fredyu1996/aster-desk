@@ -43,7 +43,7 @@ async function writeOut(files) {
 
 /* ---------- Aster REST, paced (≤ ~9 requests/s), retry on 429 / 5xx / network errors ---------- */
 let slot = 0;
-async function aster(p) {
+export async function aster(p) {
   for (let a = 0; ; a++) {
     const w = slot - Date.now(); slot = Math.max(Date.now(), slot) + 110; if (w > 0) await sleep(w);
     let r; try { r = await fetch(API + p); } catch (_) { r = {ok: false, status: 0}; }
@@ -53,7 +53,7 @@ async function aster(p) {
   }
 }
 // [openTime, open, high, low, close, quoteVol, takerBuyQuoteVol], open time in [from, to)
-async function klines(s, iv, ms, from, to) {
+export async function klines(s, iv, ms, from, to) {
   const out = [];
   for (let t = from; t < to;) {
     const a = await aster(`/fapi/v1/klines?symbol=${s}&interval=${iv}&startTime=${t}&limit=1500`);
@@ -62,7 +62,7 @@ async function klines(s, iv, ms, from, to) {
   }
   return out;
 }
-async function pool(items, n, fn) { const q = [...items]; await Promise.all(Array.from({length: n}, async () => { while (q.length) { const x = q.shift(); try { await fn(x); } catch (e) { log('  skip', x, e.message); } } })); }
+export async function pool(items, n, fn) { const q = [...items]; await Promise.all(Array.from({length: n}, async () => { while (q.length) { const x = q.shift(); try { await fn(x); } catch (e) { log('  skip', x, e.message); } } })); }
 
 /* ---------- the desk's own code in a sandbox (as bot/run.mjs; only the desk settings are loaded) ---------- */
 export async function mkCore(deskCfg, exInfo) {
@@ -82,7 +82,7 @@ export function nClosed(B, len, T) { let lo = 0, hi = B.length; while (lo < hi) 
 // the 24h ticker at hour mark h, from 1h bars closed by h only
 export function tkAt(B, h) {
   const n = nClosed(B, H, h); if (!n || B[n - 1][0] !== h - H) return null;
-  const W = B.slice(0, n).filter(b => b[0] >= h - 24 * H); if (W.length < 20) return null;
+  const W = B.slice(Math.max(0, n - 25), n).filter(b => b[0] >= h - 24 * H); if (W.length < 20) return null;
   return {last: W[W.length - 1][4], pct: (W[W.length - 1][4] / W[0][1] - 1) * 100, qv: W.reduce((a, b) => a + b[5], 0)};
 }
 // tracker at hour h: the desk's own trkTop picks (top 5 per side, volume ≥ trkMinVol, move ≥ trkMinMove), kept 24 h after a coin was last in the top 5
@@ -107,12 +107,14 @@ export function viewAt(C, T) {
 }
 
 /* ---------- one variant over the whole window ---------- */
-async function simulate(name, st, exInfo, D, U, steps, setup, probe = new Map(), big = false) {
+// fresh account: live cfg + Reviewer rules from __ST (shared with the year run's ablation plan)
+export const PREP = `SM.cfg = Object.assign({}, SM_DEF.cfg, __ST.cfg); RV.smAdj = JSON.parse(JSON.stringify(__ST.adj)); delete RV.smAdj.zone; SM.cfg.zoneLearn = 0;
+     Object.assign(SM, {on: true, pos: {}, log: [], cool: {}, cash: SM.start, day: null, paused: null, eqs: []}); warm = true; S.started = 0;`;
+export async function simulate(name, st, exInfo, D, U, steps, setup, probe = new Map(), big = false) {
   const A = big ? 'SB' : 'SM', W = c => big ? `smWith(SB, () => (${c}))` : c;   // big: run as the SMC Big account (smWith swaps SM and S.smC)
   const {ctx, X} = await mkCore(st.cfg, exInfo);
   ctx.__ST = {cfg: (st.sm && st.sm.cfg) || {}, adj: (st.rv && st.rv.smAdj) || {}};
-  X(`SM.cfg = Object.assign({}, SM_DEF.cfg, __ST.cfg); RV.smAdj = JSON.parse(JSON.stringify(__ST.adj)); delete RV.smAdj.zone; SM.cfg.zoneLearn = 0;
-     Object.assign(SM, {on: true, pos: {}, log: [], cool: {}, cash: SM.start, day: null, paused: null, eqs: []}); warm = true; S.started = 0;
+  X(`${PREP}
      // manage one coin through one closed candle: open, adverse extreme, favourable extreme, close; fill at the exact level crossed (as bot/run.mjs)
      var __walk = (s, o, h, l, c, tEnd) => { const p = SM.pos[s]; if (!p) return; CLOCK_OVR = tEnd; const L = p.side === 'L'; let prev = o;
        for (const v of L ? [o, l, h, c] : [o, h, l, c]) { const q = SM.pos[s]; if (!q) break; const d = Math.abs(q.entry - q.stop0), dir = L ? 1 : -1;
@@ -155,7 +157,7 @@ const st3 = A => { const R = A.map(x => x.R); return {n: R.length, avgR: R.lengt
 export const flowAg = x => !x.cx || !fin(x.cx.flow) ? null : x.cx.flow * (x.cx.side === 'L' ? -1 : 1) * (x.side === 'L' ? 1 : -1) < 0;
 const mvBand = x => x.cx && fin(x.cx.mv) && x.cx.mv >= 15 && x.cx.mv <= 40;
 const split = (A, drop) => ({kept: st3(A.filter(x => !drop(x))), dropped: st3(A.filter(drop))});
-const row = (x, v) => ({v, s: x.s, side: x.side, t0: x.t0, t1: x.t1, tf: x.tf, type: x.type, zk: x.zoneKind, q: x.q ? x.q.score : null, g: x.grd ? x.grd.g : null, reg: x.regime,
+export const row = (x, v) => ({v, s: x.s, side: x.side, t0: x.t0, t1: x.t1, tf: x.tf, type: x.type, zk: x.zoneKind, q: x.q ? x.q.score : null, g: x.grd ? x.grd.g : null, reg: x.regime,
   R: +x.R.toFixed(3), maxR: +(x.maxR || 0).toFixed(2), stopPct: +(Math.abs(x.entry - x.stop0) / x.entry * 100).toFixed(2), why: String(x.exitWhy || '').slice(0, 40),
   mv: x.cx && fin(x.cx.mv) ? +x.cx.mv.toFixed(1) : null, flow: x.cx && fin(x.cx.flow) ? +x.cx.flow.toFixed(1) : null, fAg: flowAg(x)});
 
