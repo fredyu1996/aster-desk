@@ -4,14 +4,17 @@
 // then, stepping at each 5m close. At step T the tracker and the strategy only see bars closed by T (plus the forming 15m / 1h
 // bar built from closed 5m bars); a position is managed on the 5m candles after its entry, adverse extreme first.
 // Variants: base · zone (the proposed smZoneTune weights unlocked) · noObQ (order blocks without the obQ bar).
-// Env: DATA_REPO, DATA_TOKEN (reads branch "state", writes branch "backtest" as one parentless commit), BT_DAYS (default 7).
+// Env: DATA_REPO, DATA_TOKEN (reads branch "state", writes branch "backtest" as one parentless commit that keeps the other files already there),
+// BT_DAYS (default 7), BT_WEEK (default 1; 0 = skip the 7-day small-cap + SMC Big runs, write only the year file), BT_YEAR=0 (skip the BTC/ETH year mode),
+// BT_YEAR_DAYS (default 365), BT_DEADLINE_MIN (default 35: minutes after start, after which no new year ablation run starts).
 // Local, no GitHub at all: STATE_IN=<state.json> BT_OUT=<out.json> [BT_DAYS=2] node bot/backtest.mjs   (after build.py)
+// Local files: <BT_OUT>, <BT_OUT>-big.json, <BT_OUT>-year.json
 import fs from 'node:fs'; import vm from 'node:vm'; import path from 'node:path'; import {fileURLToPath} from 'node:url';
 
 process.env.TZ ||= 'America/Creston';   // the daily loss limit resets at Creston midnight, as in the cloud
 const DIR = fileURLToPath(new URL('.', import.meta.url));
 const REPO = process.env.DATA_REPO, TOKEN = process.env.DATA_TOKEN, LOCAL_IN = process.env.STATE_IN, LOCAL_OUT = process.env.BT_OUT;
-const DAYS = +process.env.BT_DAYS || 7, OUT_FILE = 'smc-backtest.json', BIG_FILE = 'smc-backtest-big.json', OUT_BR = 'backtest';
+const DAYS = +process.env.BT_DAYS || 7, WEEK = process.env.BT_WEEK !== '0', OUT_FILE = 'smc-backtest.json', BIG_FILE = 'smc-backtest-big.json', OUT_BR = 'backtest';
 const H = 3600e3, M5 = 300e3, M15 = 900e3, API = 'https://fapi.asterdex.com';
 const T0 = Date.now(), log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a), sleep = ms => new Promise(z => setTimeout(z, ms));
 
@@ -28,16 +31,18 @@ async function readState() {
   if (LOCAL_IN) return JSON.parse(fs.readFileSync(LOCAL_IN, 'utf8').replace(/^﻿/, ''));
   const r = await gh('/git/ref/heads/state'); return JSON.parse(await gh(`/contents/aster-desk-state.json?ref=${r.object.sha}`, {raw: true}));
 }
-// files: {path: object}; all go in one parentless commit. Local: the base file to BT_OUT, the big one next to it as <BT_OUT>-big.json
-async function writeOut(files) {
-  const o = files[OUT_FILE];
-  if (LOCAL_OUT) { for (const [p, x] of Object.entries(files)) fs.writeFileSync(p === OUT_FILE ? LOCAL_OUT : LOCAL_OUT.replace(/(.json)?$/, '-big.json'), JSON.stringify(x)); return 'local'; }
-  const cur = await gh('/git/ref/heads/' + OUT_BR, {ok404: true});
-  const tr = []; for (const [p, x] of Object.entries(files)) { const blob = await gh('/git/blobs', {method: 'POST', body: {content: Buffer.from(JSON.stringify(x)).toString('base64'), encoding: 'base64'}}); tr.push({path: p, mode: '100644', type: 'blob', sha: blob.sha}); }
-  const tree = await gh('/git/trees', {method: 'POST', body: {tree: tr}});
-  const c = await gh('/git/commits', {method: 'POST', body: {message: `SMC backtest ${DAYS}d · ${o.sum.variants.base.n} trades`, tree: tree.sha, parents: []}});
-  if (cur) await gh('/git/refs/heads/' + OUT_BR, {method: 'PATCH', body: {sha: c.sha, force: true}});
-  else await gh('/git/refs', {method: 'POST', body: {ref: 'refs/heads/' + OUT_BR, sha: c.sha}});
+// New commit tree = the files this run wrote + every other blob already in the old tree (the paused 7-day reports stay readable)
+export const mergeTree = (old, tr) => [...tr, ...old.filter(e => e.type === 'blob' && !tr.some(t => t.path === e.path)).map(e => ({path: e.path, mode: e.mode, type: 'blob', sha: e.sha}))];
+// files: {path: object}; all go in one parentless commit. Local: <BT_OUT> / -big.json / -year.json. g = the GitHub call (injectable for tests)
+export async function writeOut(files, g = gh) {
+  if (LOCAL_OUT) { for (const [p, x] of Object.entries(files)) fs.writeFileSync(LOCAL_OUT.replace(/(\.json)?$/, p.replace(/^smc-backtest|\.json$/g, '') + '.json'), JSON.stringify(x)); return 'local'; }
+  const cur = await g('/git/ref/heads/' + OUT_BR, {ok404: true});
+  const tr = []; for (const [p, x] of Object.entries(files)) { const blob = await g('/git/blobs', {method: 'POST', body: {content: Buffer.from(JSON.stringify(x)).toString('base64'), encoding: 'base64'}}); tr.push({path: p, mode: '100644', type: 'blob', sha: blob.sha}); }
+  const old = cur ? (await g(`/git/trees/${(await g('/git/commits/' + cur.object.sha)).tree.sha}`)).tree : [];
+  const tree = await g('/git/trees', {method: 'POST', body: {tree: mergeTree(old, tr)}});
+  const c = await g('/git/commits', {method: 'POST', body: {message: files[OUT_FILE] ? `SMC backtest ${DAYS}d · ${files[OUT_FILE].sum.variants.base.n} trades` : `SMC year backtest · ${Object.keys(files).join(', ')}`, tree: tree.sha, parents: []}});
+  if (cur) await g('/git/refs/heads/' + OUT_BR, {method: 'PATCH', body: {sha: c.sha, force: true}});
+  else await g('/git/refs', {method: 'POST', body: {ref: 'refs/heads/' + OUT_BR, sha: c.sha}});
   return c.sha;
 }
 
@@ -163,9 +168,20 @@ export const row = (x, v) => ({v, s: x.s, side: x.side, t0: x.t0, t1: x.t1, tf: 
 
 async function main() {
   if (!LOCAL_IN && (!REPO || !TOKEN)) throw new Error('DATA_REPO / DATA_TOKEN not set (or use STATE_IN + BT_OUT for a local run)');
-  const st = await readState();
+  const st = await readState(), exInfo = await aster('/fapi/v1/exchangeInfo'), files = {};
+  if (WEEK) await weekRun(st, exInfo, files);
+  // BTC/ETH year mode (spec: docs/superpowers/specs/2026-11-14-smc-year-backtester-design.md). A failure must not lose the 7-day reports.
+  if (process.env.BT_YEAR !== '0') try {
+    const {yearRun, YEAR_FILE} = await import('./backtest-year.mjs'), days = +process.env.BT_YEAR_DAYS || 365;
+    const y = files[YEAR_FILE] = await yearRun(st, exInfo, {days, deadline: T0 + (+(process.env.BT_DEADLINE_MIN ?? 35)) * 60e3}), s = y.sum, f = a => a.n ? `n ${a.n} avg ${a.avgR >= 0 ? '+' : ''}${a.avgR.toFixed(2)}R` : 'n 0';
+    console.log(`SMC year backtest ${days}d · BTC/ETH · ${s.runS} s: base ${f(s.base.all)} · raw ${f(s.raw.all)} · ${y.abl.length} ablations (${y.skipped.length} skipped)`);
+  } catch (e) { log('year backtest FAILED, writing the nightly reports only:', e.stack || e.message); }
+  if (!Object.keys(files).length) throw new Error('nothing to write (BT_WEEK=0 and the year mode failed or is off)');
+  const sha = await writeOut(files);
+  log(`saved ${sha === 'local' ? LOCAL_OUT : `${OUT_BR} ${sha.slice(0, 7)}`} (${Object.keys(files).join(', ')})`);
+}
+async function weekRun(st, exInfo, files) {
   const END = Math.floor(Date.now() / M5) * M5, W0 = END - DAYS * 24 * H, h0 = Math.floor(W0 / H) * H;
-  const exInfo = await aster('/fapi/v1/exchangeInfo');
   const uc = await mkCore(st.cfg, exInfo), syms = uc.X('[...S.meta.keys()]');
   // 1h bars for every USDT perp: 24h tickers for the tracker (from 24 h before the window) and the 1h / 4h view (72 bars back)
   const H1 = {};
@@ -214,7 +230,7 @@ async function main() {
     'not matched, backtest state at the live entry: ' + Object.entries(svl.why).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${n}× ${k}`).join(' | ')];
   sum.lines = lines;
   const rows = [...B.map(x => row(x, 'base')), ...(V.zone ? V.zone.trades.map(x => row(x, 'zone')) : []), ...V.noObQ.trades.map(x => row(x, 'noObQ'))];
-  const files = {[OUT_FILE]: {v: 1, sum, trades: rows}};
+  files[OUT_FILE] = {v: 1, sum, trades: rows};
   // SMC Big: the same rules and candles on the top-10 volume perps, own account. Same schema; no splits (nothing to compare with live yet). A failure here must not lose the base report.
   let bl = '';
   try {
@@ -223,10 +239,8 @@ async function main() {
     files[BIG_FILE] = {v: 1, sum: {t: Date.now(), from: W0, to: END, days: DAYS, coins: bigCoins.length, runS: Math.round((Date.now() - t1) / 1e3), variants: {base: sb}, zoneW: null, obMinQ: vb.obMinQ, decisions: [], simVsLive: {live: 0, matched: 0, meanAbsDR: null, why: {}},
       note: 'SMC Big backtest — proposal only, never applied. Top-10 volume perps (not tracked), SMC rules + SB overrides; same 5m steps and candles as the small-cap run.', lines: [bl]}, trades: vb.trades.map(x => row(x, 'base'))};
   } catch (e) { log('big backtest FAILED, writing the base report only:', e.stack || e.message); }
-  const sha = await writeOut(files);
   if (bl) console.log(bl);
   console.log(lines.join('\n'));
-  log(`saved ${sha === 'local' ? LOCAL_OUT : `${OUT_BR} ${sha.slice(0, 7)}`} (${rows.length} rows)`);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().catch(e => { console.error('BACKTEST FAILED:', e.stack || e.message); process.exit(1); });

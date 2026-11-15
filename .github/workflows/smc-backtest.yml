@@ -12,8 +12,9 @@ concurrency:
 jobs:
   backtest:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-    steps:
+    # Measured locally (Nov 14): year run 365 d = 1172 s (19.5 min wall; loading 32 s, base 84 s, raw 79 s, ablations 75-225 s each).
+    # timeout = ceil(1.5 x 19.5) = 30, minimum 45. BT_DEADLINE_MIN = 45 - 10 - 4 (the longest ablation, 3.75 min, can overrun the check).
+    timeout-minutes: 45    steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
@@ -24,3 +25,5 @@ jobs:
           DATA_REPO: ${{ vars.DATA_REPO || 'fredyu1996/aster-desk-data' }}
           DATA_TOKEN: ${{ secrets.DATA_TOKEN }}
           TZ: America/Creston
+          BT_WEEK: '0'   # the nightly 7-day runs are paused (Nov 14); only the year file is written, the old 7-day files stay on the branch
+          BT_DEADLINE_MIN: '31'
