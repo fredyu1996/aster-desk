@@ -35,7 +35,7 @@ This repo is **public**: free Pages and Actions need that. It holds no data or k
    - If runs stop, check that token first: cron-job.org's history shows 401/403.
    - Each run uses the `DATA_TOKEN` secret (`aster-desk-data` only, Contents read/write).
 2. **`keepalive.yml`** makes a monthly commit so GitHub doesn't pause schedules.
-3. **`smc-backtest.yml`** (daily 11:23 UTC + manual): `bot/backtest.mjs` backtests the SMC Trader over the last 7 days and writes branch `backtest` of the data repo. **Report only**: never changes live rules; shown in Reviewer → SMC review. See `docs/smc-backtest.md`.
+3. **`smc-backtest.yml`** (daily 11:23 UTC + manual): `bot/backtest.mjs` now runs the **year mode only** (`BT_WEEK '0'`): SMC Big on BTC / ETH over 365 days, written as `smc-backtest-year.json` to branch `backtest` of the data repo. The 7-day small-cap and SMC Big reports are **paused** (Fred, Nov 14); their last files stay readable on the branch. Turn them back on with `BT_WEEK '1'` in the workflow, then re-size the timeout for week + year. **Report only**: never changes live rules; the year report is shown in the Backtester panel (key 7), the 7-day ones in Reviewer → SMC review. See `docs/smc-backtest.md`.
 4. **Scheduled tasks on claude.ai** (Fred's account; not visible from Claude Code):
    - **"Aster cloud watchdog"**: hourly at :58. Reads the public Actions API; push notification on trouble.
    - **"Aster unlock calendar research"**: daily 4:32 AM America/Creston.
@@ -72,13 +72,14 @@ git pull --rebase && git add -A && git commit -m "…" && git push   # Pages + t
 | `track.js` | day tracker (top movers for 24 h), 8-sign reversal read, momentum read, pattern tags |
 | `unlock.js` | token-unlock calendar and guard (`unlocks.json` embedded at `/*UNLOCKS_JSON*/`) |
 | `trader.js` | **Trader** paper account `PT` (reversal + momentum strategies), `ptTick`, `ptManage` |
-| `smc.js` | **SMC Trader** paper account `SM` (and `SB`, SMC Big: `SB_OV` overrides, `smWith(SB, fn)` swaps the global `SM` around `fn`): `smcRead/smcReadTf/smSetup/smContSetup/smQuality/smTick/smManage`, HTF zones, POI, path, draw, PD high/low |
+| `smc.js` | **SMC Trader** paper account `SM` (and `SB`, SMC Big: `SB_OV` overrides, `smWith(SB, fn)` swaps the global `SM` around `fn`): `smcRead/smcReadTf/smSetup/smContSetup/smQuality/smTick/smManage`, HTF zones, POI, path, draw, PD high/low, `SM.cfg.regimeGate` (1 live; 0 only for the year backtest's ablation) |
 | `scene.js` | three.js room, desks, wall screens (`SWALL` south wall = SMC positions, `RACE` north wall = return race) |
-| `ui.js` | panels (`TABS`, `openPanel`, `renderPanel`), keys (1–6 agents, C coin check, V review wall, B SMC wall, T toggles ✓/✗ tags at the wall, E review it yourself) |
+| `ui.js` | panels (`TABS`, `openPanel`, `renderPanel`), keys (1–7 agents, C coin check, V review wall, B SMC wall, T toggles ✓/✗ tags at the wall, E review it yourself) |
 | `check.js` | coin check (key C) |
 | `trader_ui.js` | Trader panels, position wall |
 | `review.js` | **Reviewer** `RV`: grading, `rvRun/rvAnalyze/rvSticky`, Fred's reviews (`youRead/youReadM/youTally/planPoints`), SMC study/learning/coaching (`smStudy/smLearn/smCoach/smAudit`), 24 h follow-ups, screening criteria and memos. Everything above the marker `/* ================= REVIEWER: screens + panel` also goes into `bot/core.js` |
 | `smc_ui.js` | SMC panels, SMC wall, return race |
+| `bt_ui.js` | **Backtester** panel (key 7): read-only view of `smc-backtest-year.json` (base vs raw, ablation, patterns, months) |
 | `lessons.js` | trade charts (`drawTradeChart`), `rvExplain` ✓/✗ items, review wall, "Your review" form, chart pictures, **"Mark my own setup"** (`rvPlanSim`, `drawPlan`), `rulesNow` |
 | `sync.js` | GitHub sync (`state` and `notes` branches), roles/lock, chart-picture storage (IndexedDB + `img/` on notes) |
 
@@ -108,8 +109,12 @@ git pull --rebase && git add -A && git commit -m "…" && git push   # Pages + t
    - `SB.cfg` = live copy of `SM.cfg` + `SB_OV` (min stop 0.5%, slippage 0.02%, stop buffer ×0.25, tight 0.4%, screens off, `invExit` 0 = no exit when a candle closes through the entry gap). Sizing as above.
    - The Reviewer never learns from SB. Fred can review SB trades (review wall, "On the chart" SMC Big filter, Review chip on the Big caps trade log); they are keyed `sb|SYM|t1` and every learner skips them (`rvmLearn`). No south wall for it.
    - Desk: SMC panel (key 6) has a Small caps / Big caps switch with its own on/off toggle; the return race wall has a third line and an SMC BIG stats column.
-   - Nightly backtest also writes `smc-backtest-big.json` (report only).
+   - The 7-day backtest also writes `smc-backtest-big.json` (report only; paused since Nov 14, last file stays readable).
    - A browser on the pre-deploy desk that takes the lock saves state without `sb`, and SB restarts fresh: hard refresh after a deploy.
+8. **Backtester** (key 7, report only):
+   - Nightly year backtest of the SMC Big strategy on BTC / ETH (`smc-backtest-year.json`): never changes live rules, never touches the shared accounts.
+   - Base = rules in force; raw = all Reviewer rules off (patterns come from raw); one ablation run per rule switch.
+   - Read it in the panel (needs the Sync token). Details: `docs/smc-backtest.md`.
 - Both traders: **10× total leverage cap** (Fred, Nov 11); per-trade size is still set by 1% risk.
 - The tracker follows the top 5 gainers and losers **among coins with ≥ $300K volume that moved ≥ 8%** (GainerLoser → Settings).
 
@@ -186,10 +191,17 @@ git pull --rebase && git add -A && git commit -m "…" && git push   # Pages + t
 - **Nov 13 (reviews):** his "poor OB" comments raise the OB quality bar (`obQ`), not FVG-only. The FVG-only rule from his comments was released (commits 943f208, a424293).
 - **Nov 14 (SMC Big exits):** SMC Big only holds through a failed entry gap (`SB_OV.invExit = 0`). 7-day backtest: hold +0.75R n15 vs exit +0.48R n16, but only 5 trades differ (3 better, 2 worse, incl. the live XRP short). Small caps keep the exit: hold made 7 of 9 differing trades worse (net +0.87R from 2 big winners). Re-check after ~20 live SMC Big trades. Wider SMC Big min stop (1.0% / 1.5%) was tested and not adopted: fewer trades, less total R.
 - **Nov 13 (SMC Big):** Fred wants to see if the SMC strategy works better on big caps. Top 10 by volume, `SB_OV` for big-cap sizes, rules follow the small-cap SMC Trader, on at deploy. Leverage option C: 10× is the margin setting, not 10× notional per trade; sizing stays 1% risk with the 10× total cap.
+- **Nov 14 (year backtester):** option A: BTC / ETH only, SMC Big settings, 365 days, one account. Patterns are searched on the **raw** run (Reviewer rules off), so they are not just the rules' own leftovers (Fred). Report only. Spec/plan: `docs/superpowers/`.
 
 ## Open items
 - **SMC resumed Nov 13 06:05 UTC** (`resume1113`), with `zoneLearn` still 0. Fred's call: collect ~20 new trades under the regime gate, then check whether the proposed zone rule stays stable before unlocking it. It changed 4 times in the first hour of backfill. Latest proposal: avoid 0.10–1.20 ATR zones (−0.71R n20 vs +0.59R n13) and prefer displacement zones (+0.60R n6).
 - Re-check the two SMC splits above once there are ~20 more SMC trades.
+- **First year report, to read with Fred** (local 365-day run, Nov 14; report only, no rule changes without his yes):
+  - Base (rules in force): n 66, +0.21R, 59% win, +13.75R total, max DD 4.95R.
+  - Raw (all Reviewer rules off): n 184, −0.08R, 43% win, −15.2R, max DD 20.39R.
+  - All 11 ablations: "no clear effect" (none passed 0.2R with both halves agreeing).
+  - 5 patterns held (from raw), avg R first 8 months / last 4: wd Fri +0.62 / +0.12 (n 22 / 11); rrBand 2.5–3.5 +0.35 / +0.18 (n 29 / 8); atrT high +0.25 / +0.52 (n 50 / 11); rrBand <2.5 −0.18 / −0.14 (n 93 / 41); atrT low −0.27 / −0.48 (n 44 / 18).
+  - Check-half samples are small (8–18 trades on the "this side" column): leads, not rules.
 - Compare SMC Big vs SMC Trader in R, net of costs, once each has ~20 trades.
 - Re-check OB vs FVG after ~20 more SMC trades: on Nov 13, OB −0.06R (n10) vs FVG −0.12R (n28). The OB bar at 80 may block almost every OB, so check how many OB setups get skipped for `obQ`.
 - Momentum is the Trader's whole loss so far. Fred kept it on; raise it again only with new evidence.

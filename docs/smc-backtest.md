@@ -4,6 +4,7 @@ Spec: `docs/superpowers/specs/2026-11-13-smc-backtest-design.md`. Fred chose **r
 
 ## What runs
 - `.github/workflows/smc-backtest.yml` runs daily at 11:23 UTC (and on manual dispatch), with its own concurrency group. It runs `node bot/backtest.mjs` with `DATA_TOKEN`.
+- **Since Nov 14 the nightly job runs with `BT_WEEK '0'`: year mode only.** The 7-day small-cap and SMC Big reports below are **paused** (Fred). Their last `smc-backtest.json` / `smc-backtest-big.json` stay readable on branch `backtest`, because the writer carries over files it does not write. To turn them back on set `BT_WEEK '1'` in the workflow and re-size the timeout for week + year.
 - It reads branch `state` (SM.cfg, RV.smAdj, the live SMC log). It writes `smc-backtest.json` to branch `backtest` of `aster-desk-data`, as one parentless commit that is force-updated. The file is about 20–60 KB.
 - GitHub's own cron has been unreliable for this repo. If the daily run does not fire, dispatch it from cron-job.org the way the cloud trader is dispatched.
 
@@ -27,7 +28,7 @@ Spec: `docs/superpowers/specs/2026-11-13-smc-backtest-design.md`. Fred chose **r
 - The same run also backtests the top 10 coins by 24 h volume with the SMC Big settings (`SB_OV`) and writes `smc-backtest-big.json` to branch `backtest`, in the same commit as `smc-backtest.json`.
 - Reviewer → SMC review shows it as a second block, "BIG CAPS · BACKTEST (PROPOSAL ONLY)".
 
-## Limits
+## Limits (7-day mode)
 - Coins delisted since are missing.
 - The tracker updates hourly (live: continuously).
 - 24h volume and move come from 1h bars.
@@ -41,3 +42,28 @@ node tests/bt-universe.mjs   # look-ahead check: tracker and strategy view only 
 ```
 - Never commit a state file or the output: they hold trade data.
 - The desk shows the result in Reviewer → SMC review → "Backtest (proposal only, not applied)". It needs the Sync token.
+
+## Year mode (BTC / ETH, agent 7)
+Spec: `docs/superpowers/specs/2026-11-14-smc-year-backtester-design.md`. Report only, like the rest: it never changes live rules. Shown in the Backtester panel (key 7, `src/bt_ui.js`).
+- **Window and coins.** The last `BT_YEAR_DAYS` days (default 365), 5m steps, BTCUSDT and ETHUSDT only. The first 8 months are the "pattern" half, the last 4 the "check" half. `needCoins` fails the run when BTC or ETH candles are missing, so a mislabelled report is never written.
+- **Account.** SMC Big settings (`SB_OV`), one $1,000 account across both coins, same fills, fees and slippage as the 7-day backtest. Funding is not charged.
+- **Runs.**
+  - `base`: the rules in force.
+  - `raw`: all Reviewer rules off (`RV.smAdj = {}`, `minQ` back to the default). The pattern finder reads this run.
+  - 11 ablation runs, each flipping one switch off the live value: `needHTF`, `needPOI`, `needDepth`, `obQ`, `poiRule`, `minQ`, `tp1R`, `invExit`, `minStopPct`, `cont`, `regimeGate` (`SM.cfg.regimeGate`; live stays 1).
+  - Skip reasons, listed in `skipped`: "live value equals the switched value" (the switch would change nothing tonight) and "out of time" (it would start after the deadline).
+- **Features per trade** (entry-time, in `f`): coin, side, type, tf, zone (FVG / OB), qBand (<65, 65–74, 75+), grade, regime, hour (UTC: Asia / London / NY / late), wd, atrT and mvT (terciles low / mid / high), rrBand (<2.5, 2.5–3.5, >3.5), stopBand (<1%, 1–2%, ≥2%), btc (BTC 1h regime).
+- **Thresholds.**
+  - Pattern: n ≥ 20 on each side in the first 8 months and a gap ≥ 0.3R. It "held" if the last 4 months have n ≥ 8 on each side and the gap has the same sign; otherwise it is "not held" (top 10 shown).
+  - Ablation: the switched run must differ from base by ≥ 0.2R overall and in the same direction in both halves, else "no clear effect" (otherwise "harmful" or "helpful").
+  - Check-half samples are small (often 8–20 trades): read patterns as leads, not rules.
+- **Output.** `smc-backtest-year.json` on branch `backtest` (same commit as the other files), at most about 900 KB (oldest trades trimmed, `sum.trimmed`). Keys: `v`, `sum` (window, split, `snap` of the rules, `base` / `raw` stats with per-coin and per-half, open positions, notes), `abl`, `skipped`, `pat` (`held`, `notHeld`), `months`, `exits`, `trades` (last 200 of base and raw, with features).
+- **Env.** `BT_WEEK` (default 1; 0 = skip the 7-day runs), `BT_YEAR` (0 skips the year run), `BT_YEAR_DAYS` (default 365), `BT_DEADLINE_MIN` (default 35; the workflow sets 31): minutes after start, after which no new ablation starts.
+- **Runtime.** Measured locally on Nov 14: 365 days took 19 min 32 s (loading 32 s, base 84 s, raw 79 s, each ablation 75–225 s; all 11 ran). Workflow timeout 45 min; deadline 31 min = 45 − 10 − 4, where 4 min is the longest ablation.
+- **Local run.**
+```bash
+STATE_IN=<state.json outside the repo> BT_OUT=<out.json> [BT_YEAR_DAYS=3] node bot/backtest-year.mjs   # year mode alone, real Aster candles
+node tests/year-report.mjs   # statistics maths
+node tests/bt-year.mjs       # year run pieces (switches, features, needCoins)
+```
+- **Limits.** No funding. BTC / ETH only, so patterns are not evidence for small caps. Check halves are small. The regime-gate ablation works through `SM.cfg.regimeGate` (0 = gate off).
