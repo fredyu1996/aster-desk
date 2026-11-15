@@ -194,6 +194,7 @@ git pull --rebase && git add -A && git commit -m "…" && git push   # Pages + t
 - **Nov 14 (year backtester):** option A: BTC / ETH only, SMC Big settings, 365 days, one account. Patterns are searched on the **raw** run (Reviewer rules off), so they are not just the rules' own leftovers (Fred). Report only. Spec/plan: `docs/superpowers/`.
 
 ## Open items
+- **Start here (Nov 15):** read `docs/HANDOFF-2026-11-15.md` (what changed Nov 14–15, first year-backtest report, next steps).
 - **SMC resumed Nov 13 06:05 UTC** (`resume1113`), with `zoneLearn` still 0. Fred's call: collect ~20 new trades under the regime gate, then check whether the proposed zone rule stays stable before unlocking it. It changed 4 times in the first hour of backfill. Latest proposal: avoid 0.10–1.20 ATR zones (−0.71R n20 vs +0.59R n13) and prefer displacement zones (+0.60R n6).
 - Re-check the two SMC splits above once there are ~20 more SMC trades.
 - **First year report, to read with Fred** (local 365-day run, Nov 14; report only, no rule changes without his yes):
