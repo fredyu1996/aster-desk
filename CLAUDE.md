@@ -194,6 +194,11 @@ git pull --rebase && git add -A && git commit -m "…" && git push   # Pages + t
 - **Nov 14 (year backtester):** option A: BTC / ETH only, SMC Big settings, 365 days, one account. Patterns are searched on the **raw** run (Reviewer rules off), so they are not just the rules' own leftovers (Fred). Report only. Spec/plan: `docs/superpowers/`.
 
 ## Open items
+- **Nov 15 (OB pick test, waiting for Fred's call):** the live pick takes an OB only when the leg left no FVG (`SMZ_DEF.fvg 100`), so every live OB entry had no FVG after it. Test switch `SM.cfg.obPick` (live 0; `SB_OV.obPick` 0): 1 = a good OB (FVG after it, fresh, in discount/premium) is the zone, the OB∩FVG overlap when ≥ 0.1 ATR, and no zone when the leg has no FVG; 2 = only that last part. `tools/smc-obpick-test.mjs`:
+  - small caps 14 d: base −10.1R n43 · obPick +0.3R n22 · noWeakOB −3.9R n33 (half 1 −0.7 vs −0.3, half 2 −9.4 vs +0.6);
+  - big caps 14 d: base +7.3R n25 · obPick −6.6R n23 (worse both halves); BTC/ETH 365 d: base +13.8R n66 (+0.21) · obPick +7.7R n38 (+0.20);
+  - replay of 18 live FVG trades with an OB candidate (`/tmp` study, same entry/stop/target rules): FVG −0.15R n16 vs OB +0.60R n13, mostly 2 trades (LYN +8.6, KGEN +4.7).
+  - Good OBs themselves were ~0R in small caps (n15). Not adopted; Fred decides.
 - **Start here (Nov 15):** read `docs/HANDOFF-2026-11-15.md` (what changed Nov 14–15, first year-backtest report, next steps).
 - **SMC resumed Nov 13 06:05 UTC** (`resume1113`), with `zoneLearn` still 0. Fred's call: collect ~20 new trades under the regime gate, then check whether the proposed zone rule stays stable before unlocking it. It changed 4 times in the first hour of backfill. Latest proposal: avoid 0.10–1.20 ATR zones (−0.71R n20 vs +0.59R n13) and prefer displacement zones (+0.60R n6).
 - Re-check the two SMC splits above once there are ~20 more SMC trades.
