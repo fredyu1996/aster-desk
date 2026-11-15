@@ -104,11 +104,13 @@ export function trkHour(X, ctx, H1, h, trk) {
 const agg = (B, t) => [t, B[0][1], Math.max(...B.map(b => b[2])), Math.min(...B.map(b => b[3])), B[B.length - 1][4], B.reduce((a, b) => a + b[5], 0), B.reduce((a, b) => a + b[6], 0)];
 // what the desk would hold for a coin at T: closed bars + a forming bar built from the 5m bars closed by T. Right at a 15m / 1h
 // boundary there is no forming bar yet, as in tools/smc-replay.mjs: live entries at boundary+20 s match that read, not a flat new bar
+// 1h bars the desk holds (engine.js loads limit=72). BT_H1BARS changes it only for tests of a longer 1h / 4h view (Nov 15)
+export const H1_BARS = +process.env.BT_H1BARS || 72;
 export function viewAt(C, T) {
   const n5 = nClosed(C.m5, M5, T); if (!n5) return null;
   const last = C.m5[n5 - 1][4], form = len => { const p0 = Math.floor(T / len) * len, F = []; for (let i = n5 - 1; i >= 0 && C.m5[i][0] >= p0; i--) F.unshift(C.m5[i]); return F.length ? [agg(F, p0)] : []; };
   const n15 = nClosed(C.m15, M15, T), n1 = nClosed(C.h1, H, T);
-  return {last, k: C.m15.slice(Math.max(0, n15 - 95), n15).concat(form(M15)), h: C.h1.slice(Math.max(0, n1 - 71), n1).concat(form(H))};
+  return {last, k: C.m15.slice(Math.max(0, n15 - 95), n15).concat(form(M15)), h: C.h1.slice(Math.max(0, n1 - (H1_BARS - 1)), n1).concat(form(H))};
 }
 
 /* ---------- one variant over the whole window ---------- */
