@@ -33,6 +33,11 @@ export function yearHour(H1, h, coins) {
   const tk = {}; for (const s of coins) { const t = H1[s] && tkAt(H1[s], h); if (t) tk[s] = t; }
   return {tk, trk: {}, big: coins.filter(s => s in tk)};
 }
+// a coin that failed to load would leave a report still labelled BTC / ETH (and no BTC regime): fail the year run instead
+export function needCoins(D, coins = YEAR_COINS) {
+  const miss = coins.filter(s => !D[s] || !D[s].h1.length || !D[s].m15.length || !D[s].m5.length);
+  if (miss.length) throw new Error('year: missing candles for ' + miss.join(','));
+}
 
 const band = (v, cuts, labs) => { for (let i = 0; i < cuts.length; i++) if (v < cuts[i]) return labs[i]; return labs[cuts.length]; };
 const fin = v => typeof v === 'number' && isFinite(v);
@@ -78,7 +83,7 @@ export async function yearRun(st, exInfo, {days, deadline}) {
   const END = Math.floor(Date.now() / M5) * M5, W0 = END - days * 24 * H, h0 = Math.floor(W0 / H) * H, tSplit = W0 + (END - W0) * 8 / 12;
   const D = {}, H1 = {};
   await pool(YEAR_COINS, 2, async s => { const h1 = await klines(s, '1h', H, h0 - 96 * H, END); D[s] = {h1, m15: await klines(s, '15m', M15, h0 - 100 * M15, END), m5: await klines(s, '5m', M5, h0 - H, END)}; H1[s] = h1; });
-  log(`year: ${Object.keys(D).join(',')} candles loaded, ${days} d (${sec()})`);
+  needCoins(D); log(`year: ${Object.keys(D).join(',')} candles loaded, ${days} d (${sec()})`);
   const U = new Map(); for (let h = h0; h <= END; h += H) U.set(h, yearHour(H1, h, YEAR_COINS));
   const steps = []; for (let T = W0 + M5; T <= END; T += M5) steps.push(T);
   const sim = (k, setup) => simulate(k, st, exInfo, D, U, steps, setup, new Map(), true);
@@ -99,7 +104,7 @@ export async function yearRun(st, exInfo, {days, deadline}) {
     note: 'Backtest — report only, never changes live rules. SMC Big settings on BTC / ETH, one $1,000 account, 5m steps; same fills, fees and slippage as the 7-day backtest.',
     fundingNote: 'Funding is not charged (no funding history in the backtest).'};
   return fitSize({v: 1, sum, abl: ablation(baseRows, runs, tSplit), skipped, pat: findPatterns(rawRows, tSplit),
-    months: {base: months(baseRows), raw: months(rawRows)}, exits: {base: exits(baseRows), raw: exits(rawRows)}, trades: [...baseRows.slice(-200), ...rawRows.slice(-200)]});
+    months: {base: months(baseRows), raw: months(rawRows)}, exits: {base: exits(baseRows), raw: exits(rawRows)}, trades: [...baseRows.slice(-200), ...rawRows.slice(-200)].sort((a, b) => a.t0 - b.t0)});
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

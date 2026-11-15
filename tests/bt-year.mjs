@@ -1,7 +1,7 @@
 // Year backtest run module (bot/backtest-year.mjs): BTC/ETH-only universe with no tracker, UTC entry features, the ablation
 // plan (which switches change the SB account's effective rules), the switches and the raw run. Synthetic fixtures only.
 // Run: node tests/bt-year.mjs   (after build.py; no network)
-import {yearHour, feats, ablPlan, RAW, ABL, YEAR_COINS} from '../bot/backtest-year.mjs';
+import {yearHour, feats, ablPlan, needCoins, RAW, ABL, YEAR_COINS} from '../bot/backtest-year.mjs';
 import {mkCore, PREP} from '../bot/backtest.mjs';
 const H = 3600e3, M15 = 900e3, h = Math.floor(Date.UTC(2026, 10, 10, 12) / H) * H;
 const ok = (c, m) => { if (!c) { console.error('FAIL: ' + m); process.exit(1); } };
@@ -38,4 +38,7 @@ const eff = async (setup) => { const {X, ctx} = await mkCore(null, ex); ctx.__ST
 ok((await eff(sw('needHTF'))).r.needHTF === false && (await eff(sw('invExit'))).c.invExit === 1 && (await eff(sw('minStopPct'))).c.minStopPct === 1 && (await eff(sw('regimeGate'))).c.regimeGate === 0, 'switches land on SB');
 ok((await eff(sw('minQ'))).r.minQ === 55 && (await eff(sw('cont'))).c.cont === 0 && (await eff(sw('poiRule'))).c.poiRule === 0, 'minQ / cont / poiRule switches');
 const raw = await eff(RAW); ok(raw.r.needHTF === false && raw.r.minQ === 55 && raw.c.regimeGate === 1, 'raw run: Reviewer rules off, minQ 55, regime gate on');
+// a coin that failed to load must fail the run, not publish a report labelled BTC / ETH
+const bars = {h1: [[0]], m15: [[0]], m5: [[0]]}, err = D => { try { needCoins(D); return null; } catch (e) { return e.message; } };
+ok(err({BTCUSDT: bars, ETHUSDT: bars}) === null && err({ETHUSDT: bars}) === 'year: missing candles for BTCUSDT' && err({BTCUSDT: bars, ETHUSDT: {...bars, m5: []}}) === 'year: missing candles for ETHUSDT', 'missing or empty coin candles -> throw');
 console.log('PASS: year backtest checks');
