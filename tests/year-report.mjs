@@ -20,6 +20,7 @@ ok(findPatterns(flipRows, 1000).notHeld.length === 1 && !findPatterns(flipRows, 
 ok(findPatterns(check7Rows, 1000).notHeld.length === 1, 'check side n 7 -> did not hold');
 ok(!findPatterns(n19Rows, 1000).held.length && !findPatterns(n19Rows, 1000).notHeld.length, 'n 19 per side -> not reported');
 ok(!findPatterns(d029Rows, 1000).notHeld.length && !findPatterns(d029Rows, 1000).held.length, 'avg R gap 0.29 -> not reported');
+ok(findPatterns(side(25, 0.7, 0.4, 10, 0.7, 0.4), 1000).held.length === 1, 'avg R gap of exactly 0.30 (0.7 - 0.4 in floats) is reported');
 // 11 grades, each stands out in half A (R = 0.3 i^2) and reverses in half B
 const elevenFailing = [];
 for (let g = 0; g < 11; g++) for (let i = 0; i < 20; i++) { elevenFailing.push(mk(i, 0.3 * g * g, {grade: 'g' + g})); elevenFailing.push(mk(2000 + i, -0.3 * g * g, {grade: 'g' + g})); }
@@ -32,6 +33,7 @@ const A = ablation(baseRows, [{k: 'x', lab: 'x', rows: swWorseBoth}, {k: 'y', la
 ok(A[0].k === 'x' && A[0].label === 'helpful', 'switch worse by 0.25R in both halves -> live setting helpful, sorted first');
 ok(A.find(r => r.k === 'y').label === 'none' && A.find(r => r.k === 'z').label === 'none' && A.find(r => r.k === 'e').label === 'none', 'one-half, < 0.2R, and empty runs -> none');
 ok(ablation(baseRows, [{k: 'b', lab: 'b', rows: flat(0.8)}], 1000)[0].label === 'harmful', 'switch better in both halves -> harmful');
+ok(ablation(flat(0.7), [{k: 'h', lab: 'h', rows: flat(0.5)}], 1000)[0].label === 'helpful', 'ablation gap of exactly 0.20 (0.5 - 0.7 in floats) is labelled');
 // months, exits, terciles, size guard, no NaN
 eq(months([mk(Date.UTC(2026, 0, 31, 23), 1), mk(Date.UTC(2026, 1, 1), -1)]).map(m => m.m), ['2026-01', '2026-02']);
 eq(exits([{...mk(1, 1), why: 'target 3.2R'}, {...mk(2, 0), why: 'target 2.1R'}])[0], {why: 'target #R', n: 2, avgR: 0.5});

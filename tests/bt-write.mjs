@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 const {writeOut, mergeTree} = await import('../bot/backtest.mjs');
 const old = [{path: 'smc-backtest.json', mode: '100644', type: 'blob', sha: 'A'}, {path: 'smc-backtest-year.json', mode: '100644', type: 'blob', sha: 'OLDY'}, {path: 'dir', mode: '040000', type: 'tree', sha: 'T'}];
 const m = mergeTree(old, [{path: 'smc-backtest-year.json', mode: '100644', type: 'blob', sha: 'NEWY'}]);
-assert.deepEqual(m.map(e => e.path + ':' + e.sha), ['smc-backtest-year.json:NEWY', 'smc-backtest.json:A']);
+assert.deepEqual(m.map(e => e.path + ':' + e.sha), ['smc-backtest-year.json:NEWY', 'smc-backtest.json:A', 'dir:T']);
 
 const fake = (cur) => { const calls = []; let n = 0; const g = async (p, o = {}) => {
   calls.push([o.method || 'GET', p, o.body]);
@@ -18,7 +18,7 @@ const fake = (cur) => { const calls = []; let n = 0; const g = async (p, o = {})
 let f = fake(true);
 assert.equal(await writeOut({'smc-backtest-year.json': {v: 1}}, f.g), 'C1');
 const tree = f.calls.find(c => c[1] === '/git/trees' && c[0] === 'POST')[2].tree;
-assert.deepEqual(tree.map(e => e.path + ':' + e.sha), ['smc-backtest-year.json:B1', 'smc-backtest.json:A']);
+assert.deepEqual(tree.map(e => e.path + ':' + e.sha), ['smc-backtest-year.json:B1', 'smc-backtest.json:A', 'dir:T']);
 assert.deepEqual(f.calls.find(c => c[1] === '/git/commits' && c[0] === 'POST')[2].parents, []);
 assert.ok(f.calls.some(c => c[0] === 'PATCH' && c[2].force));
 

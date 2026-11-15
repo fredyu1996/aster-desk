@@ -134,7 +134,7 @@ const by = await page.evaluate(async () => {
   out.same = JSON.stringify(before) === JSON.stringify([localStorage.getItem('awx_sm'), localStorage.getItem('awx_sb'), JSON.stringify(RV.smAdj)]);
   return out; });
 if (by.open !== 'bt') errs.push('PAGEERR key 7 does not open the Backtester');
-if (!/Backtest — report only, never changes live rules/.test(by.txt.sum) || !/helpful/i.test(by.txt.sum) || !/skipped/i.test(by.txt.sum)) errs.push('PAGEERR Backtester summary/ablation missing');
+if (!/Backtest — report only, never changes live rules/.test(by.txt.sum) || !/keeps it \(live setting better/.test(by.txt.sum) || !/live setting hurts \(switch better/.test(by.txt.sum) || !/skipped/i.test(by.txt.sum)) errs.push('PAGEERR Backtester summary/ablation missing');
 if (!/raw run/i.test(by.txt.pat) || !/did not hold/i.test(by.txt.pat) || !/first 8 months/i.test(by.txt.pat)) errs.push('PAGEERR Backtester patterns missing run label or per-half numbers');
 if (by.txt.tr.split(String.fromCharCode(10)).length < 4) errs.push('PAGEERR Backtester trades table empty');
 if (!/no year backtest has run yet|Connect Sync/i.test(by.empty)) errs.push('PAGEERR Backtester has no empty-state message');

@@ -6,7 +6,7 @@ const btR = v => fin(v) ? fmtR(v) : '—';
 const btRc = v => `<span class="${cls(v)}">${btR(v)}</span>`;
 const btWin = v => fin(v) ? v + '%' : '—';
 const btD = t => new Date(t).toISOString().slice(0, 10);
-const BT_LABEL = {helpful: ['keeps it (helpful)', 'up'], harmful: ['hurts (harmful)', 'dn'], none: ['no clear effect', 'dim']};
+const BT_LABEL = {helpful: ['keeps it (live setting better in both halves)', 'up'], harmful: ['live setting hurts (switch better in both halves)', 'dn'], none: ['no clear effect', 'dim']};
 // one stats cell: n · avg R
 const btCell = s => s && s.n ? `${s.n} · ${btRc(s.avgR)}` : '<span class="dim">n 0</span>';
 function btHead(b) {
@@ -22,10 +22,10 @@ function btRunRow(lab, r) {
 function btSumHTML(y) {
   const b = y.sum, S0 = (b.snap || {});
   let h = btRunRow('Rules in force (base run)', b.base) + btRunRow('Raw run (all Reviewer rules off)', b.raw);
-  h += `<h3>Rule ablation: live rule vs the switch</h3><p class="note">Each row turns one live rule off and compares. Δ = switched minus live. "Keeps it" means the live rule is better.</p>
-    <table class="t"><thead><tr><th style="text-align:left">Rule</th><th>Live n · avg R</th><th>Switched n · avg R</th><th>Δ avg, first 8 months</th><th>Δ avg, last 4 months</th><th>Δ total R</th><th>Verdict</th></tr></thead><tbody>${(y.abl || []).map(r => {
+  h += `<h3>Rule ablation: live setting vs the switch</h3><p class="note">Each row flips one live setting and compares. Δ = switched minus live, so a positive Δ means the switch did better.</p>
+    <table class="t"><thead><tr><th style="text-align:left">Rule</th><th>Live (base run) n · avg R</th><th>Switched n · avg R</th><th>Δ avg, first 8 months</th><th>Δ avg, last 4 months</th><th>Δ total R</th><th>Verdict</th></tr></thead><tbody>${(y.abl || []).map(r => {
       const [t, c] = BT_LABEL[r.label] || [esc(r.label || '—'), 'dim'];
-      return `<tr><td style="text-align:left;font-family:var(--sans)">${esc(r.lab)}</td><td>${btCell(r.base && r.base.all)}</td><td>${btCell(r.sw && r.sw.all)}</td><td>${btRc(r.dA)}</td><td>${btRc(r.dB)}</td><td>${btRc(r.dTot)}</td><td class="${c}">${t}</td></tr>`; }).join('')}</tbody></table>`;
+      return `<tr><td style="text-align:left;font-family:var(--sans)">${esc(r.lab)}</td><td>${btCell(r.base && r.base.all)}</td><td>${btCell(r.sw && r.sw.all)}</td><td>${btR(r.dA)}</td><td>${btR(r.dB)}</td><td>${btR(r.dTot)}</td><td class="${c}">${t}</td></tr>`; }).join('')}</tbody></table>`;
   if ((y.skipped || []).length) h += `<h3>Skipped</h3><ul class="note">${y.skipped.map(s => `<li><b>${esc(s.lab)}</b>: ${esc(s.why)}</li>`).join('')}</ul>`;
   h += `<p class="note">${esc(b.note || '')}</p><details><summary>Rule snapshot used</summary><pre style="white-space:pre-wrap;font-size:11px">${esc(JSON.stringify({cfg: S0.cfg, adj: S0.adj}))}</pre></details>`;
   return h;
@@ -51,7 +51,7 @@ function btPatHTML(y) {
 }
 function btTrHTML(y) {
   return `<table class="t"><thead><tr><th>Run</th><th>Coin</th><th>Side</th><th>UTC date</th><th>tf</th><th>Type</th><th>Zone</th><th>q</th><th>Grade</th><th>Regime</th><th>Hour</th><th>R</th><th>Exit</th></tr></thead><tbody>${(y.trades || []).map(t => { const f = t.f || {};
-    return `<tr><td>${esc(t.v)}</td><td>${esc(String(t.s).replace('USDT', ''))}</td><td>${t.side === 'S' ? 'short' : 'long'}</td><td>${btD(t.t0)}</td><td>${esc(t.tf)}</td><td>${esc(t.type)}</td><td>${esc(t.zk)}</td><td>${t.q}</td><td>${esc(t.g)}</td><td>${esc(t.reg)}</td><td>${esc(f.hour || '—')}</td><td>${btRc(t.R)}</td><td class="dim" style="text-align:left">${esc(t.why || '')}</td></tr>`; }).join('')}</tbody></table>`;
+    return `<tr><td>${esc(t.v)}</td><td>${esc(String(t.s).replace('USDT', ''))}</td><td>${t.side === 'S' ? 'short' : 'long'}</td><td>${btD(t.t0)}</td><td>${esc(t.tf)}</td><td>${esc(t.type)}</td><td>${esc(t.zk)}</td><td>${fin(t.q) ? t.q : '—'}</td><td>${esc(t.g)}</td><td>${esc(t.reg)}</td><td>${esc(f.hour || '—')}</td><td>${btRc(t.R)}</td><td class="dim" style="text-align:left">${esc(t.why || '')}</td></tr>`; }).join('')}</tbody></table>`;
 }
 function btYearHTML(tab) {
   btPull();

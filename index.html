@@ -5576,14 +5576,14 @@ function notesTick() {
 const BTS = {t: 0, r: null, big: null, year: null, err: ''};
 function btPull() {
   if (!SY.repo || !SY.token || now() - BTS.t < 10 * 60e3) return; BTS.t = now();
-  gh('/git/ref/heads/backtest', {ok404: true}).then(r => r ? Promise.all([gh('/contents/smc-backtest.json?ref=' + r.object.sha, {raw: true}), gh('/contents/smc-backtest-big.json?ref=' + r.object.sha, {raw: true, ok404: true}), gh('/contents/smc-backtest-year.json?ref=' + r.object.sha, {raw: true, ok404: true})]) : [null, null, null])
-    .then(([txt, big, yr]) => { BTS.year = yr ? JSON.parse(yr) : null; BTS.r = txt ? JSON.parse(txt) : null; BTS.big = big ? JSON.parse(big) : null; BTS.err = txt ? '' : 'no backtest has run yet.'; renderPanel(); }).catch(e => { BTS.err = e.message || String(e); });
+  gh('/git/ref/heads/backtest', {ok404: true}).then(r => r ? Promise.all([gh('/contents/smc-backtest.json?ref=' + r.object.sha, {raw: true, ok404: true}), gh('/contents/smc-backtest-big.json?ref=' + r.object.sha, {raw: true, ok404: true}), gh('/contents/smc-backtest-year.json?ref=' + r.object.sha, {raw: true, ok404: true})]) : [null, null, null])
+    .then(([txt, big, yr]) => { BTS.year = yr ? JSON.parse(yr) : null; BTS.r = txt ? JSON.parse(txt) : null; BTS.big = big ? JSON.parse(big) : null; BTS.err = txt || yr ? '' : 'no backtest has run yet.'; renderPanel(); }).catch(e => { BTS.err = e.message || String(e); });
 }
 // SMC Big (top-10 volume perps) backtest: one result line, same report-only rules
 function btBigHTML() {
   const b = BTS.big && BTS.big.sum, s = b && b.variants && b.variants.base; if (!s) return '';
   return `<div class="card2" style="margin-top:12px;border-left:4px solid #9ad0ff"><h3 style="color:#9ad0ff">BIG CAPS · BACKTEST (PROPOSAL ONLY)</h3>
-    <div style="font-size:13px">Run ${esc(new Date(b.t).toLocaleString())} · last ${b.days} days · ${b.coins} big caps · SMC Big rules: ${s.n ? `n ${s.n}, avg ${fmtR(s.avgR)}, ${s.win}% win` : 'n 0'}${s.open ? ` (${s.open} still open, not counted)` : ''}</div>
+    <div style="font-size:13px">Run ${esc(new Date(b.t).toLocaleString())} (paused since Nov 14 — year mode only) · last ${b.days} days · ${b.coins} big caps · SMC Big rules: ${s.n ? `n ${s.n}, avg ${fmtR(s.avgR)}, ${s.win}% win` : 'n 0'}${s.open ? ` (${s.open} still open, not counted)` : ''}</div>
     <div class="dim" style="font-size:12px;margin-top:6px">${esc(b.note || '')}</div></div>`;
 }
 function btHTML() { return btBaseHTML() + btBigHTML(); }
@@ -5596,7 +5596,7 @@ function btBaseHTML() {
     const dec = (b.decisions || []).map(d => `<tr><td style="text-align:left;font-family:var(--sans)">${esc(d.lab)}${d.blocked != null ? `<br><span class="dim" style="font-size:11px">${d.blocked} OB setups blocked by the bar (rules in force)</span>` : ''}</td><td>${c(d.bt.kept)}</td><td>${c(d.bt.dropped)}</td><td>${c(d.live.kept)}</td><td>${c(d.live.dropped)}</td></tr>`).join('');
     const sv = b.simVsLive || {};
     return `<div class="card2" style="margin-top:12px;border-left:4px solid #9ad0ff">${H3}
-      <div style="font-size:13px;margin-bottom:6px">Run ${esc(new Date(b.t).toLocaleString())} · last ${b.days} days · ${b.coins} coins · ${Object.entries(V).map(([k, s]) => `${esc(vn[k] || k)}: n ${s.n}, avg ${fmtR(s.avgR)}`).join(' · ')}</div>
+      <div style="font-size:13px;margin-bottom:6px">Run ${esc(new Date(b.t).toLocaleString())} (paused since Nov 14 — year mode only) · last ${b.days} days · ${b.coins} coins · ${Object.entries(V).map(([k, s]) => `${esc(vn[k] || k)}: n ${s.n}, avg ${fmtR(s.avgR)}`).join(' · ')}</div>
       <table class="t"><thead><tr><th style="text-align:left">Parked decision</th><th>Backtest kept</th><th>Backtest dropped</th><th>Live kept</th><th>Live dropped</th></tr></thead><tbody>${dec}</tbody></table>
       <div class="dim" style="font-size:12px;margin-top:6px">Sim vs live: ${sv.matched || 0}/${sv.live || 0} live trades in the window also taken by the backtest${fin(sv.meanAbsDR) ? `, mean R gap ${sv.meanAbsDR.toFixed(2)}` : ''}. ${esc(b.note || '')} Rules change only when you approve in chat.</div></div>`;
   } catch (_) { return ''; }
@@ -5610,7 +5610,7 @@ const btR = v => fin(v) ? fmtR(v) : '—';
 const btRc = v => `<span class="${cls(v)}">${btR(v)}</span>`;
 const btWin = v => fin(v) ? v + '%' : '—';
 const btD = t => new Date(t).toISOString().slice(0, 10);
-const BT_LABEL = {helpful: ['keeps it (helpful)', 'up'], harmful: ['hurts (harmful)', 'dn'], none: ['no clear effect', 'dim']};
+const BT_LABEL = {helpful: ['keeps it (live setting better in both halves)', 'up'], harmful: ['live setting hurts (switch better in both halves)', 'dn'], none: ['no clear effect', 'dim']};
 // one stats cell: n · avg R
 const btCell = s => s && s.n ? `${s.n} · ${btRc(s.avgR)}` : '<span class="dim">n 0</span>';
 function btHead(b) {
@@ -5626,10 +5626,10 @@ function btRunRow(lab, r) {
 function btSumHTML(y) {
   const b = y.sum, S0 = (b.snap || {});
   let h = btRunRow('Rules in force (base run)', b.base) + btRunRow('Raw run (all Reviewer rules off)', b.raw);
-  h += `<h3>Rule ablation: live rule vs the switch</h3><p class="note">Each row turns one live rule off and compares. Δ = switched minus live. "Keeps it" means the live rule is better.</p>
-    <table class="t"><thead><tr><th style="text-align:left">Rule</th><th>Live n · avg R</th><th>Switched n · avg R</th><th>Δ avg, first 8 months</th><th>Δ avg, last 4 months</th><th>Δ total R</th><th>Verdict</th></tr></thead><tbody>${(y.abl || []).map(r => {
+  h += `<h3>Rule ablation: live setting vs the switch</h3><p class="note">Each row flips one live setting and compares. Δ = switched minus live, so a positive Δ means the switch did better.</p>
+    <table class="t"><thead><tr><th style="text-align:left">Rule</th><th>Live (base run) n · avg R</th><th>Switched n · avg R</th><th>Δ avg, first 8 months</th><th>Δ avg, last 4 months</th><th>Δ total R</th><th>Verdict</th></tr></thead><tbody>${(y.abl || []).map(r => {
       const [t, c] = BT_LABEL[r.label] || [esc(r.label || '—'), 'dim'];
-      return `<tr><td style="text-align:left;font-family:var(--sans)">${esc(r.lab)}</td><td>${btCell(r.base && r.base.all)}</td><td>${btCell(r.sw && r.sw.all)}</td><td>${btRc(r.dA)}</td><td>${btRc(r.dB)}</td><td>${btRc(r.dTot)}</td><td class="${c}">${t}</td></tr>`; }).join('')}</tbody></table>`;
+      return `<tr><td style="text-align:left;font-family:var(--sans)">${esc(r.lab)}</td><td>${btCell(r.base && r.base.all)}</td><td>${btCell(r.sw && r.sw.all)}</td><td>${btR(r.dA)}</td><td>${btR(r.dB)}</td><td>${btR(r.dTot)}</td><td class="${c}">${t}</td></tr>`; }).join('')}</tbody></table>`;
   if ((y.skipped || []).length) h += `<h3>Skipped</h3><ul class="note">${y.skipped.map(s => `<li><b>${esc(s.lab)}</b>: ${esc(s.why)}</li>`).join('')}</ul>`;
   h += `<p class="note">${esc(b.note || '')}</p><details><summary>Rule snapshot used</summary><pre style="white-space:pre-wrap;font-size:11px">${esc(JSON.stringify({cfg: S0.cfg, adj: S0.adj}))}</pre></details>`;
   return h;
@@ -5655,7 +5655,7 @@ function btPatHTML(y) {
 }
 function btTrHTML(y) {
   return `<table class="t"><thead><tr><th>Run</th><th>Coin</th><th>Side</th><th>UTC date</th><th>tf</th><th>Type</th><th>Zone</th><th>q</th><th>Grade</th><th>Regime</th><th>Hour</th><th>R</th><th>Exit</th></tr></thead><tbody>${(y.trades || []).map(t => { const f = t.f || {};
-    return `<tr><td>${esc(t.v)}</td><td>${esc(String(t.s).replace('USDT', ''))}</td><td>${t.side === 'S' ? 'short' : 'long'}</td><td>${btD(t.t0)}</td><td>${esc(t.tf)}</td><td>${esc(t.type)}</td><td>${esc(t.zk)}</td><td>${t.q}</td><td>${esc(t.g)}</td><td>${esc(t.reg)}</td><td>${esc(f.hour || '—')}</td><td>${btRc(t.R)}</td><td class="dim" style="text-align:left">${esc(t.why || '')}</td></tr>`; }).join('')}</tbody></table>`;
+    return `<tr><td>${esc(t.v)}</td><td>${esc(String(t.s).replace('USDT', ''))}</td><td>${t.side === 'S' ? 'short' : 'long'}</td><td>${btD(t.t0)}</td><td>${esc(t.tf)}</td><td>${esc(t.type)}</td><td>${esc(t.zk)}</td><td>${fin(t.q) ? t.q : '—'}</td><td>${esc(t.g)}</td><td>${esc(t.reg)}</td><td>${esc(f.hour || '—')}</td><td>${btRc(t.R)}</td><td class="dim" style="text-align:left">${esc(t.why || '')}</td></tr>`; }).join('')}</tbody></table>`;
 }
 function btYearHTML(tab) {
   btPull();

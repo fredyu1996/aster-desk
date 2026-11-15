@@ -31,8 +31,8 @@ async function readState() {
   if (LOCAL_IN) return JSON.parse(fs.readFileSync(LOCAL_IN, 'utf8').replace(/^﻿/, ''));
   const r = await gh('/git/ref/heads/state'); return JSON.parse(await gh(`/contents/aster-desk-state.json?ref=${r.object.sha}`, {raw: true}));
 }
-// New commit tree = the files this run wrote + every other blob already in the old tree (the paused 7-day reports stay readable)
-export const mergeTree = (old, tr) => [...tr, ...old.filter(e => e.type === 'blob' && !tr.some(t => t.path === e.path)).map(e => ({path: e.path, mode: e.mode, type: 'blob', sha: e.sha}))];
+// New commit tree = the files this run wrote + every other entry already in the old tree (the paused 7-day reports stay readable)
+export const mergeTree = (old, tr) => [...tr, ...old.filter(e => !tr.some(t => t.path === e.path)).map(e => ({path: e.path, mode: e.mode, type: e.type, sha: e.sha}))];
 // files: {path: object}; all go in one parentless commit. Local: <BT_OUT> / -big.json / -year.json. g = the GitHub call (injectable for tests)
 export async function writeOut(files, g = gh) {
   if (LOCAL_OUT) { for (const [p, x] of Object.entries(files)) fs.writeFileSync(LOCAL_OUT.replace(/(\.json)?$/, p.replace(/^smc-backtest|\.json$/g, '') + '.json'), JSON.stringify(x)); return 'local'; }

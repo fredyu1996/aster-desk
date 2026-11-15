@@ -250,14 +250,14 @@ function notesTick() {
 const BTS = {t: 0, r: null, big: null, year: null, err: ''};
 function btPull() {
   if (!SY.repo || !SY.token || now() - BTS.t < 10 * 60e3) return; BTS.t = now();
-  gh('/git/ref/heads/backtest', {ok404: true}).then(r => r ? Promise.all([gh('/contents/smc-backtest.json?ref=' + r.object.sha, {raw: true}), gh('/contents/smc-backtest-big.json?ref=' + r.object.sha, {raw: true, ok404: true}), gh('/contents/smc-backtest-year.json?ref=' + r.object.sha, {raw: true, ok404: true})]) : [null, null, null])
-    .then(([txt, big, yr]) => { BTS.year = yr ? JSON.parse(yr) : null; BTS.r = txt ? JSON.parse(txt) : null; BTS.big = big ? JSON.parse(big) : null; BTS.err = txt ? '' : 'no backtest has run yet.'; renderPanel(); }).catch(e => { BTS.err = e.message || String(e); });
+  gh('/git/ref/heads/backtest', {ok404: true}).then(r => r ? Promise.all([gh('/contents/smc-backtest.json?ref=' + r.object.sha, {raw: true, ok404: true}), gh('/contents/smc-backtest-big.json?ref=' + r.object.sha, {raw: true, ok404: true}), gh('/contents/smc-backtest-year.json?ref=' + r.object.sha, {raw: true, ok404: true})]) : [null, null, null])
+    .then(([txt, big, yr]) => { BTS.year = yr ? JSON.parse(yr) : null; BTS.r = txt ? JSON.parse(txt) : null; BTS.big = big ? JSON.parse(big) : null; BTS.err = txt || yr ? '' : 'no backtest has run yet.'; renderPanel(); }).catch(e => { BTS.err = e.message || String(e); });
 }
 // SMC Big (top-10 volume perps) backtest: one result line, same report-only rules
 function btBigHTML() {
   const b = BTS.big && BTS.big.sum, s = b && b.variants && b.variants.base; if (!s) return '';
   return `<div class="card2" style="margin-top:12px;border-left:4px solid #9ad0ff"><h3 style="color:#9ad0ff">BIG CAPS · BACKTEST (PROPOSAL ONLY)</h3>
-    <div style="font-size:13px">Run ${esc(new Date(b.t).toLocaleString())} · last ${b.days} days · ${b.coins} big caps · SMC Big rules: ${s.n ? `n ${s.n}, avg ${fmtR(s.avgR)}, ${s.win}% win` : 'n 0'}${s.open ? ` (${s.open} still open, not counted)` : ''}</div>
+    <div style="font-size:13px">Run ${esc(new Date(b.t).toLocaleString())} (paused since Nov 14 — year mode only) · last ${b.days} days · ${b.coins} big caps · SMC Big rules: ${s.n ? `n ${s.n}, avg ${fmtR(s.avgR)}, ${s.win}% win` : 'n 0'}${s.open ? ` (${s.open} still open, not counted)` : ''}</div>
     <div class="dim" style="font-size:12px;margin-top:6px">${esc(b.note || '')}</div></div>`;
 }
 function btHTML() { return btBaseHTML() + btBigHTML(); }
@@ -270,7 +270,7 @@ function btBaseHTML() {
     const dec = (b.decisions || []).map(d => `<tr><td style="text-align:left;font-family:var(--sans)">${esc(d.lab)}${d.blocked != null ? `<br><span class="dim" style="font-size:11px">${d.blocked} OB setups blocked by the bar (rules in force)</span>` : ''}</td><td>${c(d.bt.kept)}</td><td>${c(d.bt.dropped)}</td><td>${c(d.live.kept)}</td><td>${c(d.live.dropped)}</td></tr>`).join('');
     const sv = b.simVsLive || {};
     return `<div class="card2" style="margin-top:12px;border-left:4px solid #9ad0ff">${H3}
-      <div style="font-size:13px;margin-bottom:6px">Run ${esc(new Date(b.t).toLocaleString())} · last ${b.days} days · ${b.coins} coins · ${Object.entries(V).map(([k, s]) => `${esc(vn[k] || k)}: n ${s.n}, avg ${fmtR(s.avgR)}`).join(' · ')}</div>
+      <div style="font-size:13px;margin-bottom:6px">Run ${esc(new Date(b.t).toLocaleString())} (paused since Nov 14 — year mode only) · last ${b.days} days · ${b.coins} coins · ${Object.entries(V).map(([k, s]) => `${esc(vn[k] || k)}: n ${s.n}, avg ${fmtR(s.avgR)}`).join(' · ')}</div>
       <table class="t"><thead><tr><th style="text-align:left">Parked decision</th><th>Backtest kept</th><th>Backtest dropped</th><th>Live kept</th><th>Live dropped</th></tr></thead><tbody>${dec}</tbody></table>
       <div class="dim" style="font-size:12px;margin-top:6px">Sim vs live: ${sv.matched || 0}/${sv.live || 0} live trades in the window also taken by the backtest${fin(sv.meanAbsDR) ? `, mean R gap ${sv.meanAbsDR.toFixed(2)}` : ''}. ${esc(b.note || '')} Rules change only when you approve in chat.</div></div>`;
   } catch (_) { return ''; }

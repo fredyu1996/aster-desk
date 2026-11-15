@@ -29,9 +29,9 @@ export function findPatterns(rows, tSplit) {
     for (const v of vals) {
       const [inA, outA] = split(A, f, v);
       if (inA.n < MIN_N || outA.n < MIN_N) continue;
-      const dA = inA.avgR - outA.avgR;
+      const dA = rd(inA.avgR - outA.avgR, 3);
       if (Math.abs(dA) < MIN_DR) continue;
-      const [inB, outB] = split(B, f, v), dB = inB.avgR - outB.avgR;
+      const [inB, outB] = split(B, f, v), dB = rd(inB.avgR - outB.avgR, 3);
       const p = {f, v, dA, dB: inB.n && outB.n ? dB : null, inA, inB, outA, outB};
       (inB.n >= MIN_N_CHECK && outB.n >= MIN_N_CHECK && Math.sign(dB) === Math.sign(dA) ? held : notHeld).push(p);
     }
@@ -41,7 +41,7 @@ export function findPatterns(rows, tSplit) {
 }
 
 export function ablation(baseRows, runs, tSplit) {
-  const base = halves(baseRows, tSplit), d = (x, y) => x == null || y == null ? null : y - x;
+  const base = halves(baseRows, tSplit), d = (x, y) => x == null || y == null ? null : rd(y - x, 3);
   const out = runs.map(({k, lab, rows}) => {
     const sw = halves(rows, tSplit), dAvg = d(base.all.avgR, sw.all.avgR), dA = d(base.a.avgR, sw.a.avgR), dB = d(base.b.avgR, sw.b.avgR);
     const ok = dAvg != null && dA != null && dB != null;

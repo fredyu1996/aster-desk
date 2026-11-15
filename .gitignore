@@ -1,3 +1,5 @@
 node_modules/
 *.png
 .state-test*.json
+smc-backtest*.json
+*-year.json
