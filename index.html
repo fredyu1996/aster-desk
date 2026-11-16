@@ -1118,7 +1118,7 @@ function ptStats() {
 // Every setup is also audited in SMC terms (sweep, liquidity, break, FVG / OB quality, premium/discount, higher timeframe,
 // entry depth) into a quality score; weak setups are skipped.
 const SM_DEF = {v: 1, start: 1000, cash: 1000, pos: {}, log: [], eqs: [], day: null, cool: {}, on: true, paused: null, created: 0, lastScan: null,
-  cfg: {riskPct: 1, maxPos: 3, maxLev: 10, minScore: 4, dailyLossPct: 3, feePct: 0.04, slipPct: 0.10, holdH: 12, minVol: 300000, maxStopPct: 15, minRR: 2, maxRR: 5, tp1R: 1.5, stopBuf: 0.3, unlGuard: 1, useScreens: 0, tf15: 1, tf1h: 1, holdH1h: 36, minQ: 55, learn: 1, poiRule: 1, ltfConfirm: 1, roomCheck: 1, cont: 1, pathCheck: 1, pdLiq: 1, invExit: 1, minStopPct: 1.5, minDepth: 15, zoneLearn: 0, regimeGate: 1, obPick: 0}};
+  cfg: {riskPct: 1, maxPos: 3, maxLev: 10, minScore: 4, dailyLossPct: 3, feePct: 0.04, slipPct: 0.10, holdH: 12, minVol: 300000, maxStopPct: 15, minRR: 2, maxRR: 5, tp1R: 1.5, stopBuf: 0.3, unlGuard: 1, useScreens: 0, tf15: 1, tf1h: 1, holdH1h: 36, minQ: 55, learn: 1, poiRule: 1, ltfConfirm: 1, roomCheck: 1, cont: 1, pathCheck: 1, pdLiq: 1, invExit: 1, minStopPct: 1.5, minDepth: 15, zoneLearn: 0, regimeGate: 1, obPick: 0, gmsA: 0, gmsB: 0, gmsC: 0, gmsD: 0}};
 // Nov 8: the SMC Trader trades on its own SMC judgement, without the Reviewer's screens (one-time switch-off for saved accounts)
 function smMigrate(p) { if (p.cfg.ownJudge !== 1) { p.cfg.useScreens = 0; p.cfg.ownJudge = 1; } if (p.cfg.lev10 !== 1) { p.cfg.maxLev = 10; p.cfg.lev10 = 1; } // Nov 11 (Fred): 10× leverage cap
   if (p.cfg.resume1113 !== 1) { if (p.cfg.pause1113 === 1) p.on = true; p.cfg.resume1113 = 1; } // Nov 13 (Fred): self-review done, resume SMC trading (zone tuning stays locked)
@@ -1175,7 +1175,7 @@ function smAgg(B, hrs) {
   return out;
 }
 let SM_OVR = null;   // {s, '15m': bars, '1h': bars, tk, t}: the Reviewer's after-the-fact audit of a past trade
-function smBars(s, tf) { if (SM_OVR && SM_OVR.s === s) return tf === '4h' ? smAgg(SM_OVR['1h'], 4) : SM_OVR[tf]; if (tf === '15m') { const k = S.kl.get(s); return k ? k.bars : null; } const h = S.h1.get(s); if (!h) return null; return tf === '1h' ? h.bars : smAgg(h.bars, 4); }
+function smBars(s, tf) { if (SM_OVR && SM_OVR.s === s) return tf === '4h' ? smAgg(SM_OVR['1h'], 4) : SM_OVR[tf]; if (tf === '15m') { const k = S.kl.get(s); return k ? k.bars : null; } const h = S.h1.get(s); if (!h) return null; const hb = !SM.cfg.gmsA && h.bars.length > 72 ? h.bars.slice(-72) : h.bars; return tf === '1h' ? hb : smAgg(hb, 4); }
 // market structure on a timeframe: the side of the last break of structure (close beyond a confirmed swing)
 function smBias(s, tf = '1h') { return smBiasB(smBars(s, tf)); }
 function smBiasB(B) {
@@ -1194,10 +1194,10 @@ function smBiasB(B) {
    up = HH + HL with the close above L2; down = LH + LL with the close below H2; anything else = range [lowest low, highest high].
    fakeout = within the last 3 bars a close beyond the last swing high/low formed before them, and the latest close back inside.
    Precedence: fakeout > trend > range. Too few bars or swings → null (no trade). */
-function smRegime(B) {
+function smRegime(B, L = 2) {
   const no = why => ({reg: null, hi: null, lo: null, why});
   if (!B || B.length < 12) return no('too few closed bars');
-  const n = B.length, c = B[n - 1][4], P = smPivots(B, 2);
+  const n = B.length, c = B[n - 1][4], P = smPivots(B, L);
   if (P.H.length < 2 || P.L.length < 2) return no('too few swings');
   const [H1, H2] = P.H.slice(-2), [L1, L2] = P.L.slice(-2), hi = Math.max(H1.px, H2.px), lo = Math.min(L1.px, L2.px);
   // levels from swings formed before the 3-bar window, so a fakeout bar that became a swing itself still counts as the fakeout
@@ -1219,6 +1219,54 @@ function smRegimeOk(reg, dir, px) {
   const pos = (px - R.lo) / (R.hi - R.lo), ok = fin(pos) && (L ? pos >= 0 && pos <= 0.3 : pos >= 0.7 && pos <= 1);
   return {ok, play: ok ? 'range' : null, why: fin(pos) ? `range, price at ${Math.round(pos * 100)}%: ${side}s only in the ${L ? 'lower' : 'upper'} 30%` : 'range edges unknown'};
 }
+/* ---- GMS v1.3 playbook test switches (Nov 15, Fred: "test A, B, C, D alone and in every combination"). All 0 live. ----
+   gmsA: higher-timeframe read. Swings need 3 bars each side; a 15m trend play needs the 4h trending the same way (Model A);
+         a range play needs a neutral 4h and a fakeout play a 4h that isn't trending against it (Model B); bias = the regime.
+   gmsB: sweep / shift. The sweep goes ≥ 0.05 ATR past the swing and closes back within 2 closed bars; the shift is a CLOSED bar
+         ≥ 0.05 ATR past the level within 12 bars of the sweep; the leg needs a displacement candle (body ≥ 1.2 ATR, ≥ 60% of range).
+   gmsC: higher-timeframe supply / demand: a base of 2–6 small candles (bodies ≤ 0.65 ATR, whole base ≤ 1.8 ATR), then within
+         3 candles a net move ≥ 1.2 ATR with a 60%-body candle; zone = the whole base, known only once the departure closed;
+         a zone that was already touched is not a point of interest any more.
+   gmsD: entry zone. Only an FVG ≥ 0.1 ATR wide whose middle candle is a displacement (body ≥ 1.2 ATR, ≥ 60% of range);
+         the order block is the last opposite candle 1–4 bars before the displacement, kept for the grade only (never the zone). */
+const smDispG = (b, atr, bull) => !!b && (bull ? b[4] > b[1] : b[4] < b[1]) && Math.abs(b[4] - b[1]) >= 1.2 * atr && Math.abs(b[4] - b[1]) >= 0.6 * Math.max(1e-12, b[2] - b[3]);
+function smGmsAlign(reg, s, tf, tNow) {
+  if (tf !== '15m' || !reg || !reg.reg) return reg;
+  const H4 = smBars(s, '4h'), g4 = smRegime(H4 && H4.filter(b => b[0] + 4 * 3600e3 <= tNow), 3).reg, g = reg.reg, tr4 = g4 === 'up' || g4 === 'down';
+  const no = why => ({reg: null, hi: reg.hi, lo: reg.lo, why});
+  if ((g === 'up' || g === 'down') && g4 !== g) return no(`1h ${g} but 4h ${g4 || 'unclear'} (both must trend)`);
+  if (g === 'range' && tr4) return no(`1h range while the 4h trends ${g4} (range plays need a neutral 4h)`);
+  if (g.startsWith('fakeout') && tr4 && (g === 'fakeout_up' ? 'down' : 'up') !== g4) return no(`1h ${g} against the 4h ${g4} trend`);
+  return Object.assign({}, reg, {r4: g4});
+}
+function smZonesG(HB) {
+  const out = {D: [], S: [], atr: null, P: null};
+  if (!HB || HB.length < 10) return out;
+  const n = HB.length, atr = smATR(HB, n) || 1e-9; out.atr = atr; out.P = smPivots(HB, 1); out.mid = (Math.max(...HB.map(b => b[2])) + Math.min(...HB.map(b => b[3]))) / 2;
+  const body = b => Math.abs(b[4] - b[1]);
+  for (const bull of [true, false]) for (let e = 1; e < n - 1; e++) {
+    let base = null;
+    for (let L = 6; L >= 2 && !base; L--) {
+      const st = e - L + 1; if (st < 0) continue;
+      const bb = HB.slice(st, e + 1), hi = Math.max(...bb.map(b => b[2])), lo = Math.min(...bb.map(b => b[3]));
+      if (bb.every(b => body(b) <= 0.65 * atr) && hi - lo <= 1.8 * atr) base = {st, hi, lo};
+    }
+    if (!base) continue;
+    let dep = -1, strong = false;
+    for (let m = e + 1; m <= Math.min(e + 3, n - 1); m++) {
+      const b = HB[m]; if (b[4] - b[1] !== 0 && (bull ? b[4] > b[1] : b[4] < b[1]) && body(b) >= 0.6 * (b[2] - b[3])) strong = true;
+      if (strong && (bull ? b[4] - base.hi : base.lo - b[4]) >= 1.2 * atr) { dep = m; break; }
+    }
+    if (dep < 0) continue;
+    const z = {lo: base.lo, hi: base.hi, side: bull ? 'D' : 'S', i: e, t: HB[dep][0], far: Math.abs(HB[dep][4] - (bull ? base.hi : base.lo)) / atr, gap: false, broke: null, touches: []};
+    for (let m = dep + 1; m < n; m++) {
+      if (bull ? HB[m][4] < z.lo : HB[m][4] > z.hi) { z.broke = HB[m][0]; break; }
+      if (bull ? HB[m][3] <= z.hi : HB[m][2] >= z.lo) z.touches.push(HB[m][0]);
+    }
+    (bull ? out.D : out.S).push(z); e = dep;   // one zone per base
+  }
+  return out;
+}
 // one direction's most recent setup on 15m bars
 // how far into a zone a candle must reach to count as having tested it: the depth an entry needs
 // (the Reviewer's midpoint rule, else the "not at the very edge" setting); stacked-gap (breakaway) zones are taken at the edge
@@ -1236,6 +1284,11 @@ function smZones(B, st, dir) {
     if (bull ? B[i - 1][2] < B[i + 1][3] : B[i - 1][3] > B[i + 1][2]) Z.push(bull ? {kind: 'FVG', lo: B[i - 1][2], hi: B[i + 1][3], i} : {kind: 'FVG', lo: B[i + 1][2], hi: B[i - 1][3], i});
   let o = st.type === 'cont' ? j : -1;   // continuation: the base candle; reversal: the last opposite candle before the shift
   if (o < 0) for (let i = k - 1; i >= j; i--) { const down = B[i][4] < B[i][1]; if (bull ? down : !down) { o = i; break; } }
+  if (SM.cfg.gmsD) {   // gmsD: the OB is the last opposite candle 1–4 bars before the first displacement candle of the leg
+    const a0 = smATR(B, j) || (B[j][2] - B[j][3]) || 1e-9; let dI = -1;
+    for (let m = j + 1; m <= Math.min(k + 1, n - 1); m++) if (smDispG(B[m], a0, bull)) { dI = m; break; }
+    o = -1; if (dI > 0) for (let i = dI - 1; i >= Math.max(0, dI - 4); i--) { const down = B[i][4] < B[i][1]; if (bull ? down : !down) { o = i; break; } }
+  }
   if (o >= 0) Z.push({kind: 'OB', lo: B[o][3], hi: B[o][2], i: o});   // the whole candle, wicks included (Nov 13)
   const atr = smATR(B, j) || (B[j][2] - B[j][3]) || 1e-9, vb = B.slice(Math.max(0, j - 24), j), vAvg = vb.length ? vb.reduce((a, b) => a + b[5], 0) / vb.length : 0;
   let far = st.ext; for (let m = j; m <= Math.min(k + 2, n - 1); m++) far = bull ? Math.max(far, B[m][2]) : Math.min(far, B[m][3]);
@@ -1250,6 +1303,7 @@ function smZones(B, st, dir) {
       ovl: +(z.kind === 'FVG' ? !!ob && z.lo <= ob.hi && z.hi >= ob.lo : Z.some(f => f.kind === 'FVG' && f.lo <= z.hi && f.hi >= z.lo)),
       pd: +(bull ? mid <= half : mid >= half),   // in the discount (long) / premium (short) half of the leg
       wOk: +((z.hi - z.lo) / atr >= 0.1 && (z.hi - z.lo) / atr <= 1.2), dispR: smR6((d[2] - d[3]) / atr), disp: strong(d), mssDisp,
+      gq: z.kind === 'FVG' ? +((z.hi - z.lo) / atr >= 0.1 && smDispG(B[z.i], atr, bull)) : 0,   // gmsD: a qualified FVG
       c2: z.kind === 'FVG' ? +(Math.abs(z.i - k) <= 1) : null, obNear: z.kind === 'OB' ? +(k - z.i <= 8) : null, obConf: z.kind === 'OB' ? +Z.some(f => f.kind === 'FVG' && f.i > z.i) : null});
   }
   return Z;
@@ -1306,6 +1360,7 @@ const smGradeTxt = g => g ? `grade ${g.g}${g.why.filter(x => x !== 'cont').lengt
 const smGoodOB = z => !!z && z.kind === 'OB' && z.obConf === 1 && z.fresh === 1 && z.pd === 1;
 function smZoneSet(r, Z) {
   let kz = smZonePick(Z, smRules().zone); const nG = Z.filter(z => z.kind === 'FVG').length;
+  if (SM.cfg.gmsD) { const Q = Z.filter(z => z.gq === 1); kz = Q.length ? Z.indexOf(Q[smZonePick(Q, smRules().zone)]) : -1; }
   if (SM.cfg.obPick) { const ob = Z.find(z => z.kind === 'OB'); if (SM.cfg.obPick === 1 && smGoodOB(ob)) kz = Z.indexOf(ob); else if (!nG) kz = -1; }
   if (kz < 0) return;
   const c = Z[kz]; r.zone = {lo: c.lo, hi: c.hi, kind: c.kind, i: c.i}; r.nGaps = nG; r.zc = {c: Z, k: kz};
@@ -1320,18 +1375,22 @@ function smZoneSet(r, Z) {
 function smSetup(B, P, dir, live) {
   const n = B.length, bull = dir === 'L';
   for (let j = n - 1; j >= Math.max(n - 32, 3); j--) {
-    const pool = (bull ? P.L : P.H).filter(p => p.i + 2 <= j && p.i >= j - 48);
-    const hit = pool.filter(p => bull ? (B[j][3] < p.px && B[j][4] > p.px) : (B[j][2] > p.px && B[j][4] < p.px));
+    const pool = (bull ? P.L : P.H).filter(p => p.i + 2 <= j && p.i >= j - 48), gB = !!SM.cfg.gmsB, aB = gB ? smATR(B, j) || 0 : 0, bf = 0.05 * aB;
+    // gmsB: past the swing by 0.05 ATR, closed back inside on that bar or one of the next two closed bars
+    const back = px => { if (!gB) return bull ? B[j][4] > px : B[j][4] < px; for (let m = j; m <= Math.min(j + 2, n - 2); m++) if (bull ? B[m][4] > px : B[m][4] < px) return true; return false; };
+    const hit = pool.filter(p => (bull ? B[j][3] < p.px - bf : B[j][2] > p.px + bf) && back(p.px));
     if (!hit.length) continue;
     const swept = hit.reduce((a, b) => bull ? (b.px < a.px ? b : a) : (b.px > a.px ? b : a));
     const opp = (bull ? P.H : P.L).filter(p => p.i < j && p.i + 2 <= j);
     if (!opp.length) continue;
     const lvl = opp[opp.length - 1];
-    let k = -1; for (let m = j + 1; m < n; m++) if (bull ? B[m][4] > lvl.px : B[m][4] < lvl.px) { k = m; break; }
+    let k = -1; for (let m = j + 1; m < (gB ? Math.min(n - 1, j + 13) : n); m++) if (bull ? B[m][4] > lvl.px + bf : B[m][4] < lvl.px - bf) { k = m; break; }   // gmsB: a closed bar, within 12 bars
+    if (gB && k < 0 && n - 1 - j > 12) return {dir, j, k, swept, lvl, ext: B[j][bull ? 3 : 2], stage: 'none', zone: null, taps: 0};   // the shift never came in time
     const end = k < 0 ? n - 1 : k;
     let ext = bull ? Infinity : -Infinity; for (let m = j; m <= end; m++) ext = bull ? Math.min(ext, B[m][3]) : Math.max(ext, B[m][2]);
     const r = {dir, j, k, swept, lvl, ext, stage: k < 0 ? 'sweep' : 'mss', zone: null, taps: 0};
     if (k < 0) { if (bull ? live < ext : live > ext) r.stage = 'none'; return r; }
+    if (gB) { let d = false; for (let m = j + 1; m <= k; m++) if (smDispG(B[m], aB || 1e-9, bull)) { d = true; break; } if (!d) { r.stage = 'nozone'; r.weak = 1; return r; } }   // no displacement on the shift
     // entry zone: the best-scoring FVG / order block on the displacement leg (by default the newest FVG, else the order block)
     smZoneSet(r, smZones(B, r, dir));
     if (!r.zone) { r.stage = 'nozone'; return r; }
@@ -1358,7 +1417,9 @@ function smContSetup(B, P, dir, live) {
     const sw = (bull ? P.H : P.L).filter(p => p.i + 2 <= k);
     if (!sw.length) continue;
     const lvl = sw[sw.length - 1];
-    if (!(bull ? B[k][4] > lvl.px && B[k - 1][4] <= lvl.px : B[k][4] < lvl.px && B[k - 1][4] >= lvl.px)) continue;
+    const bfC = SM.cfg.gmsB ? 0.05 * (smATR(B, k) || 0) : 0;
+    if (SM.cfg.gmsB && k >= n - 1) continue;   // gmsB: the break must be a closed bar
+    if (!(bull ? B[k][4] > lvl.px + bfC && B[k - 1][4] <= lvl.px : B[k][4] < lvl.px - bfC && B[k - 1][4] >= lvl.px)) continue;
     if (smBiasB(B.slice(0, k)) !== want) continue;                           // the trend was already this way: a continuation, not a change of character
     let i = -1; for (let m = k - 1; m >= Math.max(1, k - 8); m--) if (bull ? B[m][4] < B[m][1] : B[m][4] > B[m][1]) { i = m; break; }
     if (i < 0) continue;                                                       // no base before the break
@@ -1366,6 +1427,7 @@ function smContSetup(B, P, dir, live) {
     let leg = bull ? -Infinity : Infinity; for (let m = i + 1; m <= Math.min(k + 2, n - 1); m++) leg = bull ? Math.max(leg, B[m][2]) : Math.min(leg, B[m][3]);
     const atr = smATR(B, i) || 1e-9;
     if (Math.abs(leg - ext) < 1.5 * atr) continue;                            // not an impulsive departure from the base
+    if (SM.cfg.gmsB) { let d = false; for (let m = i + 1; m <= k; m++) if (smDispG(B[m], atr, bull)) { d = true; break; } if (!d) continue; }
     const r = {dir, type: 'cont', j: i, k, swept: null, lvl, ext, leg, stage: 'mss', zone: null, taps: 0, touch: -1};
     smZoneSet(r, smZones(B, r, dir));   // the gap the move left, else the base candle (by default)
     if (!r.zone) { r.stage = 'nozone'; return r; }   // obPick: a base that left no gap
@@ -1417,7 +1479,7 @@ function smPOI(Z, r, B, htfMs) {
   const bull = r.dir === 'L', tS = B[r.j][0], a = Z.atr, tol = 0.15 * a;
   const zones = (bull ? Z.D : Z.S).filter(z => z.t + htfMs <= tS && !z.broke && (bull ? r.ext <= z.hi + tol && r.ext >= z.lo - 0.6 * a : r.ext >= z.lo - tol && r.ext <= z.hi + 0.6 * a));
   const fresh = zones.find(z => !z.touches.some(t => t < tS - htfMs));
-  const z = fresh || zones[zones.length - 1] || null;
+  const z = fresh || (SM.cfg.gmsC ? null : zones[zones.length - 1]) || null;
   const piv = (bull ? Z.P.L : Z.P.H).filter(p => p.t + htfMs <= tS).find(p => bull ? r.ext < p.px && r.ext > p.px - 1.2 * a : r.ext > p.px && r.ext < p.px + 1.2 * a);
   // a higher-timeframe swing run in discount (long) / premium (short) is a turning point at a key level (daily-swing lesson)
   const pivKey = !!(piv && Z.mid && (bull ? r.ext < Z.mid : r.ext > Z.mid));
@@ -1532,16 +1594,18 @@ function smcRead(s) {
 function smcReadTf(s, tf) {
   const B = smBars(s, tf), tk = SM_OVR && SM_OVR.s === s ? SM_OVR.tk : S.tk.get(s), T = SM_TF[tf];
   if (!B || B.length < T.min || !tk) return {stage: 'wait', st: SMST.wait, checks: [], score: 0, tf};
-  const n = B.length, live = tk.last || B[n - 1][4], P = smPivots(B, 2), bias = smBias(s, T.htf);
+  const n = B.length, live = tk.last || B[n - 1][4], P = smPivots(B, 2);
   const HB = smBars(s, T.htf), hms = T.htf === '4h' ? 4 * 3600e3 : 3600e3, tNow = SM_OVR && SM_OVR.s === s ? SM_OVR.t : now();
-  const regime = smRegime(HB && HB.filter(b => b[0] + hms <= tNow));   // closed HTF bars only
+  let regime = smRegime(HB && HB.filter(b => b[0] + hms <= tNow), SM.cfg.gmsA ? 3 : 2), bias = smBias(s, T.htf);   // closed HTF bars only
+  // gmsA (test, Nov 15): 3-bar swings, 15m trend plays need the 4h trending the same way, and the HTF "bias" is the regime itself
+  if (SM.cfg.gmsA) { regime = smGmsAlign(regime, s, tf, tNow); bias = regime.reg === 'up' ? 'bull' : regime.reg === 'down' ? 'bear' : null; }
   let cands = ['L', 'S'].map(d => smSetup(B, P, d, live)).filter(Boolean);
   if (SM.cfg.cont) for (const d of ['L', 'S']) if (regime.reg === (d === 'L' ? 'up' : 'down')) { const c = smContSetup(B, P, d, live); if (c) cands.push(c); }
   if (SM_OVR && SM_OVR.s === s && SM_OVR.dir) cands = cands.filter(c => c.dir === SM_OVR.dir);   // audit: only the trade's direction
   if (!cands.length) return {stage: 'none', st: SMST.none, checks: [], score: 0, bias, regime, live, tf, htf: T.htf};
   const rank = r => (r.stage === 'inzone' ? 1e6 : r.stage === 'mss' ? 5e5 : r.stage === 'sweep' ? 2e5 : 0) + r.j;
   const r = cands.sort((a, b) => rank(b) - rank(a))[0], bull = r.dir === 'L';
-  const Z = smZonesB(HB), rok = smRegimeOk(regime, r.dir, live);
+  const Z = SM.cfg.gmsC ? smZonesG(HB && HB.filter(b => b[0] + hms <= tNow)) : smZonesB(HB), rok = smRegimeOk(regime, r.dir, live);
   // 1h setups: price in the 1h zone (first test, or still testing within 4 hours) → wait for a 15m structure shift (lower-timeframe confirmation)
   let conf = null;
   if (tf === '1h' && SM.cfg.ltfConfirm && r.zone && r.touch >= 0 && ['inzone', 'spent'].includes(r.stage) && n - 1 - r.touch <= 6) {
@@ -1755,7 +1819,7 @@ function smTick() {
     else if (SM.cool[s] && t - SM.cool[s] < 2 * 3600e3) c.skip = 'cooling down after a recent trade';
     else if (SM.cfg.regimeGate !== 0 && (!r.rok || !r.rok.ok)) c.skip = `${r.htf} regime ${(r.regime && r.regime.reg) || 'unclear'}: ${r.rok ? r.rok.why : 'regime unclear'}`;
     else if (r.against && !fk) c.skip = `${r.htf} structure is ${r.bias === 'bear' ? 'falling' : 'rising'}: no ${r.dir === 'L' ? 'longs' : 'shorts'} on the ${r.tf} against it`;
-    else if (smRules().needHTF && !fk && !(r.bias && (r.dir === 'L' ? r.bias === 'bull' : r.bias === 'bear'))) c.skip = `${r.htf} structure must agree (Reviewer's SMC rule); it's ${r.bias ? (r.bias === 'bull' ? 'rising' : 'falling') : 'unclear'}`;
+    else if (smRules().needHTF && !fk && !(SM.cfg.gmsA && r.rok && r.rok.ok) && !(r.bias && (r.dir === 'L' ? r.bias === 'bull' : r.bias === 'bear'))) c.skip = `${r.htf} structure must agree (Reviewer's SMC rule); it's ${r.bias ? (r.bias === 'bull' ? 'rising' : 'falling') : 'unclear'}`;
     else if (smRules().needDraw && !(r.setup && r.setup.type === 'cont') && r.draw && r.draw.draw && r.draw.draw !== (r.dir === 'L' ? 'up' : 'down')) c.skip = `against the ${r.htf} draw on liquidity (${r.draw.ev}; Reviewer's SMC rule)`;
     else if (r.setup && r.setup.type === 'cont' && smRules().noCont) c.skip = 'continuation setups paused (Reviewer\'s SMC rule)';
     else if (r.poi && r.poi.ok === 0 && (smRules().needPOI || (SM.cfg.poiRule && !fk && !(r.bias && (r.dir === 'L' ? r.bias === 'bull' : r.bias === 'bear'))))) c.skip = `${r.htf} isn't trending ${r.dir === 'L' ? 'up' : 'down'} and the sweep isn't at a ${r.htf} ${r.dir === 'L' ? 'demand zone or swing low' : 'supply zone or swing high'}${smRules().needPOI ? ' (Reviewer\'s SMC rule)' : ''}`;
