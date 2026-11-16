@@ -7,6 +7,7 @@ const PT_DEF = {v: 1, start: 1000, cash: 1000, pos: {}, log: [], eqs: [], day: n
 // Nov 11 (Fred): both traders use a 10× leverage cap (one-time switch for saved accounts)
 function ptMigrate(p) { if (p.cfg.lev10 !== 1) { p.cfg.maxLev = 10; p.cfg.lev10 = 1; }
   if (p.cfg.pause1115 !== 1) { p.on = false; p.cfg.pause1115 = 1; }   // Nov 15 (Fred): stop new entries for the losing-trade / reverse review; resume by hand (open positions keep being managed)
+  if (p.cfg.nolimit1116 !== 1) { p.cfg.dailyLossPct = 0; p.paused = null; p.cfg.nolimit1116 = 1; }   // Nov 16 (Fred): keep trading even after a day's loss passes 3%
   if (p.cfg.fade1115 !== 1) { p.cfg.momLong = 0; p.cfg.fadeG = 1; p.on = true; p.cfg.fade1115 = 1; }   // Nov 15 22:39 (Fred "試新策略"): momentum longs off, fade strong gainers on, Trader trades again
   return p; }
 let PT = (() => {
@@ -209,7 +210,7 @@ function ptTick() {
   if (!PT.day || PT.day.d !== today) { PT.day = {d: today, eq0: ptEquity()}; PT.paused = null; }
   ptManage(t);
   const eq = ptEquity();
-  if (!PT.paused && eq < PT.day.eq0 * (1 - PT.cfg.dailyLossPct / 100)) {
+  if (!PT.paused && PT.cfg.dailyLossPct > 0 && eq < PT.day.eq0 * (1 - PT.cfg.dailyLossPct / 100)) {   // 0 = no daily limit (Fred, Nov 16)
     PT.paused = today;
     raise('trader', 'ACCOUNT', 'dl' + today, `Daily loss limit hit (${fmtMoney(eq - PT.day.eq0, 1)} today) — no new trades until tomorrow`, -1, 0, true);
   }

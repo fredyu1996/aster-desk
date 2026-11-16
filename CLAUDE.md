@@ -91,7 +91,7 @@ git pull --rebase && git add -A && git commit -m "…" && git push   # Pages + t
    - Reversal: shorts gainers at "Reversal forming / Reversed" with ≥5/8 signs. Reversal longs are **off** (Fred, Nov 8).
    - Momentum: both sides at ≥6/8. **Since Nov 15 momentum longs are off** (`momLong 0`): momentum shorts on losers only.
    - **Fade** (Nov 15, `fadeG 1`, `strat: 'fade'`, `ptFadeCand`): a gainer with a strong momentum read (≥ `momMinScore`) that rose ≥ `fadeMin1h` 2.5% in the last hour is SHORTED. Fixed rules as tested: stop = the momentum long's distance mirrored above (2–15%), target +2R, no half off, 6 h, 0.75% risk, max 2. The Reviewer does not learn from fade trades (fixed rules).
-   - Risk: 1% per trade, max 3 positions, half off at +1.5R, target +3R, fade exits after 30 min, 12 h time stop, unlock guard, uses the Reviewer's screens.
+   - Risk: 1% per trade, max 3 positions, half off at +1.5R, target +3R, fade exits after 30 min, 12 h time stop, unlock guard, uses the Reviewer's screens. **No daily loss stop since Nov 16** (`dailyLossPct 0` = off, all three accounts).
 5. **Reviewer**:
    - Grades trades A–F and reviews the Trader every 3 trades. Rules are learned from the last 40 trades **per strategy**, and stay until newer trades say the opposite (5-day re-test).
    - Reviews the SMC Trader on SMC terms (setup quality 0–100, HTF agreement) and coaches it (zones / liquidity / execution grades).
@@ -200,6 +200,7 @@ git pull --rebase && git add -A && git commit -m "…" && git push   # Pages + t
   - Timing study (Fred's idea, 30 d `MF_DAYS=30`): the trigger that holds is the last-hour move. Fade a strong-momentum gainer that rose ≥ 2.5% in the last hour: backtest +0.20R n103 (halves +0.20 / +0.20), live reversed +0.49R n33; under 2.5% ≈ 0. Hours in the tracker does not hold in the backtest; early momentum longs also lose (0–2 h −0.39R n37).
   - The one that holds: fading the Trader's momentum LONGS on strong gainers. Live 65: reversed +0.27R (halves 0.00 / +0.53). Backtest 21 d small caps, score ≥ 6: momentum long −0.24R n108, fade +0.14R n108 (halves +0.14 / +0.16). Momentum shorts on losers: flat, fading them loses. Not adopted yet; Fred decides.
 - **Nov 15 22:39 (Trader: new strategy):** Fred "試新策略". Migration `fade1115`: `momLong = 0`, `fadeG = 1`, Trader trading again (`PT.on`). Evidence in the decision above and Backtester → Strategy notes. Review after ~20 fade trades (compare with the backtest +0.20R and live-reversed +0.49R).
+- **Nov 16 (no daily loss stop):** Fred: the Trader and the SMC traders keep trading even after a day's loss passes 3%. Migration `nolimit1116`: `PT.cfg` / `SM.cfg.dailyLossPct = 0` (SMC Big inherits), today's pause cleared (the Trader had stopped at −3.2% on Nov 16). `dailyLossPct > 0` turns a limit back on.
 - **Nov 14 (year backtester):** option A: BTC / ETH only, SMC Big settings, 365 days, one account. Patterns are searched on the **raw** run (Reviewer rules off), so they are not just the rules' own leftovers (Fred). Report only. Spec/plan: `docs/superpowers/`.
 
 ## Open items

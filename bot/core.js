@@ -671,6 +671,7 @@ const PT_DEF = {v: 1, start: 1000, cash: 1000, pos: {}, log: [], eqs: [], day: n
 // Nov 11 (Fred): both traders use a 10× leverage cap (one-time switch for saved accounts)
 function ptMigrate(p) { if (p.cfg.lev10 !== 1) { p.cfg.maxLev = 10; p.cfg.lev10 = 1; }
   if (p.cfg.pause1115 !== 1) { p.on = false; p.cfg.pause1115 = 1; }   // Nov 15 (Fred): stop new entries for the losing-trade / reverse review; resume by hand (open positions keep being managed)
+  if (p.cfg.nolimit1116 !== 1) { p.cfg.dailyLossPct = 0; p.paused = null; p.cfg.nolimit1116 = 1; }   // Nov 16 (Fred): keep trading even after a day's loss passes 3%
   if (p.cfg.fade1115 !== 1) { p.cfg.momLong = 0; p.cfg.fadeG = 1; p.on = true; p.cfg.fade1115 = 1; }   // Nov 15 22:39 (Fred "試新策略"): momentum longs off, fade strong gainers on, Trader trades again
   return p; }
 let PT = (() => {
@@ -873,7 +874,7 @@ function ptTick() {
   if (!PT.day || PT.day.d !== today) { PT.day = {d: today, eq0: ptEquity()}; PT.paused = null; }
   ptManage(t);
   const eq = ptEquity();
-  if (!PT.paused && eq < PT.day.eq0 * (1 - PT.cfg.dailyLossPct / 100)) {
+  if (!PT.paused && PT.cfg.dailyLossPct > 0 && eq < PT.day.eq0 * (1 - PT.cfg.dailyLossPct / 100)) {   // 0 = no daily limit (Fred, Nov 16)
     PT.paused = today;
     raise('trader', 'ACCOUNT', 'dl' + today, `Daily loss limit hit (${fmtMoney(eq - PT.day.eq0, 1)} today) — no new trades until tomorrow`, -1, 0, true);
   }
@@ -966,6 +967,7 @@ function smMigrate(p) { if (p.cfg.ownJudge !== 1) { p.cfg.useScreens = 0; p.cfg.
   if (p.cfg.pause1113 !== 1) { p.on = false; p.cfg.pause1113 = 1; } // Nov 12 (Fred): stop new SMC entries for the self-review; resume by hand
   if (p.cfg.pause1115 !== 1) { p.on = false; p.cfg.pause1115 = 1; } // Nov 15 (Fred): stop new entries for the losing-trade / reverse review; resume by hand
   if (p.cfg.resume1115 !== 1) { p.on = true; p.cfg.resume1115 = 1; } // Nov 15 22:00 (Fred): only the Trader stays paused; the SMC Trader trades on
+  if (p.cfg.nolimit1116 !== 1) { p.cfg.dailyLossPct = 0; p.paused = null; p.cfg.nolimit1116 = 1; } // Nov 16 (Fred): no daily loss stop (SMC Big inherits it from SM.cfg)
   if (p.cfg.gmsBD1115 !== 1) { p.cfg.gmsB = 1; p.cfg.gmsD = 1; p.cfg.gmsBD1115 = 1; } // Nov 15 (Fred "開"): GMS B (clean sweep / shift + displacement) and D (displacement FVG only) for the SMC Trader; SB_OV keeps SMC Big at 0
   return p; }
 let SM = (() => {
@@ -984,7 +986,7 @@ const SB_DEF = Object.assign(JSON.parse(JSON.stringify(SM_DEF)), {on: true, cfg:
 let SB = Object.assign(JSON.parse(JSON.stringify(SB_DEF)), LS.get('awx_sb', null) || {});
 if (!SB.created) SB.created = now();
 // SB keeps its one-time flags on the account itself (SB.cfg is rebuilt from SM.cfg + SB_OV)
-function sbMigrate(p) { if (p.pause1115 !== 1) { p.on = false; p.pause1115 = 1; } if (p.resume1115 !== 1) { p.on = true; p.resume1115 = 1; } return p; }   // Nov 15 (Fred): paused for the reverse review, then "only the Trader stops": SMC Big trades on
+function sbMigrate(p) { if (p.pause1115 !== 1) { p.on = false; p.pause1115 = 1; } if (p.resume1115 !== 1) { p.on = true; p.resume1115 = 1; } if (p.nolimit1116 !== 1) { p.paused = null; p.nolimit1116 = 1; } return p; }   // Nov 15 (Fred): paused for the reverse review, then "only the Trader stops": SMC Big trades on
 sbMigrate(SB);
 SB.cfg = Object.assign({}, SM.cfg, SB_OV);   // usable outside smWith from load on (smWith rebuilds it each swap)
 S.smCB = new Map();   // SB's per-coin reads, kept apart from the small-cap S.smC (a held SB coin can also be in S.trk)
@@ -1656,7 +1658,8 @@ function smTick() {
   if (!SM.day || SM.day.d !== today) { SM.day = {d: today, eq0: smEquity()}; SM.paused = null; }
   smManage(t);
   const eq = smEquity();
-  if (!SM.paused && eq < SM.day.eq0 * (1 - SM.cfg.dailyLossPct / 100)) { SM.paused = 'daily loss limit'; raise('smc', 'ACCOUNT', 'pause', `${smName()}: daily loss limit hit (${fmtMoney(eq - SM.day.eq0, 1)}). No new trades until tomorrow.`, -1, 0, true); }
+  if (!SM.paused && SM.cfg.dailyLossPct > 0 && eq < SM.day.eq0 * (1 - SM.cfg.dailyLossPct / 100)) {   // 0 = no daily limit (Fred, Nov 16)
+ SM.paused = 'daily loss limit'; raise('smc', 'ACCOUNT', 'pause', `${smName()}: daily loss limit hit (${fmtMoney(eq - SM.day.eq0, 1)}). No new trades until tomorrow.`, -1, 0, true); }
   const cands = [];
   for (const s of smCoins()) {
     const r = smcRead(s); S.smC.set(s, r);
