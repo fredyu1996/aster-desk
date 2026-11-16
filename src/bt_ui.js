@@ -1,6 +1,40 @@
 /* ================= BACKTESTER (agent 7): read-only view of the nightly SMC year backtest on BTC / ETH =================
    Data: BTS.year (sync.js btPull, file smc-backtest-year.json on branch "backtest"). Report only: nothing here touches live state. */
-TABS.bt = [['sum', 'Summary & rules'], ['pat', 'Patterns'], ['tr', 'Trades']];
+TABS.bt = [['sum', 'Summary & rules'], ['pat', 'Patterns'], ['tr', 'Trades'], ['notes', 'Strategy notes']];
+/* Strategy notes (Nov 15, Fred: "the Backtester writes down the strategies and the key points, then backtests them").
+   Results of the one-off studies run from Claude Code (tools/*.mjs). Aggregates only, never trade data. Newest first. */
+const BT_NOTES = [
+  {d: '2026-11-15', t: 'Fade strong gainers (the Trader\'s momentum longs, reversed)', st: 'testing',
+   idea: 'When the Trader\'s momentum read says "strong momentum ↑" on a tracked gainer, short it instead: same price, the same stop distance on the other side, target +2R, 6 h time exit.',
+   pts: ['Live: 65 momentum longs, −0.30R each as taken; replayed with plain stop / +2R / 12 h rules −0.53R, reversed +0.27R (first half 0.00, second half +0.53).',
+         'Backtest, small caps 21 d, momentum read rebuilt from candles (funding / OI unknown), score ≥ 6: momentum long −0.24R n108; fade +0.14R n108 (halves +0.14 / +0.16). Score ≥ 5: fade +0.07R n309 (+0.01 / +0.18).',
+         'Lead, not a rule: the fade did better when price was ≥ 2% above the 15m EMA20 (backtest +0.26R n82, both halves; live +0.38R n35) than within 2% (backtest −0.23R n26; live +0.14R n30).',
+         'Not for losers: the Trader\'s momentum shorts are about flat (−0.02R n221) and fading them loses (−0.14R).',
+         'Open: one 21-day window; the backtest exits are simpler than the Trader\'s (no fade exit, no half off).']},
+  {d: '2026-11-15', t: 'Reverse every losing trade?', st: 'rejected',
+   idea: 'For each losing trade, would the opposite trade have won? Then: does reversing every trade work?',
+   pts: ['Losers alone flatter it: the reverse won on 59% of the Trader\'s losers and 48% of the SMC Trader\'s. But it also turns almost every winner into a loss, and you only know which was which afterwards.',
+         'Every trade reversed (same price, mirrored stop, same R target, 12 h): Trader −0.01R n235 (as taken in the same replay −0.16R), SMC Trader −0.20R n45 (same as taken), SMC Big n5.',
+         'SMC backtests reversed: small caps (current rules) −0.18R n26, big caps −0.58R n38, BTC/ETH year −0.54R n90. The SMC strategy is not better backwards.',
+         'Only the Trader\'s momentum longs reverse well (note above).']},
+  {d: '2026-11-15', t: 'GMS v1.3 switches A/B/C/D', st: 'adopted',
+   idea: 'Concepts from the GMS playbook: A 4h+1h aligned structure, B clean sweep / closed-bar shift with displacement, C supply/demand from a quiet base, D displacement FVG only.',
+   pts: ['SMC Trader: B+D on (21 d small caps +0.3R n26 vs −9.9R n56, both halves better). SMC Big: C on (BTC/ETH year +28.0R n91 vs +13.8R n66).',
+         'A hurt everywhere (too few trades). C hurt small caps (−14.6R n71).']},
+  {d: '2026-11-15', t: 'Zone pick: FVG vs OB (zone study)', st: 'kept',
+   idea: 'Label every candidate FVG / OB of every setup from the candles that followed, not only the traded zone.',
+   pts: ['Small caps: only displacement FVGs hold up (+0.00R n303 vs −0.13R n1,081, both halves). OB never beats FVG; "good" OBs and the OB∩FVG overlap (A+) are not better.',
+         'The live pick (newest FVG, else OB) stays; D does the displacement part.']},
+  {d: '2026-11-15', t: '1h entries (4h filter) instead of 15m', st: 'rejected',
+   pts: ['Almost never trades: BTC/ETH year n2 (n15 with every Reviewer rule off, −0.21R); small caps 14 d n1.']},
+];
+const BT_ST = {testing: ['testing', 'warn'], adopted: ['adopted', 'up'], kept: ['kept as is', 'dim'], rejected: ['not adopted', 'dn']};
+function btNotesHTML() {
+  return '<div class="dim" style="margin:4px 0 10px">Strategy ideas the Backtester has tested, newest first. Report only: a note never changes a live rule; Fred decides.</div>' +
+    BT_NOTES.map(n => { const [l, c] = BT_ST[n.st] || [n.st, 'dim'];
+      return `<div style="margin-bottom:10px;padding:8px 10px;border:1px solid rgba(255,255,255,.12);border-radius:8px"><div><b>${esc(n.t)}</b> <span class="${c}">· ${esc(l)}</span> <span class="dim">· ${esc(n.d)}</span></div>
+        ${n.idea ? `<div style="margin:4px 0">${esc(n.idea)}</div>` : ''}<ul style="margin:4px 0 0 18px;padding:0">${n.pts.map(p => `<li>${esc(p)}</li>`).join('')}</ul></div>`; }).join('');
+}
 const btN = v => fin(v) ? v.toFixed(2) : '—';
 const btR = v => fin(v) ? fmtR(v) : '—';
 const btRc = v => `<span class="${cls(v)}">${btR(v)}</span>`;
@@ -54,6 +88,7 @@ function btTrHTML(y) {
     return `<tr><td>${esc(t.v)}</td><td>${esc(String(t.s).replace('USDT', ''))}</td><td>${t.side === 'S' ? 'short' : 'long'}</td><td>${btD(t.t0)}</td><td>${esc(t.tf)}</td><td>${esc(t.type)}</td><td>${esc(t.zk)}</td><td>${fin(t.q) ? t.q : '—'}</td><td>${esc(t.g)}</td><td>${esc(t.reg)}</td><td>${esc(f.hour || '—')}</td><td>${btRc(t.R)}</td><td class="dim" style="text-align:left">${esc(t.why || '')}</td></tr>`; }).join('')}</tbody></table>`;
 }
 function btYearHTML(tab) {
+  if (tab === 'notes') return btNotesHTML();
   btPull();
   if (!SY.repo || !SY.token) return '<div class="empty">Connect Sync (Sync panel) to read the backtest results.</div>';
   const y = BTS.year; if (!y || !y.sum) return `<div class="empty">${esc(BTS.err || 'No year backtest has run yet.')}</div>`;

@@ -24,6 +24,8 @@ async function runAll(tag, D, U, steps, isBig, split) {
     const r = await simulate(k, st, exInfo, D, U, steps, setup, new Map(), isBig);
     const A = r.trades.filter(x => x.t1 < split), B = r.trades.filter(x => x.t1 >= split);
     out.runs[`${tag}-${k}`] = {all: st3(r.trades), a: st3(A), b: st3(B), open: r.open, rows: r.trades.map(x => row(x, k))};
+    if (process.env.GT_FULL) out.runs[`${tag}-${k}`].full = r.trades.map(x => ({acct: tag, v: k, s: x.s, b: x.b, side: x.side, t0: x.t0, entry: x.entry, stop0: x.stop0, rr: x.rr, R: x.R,
+      type: x.type, tf: x.tf, regime: x.regime, play: x.play, zoneKind: x.zoneKind, htfBias: x.htfBias, q: x.q, grd: x.grd, cx: x.cx, exitWhy: x.exitWhy, strat: 'smc'}));   // GT_FULL: entries for tools/reverse-study.mjs
     log(`${tag.padEnd(5)} ${k.padEnd(4)}: ${f(st3(r.trades))} | half 1 ${f(st3(A))} | half 2 ${f(st3(B))}`);
     fs.writeFileSync(OUT, JSON.stringify(out));
   }
