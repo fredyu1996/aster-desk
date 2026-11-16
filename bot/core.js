@@ -939,6 +939,7 @@ function smMigrate(p) { if (p.cfg.ownJudge !== 1) { p.cfg.useScreens = 0; p.cfg.
   if (p.cfg.resume1113 !== 1) { if (p.cfg.pause1113 === 1) p.on = true; p.cfg.resume1113 = 1; } // Nov 13 (Fred): self-review done, resume SMC trading (zone tuning stays locked)
   if (p.cfg.pause1113 !== 1) { p.on = false; p.cfg.pause1113 = 1; } // Nov 12 (Fred): stop new SMC entries for the self-review; resume by hand
   if (p.cfg.pause1115 !== 1) { p.on = false; p.cfg.pause1115 = 1; } // Nov 15 (Fred): stop new entries for the losing-trade / reverse review; resume by hand
+  if (p.cfg.resume1115 !== 1) { p.on = true; p.cfg.resume1115 = 1; } // Nov 15 22:00 (Fred): only the Trader stays paused; the SMC Trader trades on
   if (p.cfg.gmsBD1115 !== 1) { p.cfg.gmsB = 1; p.cfg.gmsD = 1; p.cfg.gmsBD1115 = 1; } // Nov 15 (Fred "開"): GMS B (clean sweep / shift + displacement) and D (displacement FVG only) for the SMC Trader; SB_OV keeps SMC Big at 0
   return p; }
 let SM = (() => {
@@ -957,7 +958,7 @@ const SB_DEF = Object.assign(JSON.parse(JSON.stringify(SM_DEF)), {on: true, cfg:
 let SB = Object.assign(JSON.parse(JSON.stringify(SB_DEF)), LS.get('awx_sb', null) || {});
 if (!SB.created) SB.created = now();
 // SB keeps its one-time flags on the account itself (SB.cfg is rebuilt from SM.cfg + SB_OV)
-function sbMigrate(p) { if (p.pause1115 !== 1) { p.on = false; p.pause1115 = 1; } return p; }   // Nov 15 (Fred): stop new entries for the reverse review
+function sbMigrate(p) { if (p.pause1115 !== 1) { p.on = false; p.pause1115 = 1; } if (p.resume1115 !== 1) { p.on = true; p.resume1115 = 1; } return p; }   // Nov 15 (Fred): paused for the reverse review, then "only the Trader stops": SMC Big trades on
 sbMigrate(SB);
 SB.cfg = Object.assign({}, SM.cfg, SB_OV);   // usable outside smWith from load on (smWith rebuilds it each swap)
 S.smCB = new Map();   // SB's per-coin reads, kept apart from the small-cap S.smC (a held SB coin can also be in S.trk)
