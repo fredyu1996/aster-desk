@@ -2467,7 +2467,7 @@ function filterNote() {
 }
 function renderPanel() {
   const id = PS.open; if (!id) return;
-  if (typeof RVP !== 'undefined' && RVP.drag) return;                       // don't rebuild the chart in the middle of a drag
+  if (typeof RVP !== 'undefined' && (RVP.drag || (typeof RVV !== 'undefined' && RVV.pan))) return;                       // don't rebuild the chart in the middle of a drag
   const ae = document.activeElement; if (ae && $('#pbody').contains(ae) && /INPUT|SELECT|TEXTAREA/.test(ae.tagName)) return; // don't wipe a field being edited
   const tab = PS.tab[id], body = $('#pbody'), sc = body.scrollTop;
   const um = () => S.universe.map(mget);
@@ -3443,14 +3443,51 @@ function youReadM(m, side, x) {
 //   other side → "trade the other side" · same side, entry ≥ 0.25R deeper → "enter later" + edge entry
 //   (same entry) stop ≥ 0.2R further out / in → "wider" / "tighter stop" · target ≥ 30% short of / 40% past the trade's → "exit earlier" / "hold longer"
 function planPoints(P, x) {
-  const o = {a: [], b: [], d: []}; if (!P || !x || !P.entry || !fin(P.entry.p)) return o;
-  const side = P.side || x.side; if (side !== x.side) { o.a.push('flip'); return o; }
+  const o = {a: [], b: [], d: []}; if (!P || !x) return o;
+  drawPoints(o, P, x);
+  if (!P.entry || !fin(P.entry.p)) return o;
+  const side = P.side || x.side; if (side !== x.side) { if (!o.a.includes('flip')) o.a.push('flip'); return o; }
   const L = side === 'L', sg = L ? 1 : -1, d = Math.abs(x.entry - x.stop0) || x.entry * 0.01, en = P.entry.p;
   const deeper = (x.entry - en) * sg >= 0.25 * d;
   if (deeper) { o.a.push('later'); o.b.push('depth'); }
   else if (fin(P.stop)) { const out = (x.stop0 - P.stop) * sg; if (out >= 0.2 * d) o.a.push('wider'); else if (out <= -0.2 * d && (en - P.stop) * sg > 0) o.a.push('tighter'); }
   const bt = x.strat === 'smc' ? x.target : x.entry + sg * (x.tpR || (typeof PT !== 'undefined' ? PT.cfg.tpR : 3)) * d, span = fin(bt) ? Math.abs(bt - x.entry) : 0;
   if (fin(P.target) && span) { const q = (P.target - bt) * sg / span; if (q <= -0.3) o.a.push('exitE'); else if (q >= 0.4) o.a.push('hold'); }
+  return o;
+}
+/* What your drawings say (Nov 16): read from the objects themselves, not from words.
+   - Structure: the last 3 swing labels you put before the entry. Two of them bearish (LH / LL) with the latest one bearish
+     = a downtrend: a long went against it ("traded against the structure", like "against the HTF"); the same the other
+     way for shorts. Agreeing structure = the higher-timeframe call was fine.
+   - Your OB / FVG boxes on the trade's side, drawn before the entry: overlapping the trader's zone = that zone was fine;
+     elsewhere = the zone was poor, and "enter later" (+ depth) when yours is deeper, "enter earlier" when it is shallower.
+   - Your OB / FVG boxes on the other side, formed before the entry and sitting between the entry and the target = an
+     opposing zone in the way ("room").
+   - An MSS you drew against the trade before the entry (a break below for a long) = the structure had already turned. */
+function drawPoints(o, P, x) {
+  const L = x.side === 'L', add = (k, v) => { if (!o[k].includes(v)) o[k].push(v); }, tE = x.t0 + 15 * 60e3;
+  const S = (P.pts || []).filter(q => fin(q.t) && q.t <= tE).sort((a, b) => a.t - b.t).slice(-3);
+  if (S.length >= 2) {
+    const bull = S.filter(q => q.k === 'HH' || q.k === 'HL').length, bear = S.length - bull, last = S[S.length - 1].k;
+    const tr = bull >= 2 && (last === 'HH' || last === 'HL') ? 'bull' : bear >= 2 && (last === 'LH' || last === 'LL') ? 'bear' : null;
+    if (tr) add(...((tr === 'bull') === L ? ['d', 'smc_htf'] : ['b', 'htf']));
+  }
+  for (const b of P.brk || []) if (b.k === 'MSS' && fin(b.p) && b.t1 <= tE && fin(x.entry) && (L ? b.p < x.entry : b.p > x.entry) && Math.abs(b.p - x.entry) / x.entry < 0.15) {
+    add('b', 'htf');   // a shift drawn on the far side of the entry: below a long (support broke), above a short
+  }
+  const Z = (P.zones || []).filter(z => (z.kind === 'OB' || z.kind === 'FVG') && fin(z.lo) && fin(z.hi));
+  const mine = Z.filter(z => (z.dir === 'bull') === L && z.t0 <= tE), opp = Z.filter(z => (z.dir === 'bull') !== L && z.t0 <= tE);
+  const ref = x.zone && fin(x.zone.lo) ? x.zone : fin(x.entry) ? {lo: x.entry, hi: x.entry, kind: null} : null;
+  if (ref && mine.length) {
+    if (mine.some(z => z.lo <= ref.hi && z.hi >= ref.lo)) { if (ref.kind) add('d', ref.kind === 'FVG' ? 'smc_gap' : 'smc_ob'); }
+    else {
+      if (ref.kind) add('b', ref.kind === 'FVG' ? 'gap' : 'ob');
+      const deeper = mine.some(z => L ? z.hi < ref.lo : z.lo > ref.hi);
+      if (deeper) { add('a', 'later'); add('b', 'depth'); } else add('a', 'earlier');
+    }
+  }
+  const d = Math.abs(x.entry - x.stop0) || x.entry * 0.01, tg = x.strat === 'smc' && fin(x.target) ? x.target : x.entry + (L ? 1 : -1) * (x.tpR || (typeof PT !== 'undefined' ? PT.cfg.tpR : 3)) * d;
+  if (fin(x.entry) && fin(tg) && opp.some(z => L ? z.lo > x.entry && z.lo < tg : z.hi < x.entry && z.hi > tg)) add('b', 'room');
   return o;
 }
 // plain-language reading of a comment, for the form and the review wall
@@ -4606,7 +4643,35 @@ function rvTrades(which = 'all') {
 const stratName = (a, x) => a === 'sb' ? 'SMC Big' : a === 'sm' ? 'SMC Trader' : x.strat === 'mom' ? 'Trader · Momentum' : x.strat === 'fade' ? 'Trader · Fade' : 'Trader · Reversal';
 
 /* ---- candles around a closed trade (fetched once, cached) ---- */
-function rvBars(x) {
+/* ---- TradingView-style chart in the review panel (Nov 16, Fred): pick the timeframe, scroll to zoom, drag to move,
+   double-click to reset, crosshair with price and time. The wall keeps the fixed view. Marks are stored as time + price,
+   so they stay put on every timeframe and zoom. ---- */
+const niceStep = v => { const p = Math.pow(10, Math.floor(Math.log10(v || 1))), n = v / p; return (n < 1.5 ? 1 : n < 3 ? 2 : n < 7 ? 5 : 10) * p; };
+const RV_TFS = [['5m', 5], ['15m', 15], ['1h', 60], ['4h', 240], ['1d', 1440]];
+const RVV = {key: null, tf: null, t0: null, t1: null, pan: null, hover: null};
+function rvDefTf(x) { const span = Math.max(x.t1 + RV_FU_H * 3600e3 - x.t0, 10 * 60e3); return (RV_TFS.slice(1, 4).find(([, m]) => span / (m * 60e3) <= 150) || ['4h', 240])[0]; }
+function rvViewReset(x, tf) {
+  const ms = RV_TFS.find(q => q[0] === tf)[1] * 60e3, end = Math.min(now(), x.t1 + RV_FU_H * 3600e3);
+  let t0 = Math.floor(x.t0 / ms) * ms - 24 * ms, t1 = Math.max(end, x.t1 + ms);
+  if (t1 - t0 < 40 * ms) { const mid = (x.t0 + x.t1) / 2; t0 = mid - 20 * ms; t1 = mid + 20 * ms; }
+  if (t1 - t0 > 600 * ms) t0 = t1 - 600 * ms;
+  Object.assign(RVV, {tf, t0, t1});
+}
+function rvView(key, x) {
+  if (RVV.key !== key) { RVV.key = key; RVV.hover = null; RVV.pan = null; rvViewReset(x, rvDefTf(x)); }
+  return {tf: RVV.tf, t0: RVV.t0, t1: RVV.t1};
+}
+function rvBars(x, tf) {
+  if (tf) {   // a chosen timeframe: up to 1000 candles ending 24 h after the exit (or now)
+    const k = x.s + '|' + tf + '|' + x.t1; let e = RVK.get(k);
+    if (e && (e.st !== 'err' || now() - e.t < 60e3)) { if (e.st === 'ok' && now() - x.t1 < (RV_FU_H + 1) * 3600e3 && now() - e.t > 10 * 60e3) e = null; else return e; }
+    const ms = RV_TFS.find(q => q[0] === tf)[1] * 60e3, end = Math.min(now(), x.t1 + RV_FU_H * 3600e3), start = Math.floor(end / ms) * ms - 999 * ms;
+    e = {st: 'load', t: now(), iv: tf, ms, bars: null}; RVK.set(k, e);
+    api(`/fapi/v1/klines?symbol=${x.s}&interval=${tf}&startTime=${start}&endTime=${end}&limit=1000`)
+      .then(a => { e.bars = a.map(b => [+b[0], +b[1], +b[2], +b[3], +b[4]]); e.st = 'ok'; e.t = now(); rvRedraw(); })
+      .catch(() => { e.st = 'err'; e.t = now(); });
+    return e;
+  }
   const k = x.s + '|' + x.t0 + '|' + x.t1; let e = RVK.get(k);
   if (e && (e.st !== 'err' || now() - e.t < 60e3)) {
     // trades that closed recently: refresh once later so the bars after the exit fill in
@@ -4740,24 +4805,32 @@ function rvLessonsFor(x, acct) {
 
 /* ---- the chart ---- */
 // f = scale (1 for the panel, ~2.2 for the wall)
-function drawTradeChart(c, x, acct, X0, Y0, w, h, f, E, plan) {
+function drawTradeChart(c, x, acct, X0, Y0, w, h, f, E, plan, view) {
   c.save(); c.beginPath(); c.rect(X0, Y0, w, h); c.clip();
   c.fillStyle = '#060a14'; c.fillRect(X0, Y0, w, h);
-  const e = rvBars(x);
+  const e = view ? rvBars(x, view.tf) : rvBars(x);
   if (!e.bars || e.bars.length < 4) {
     c.fillStyle = DIM; c.font = `500 ${13 * f}px ${FS}`; c.fillText(e.st === 'err' ? 'Could not load candles for this trade.' : 'Loading candles…', X0 + 12 * f, Y0 + h / 2); c.restore(); return;
   }
-  const Bs = e.bars, padR = 104 * f, pw = w - padR - 8 * f, T0 = Bs[0][0], T1 = Bs[Bs.length - 1][0] + e.ms;
+  const all = e.bars, padR = 104 * f, pw = w - padR - 8 * f, T0 = view ? view.t0 : all[0][0], T1 = view ? view.t1 : all[all.length - 1][0] + e.ms;
+  const Bs = view ? all.filter(b => b[0] + e.ms > T0 && b[0] < T1) : all;
+  if (Bs.length < 2) { c.fillStyle = DIM; c.font = `500 ${13 * f}px ${FS}`; c.fillText('No candles here. Double-click the chart to go back to the trade.', X0 + 12 * f, Y0 + h / 2); c.canvas.__map = {X0, Y0, f, pw, h, T0, T1, lo: 0, hi: 1, bars: [], all, ms: e.ms, X: () => 0, Y: () => 0, right: X0 + 6 * f + pw}; c.restore(); return; }
+  const tradeIn = !view || (x.t1 >= T0 && x.t0 <= T1);
   const X = t => X0 + 6 * f + (clamp(t, T0, T1) - T0) / (T1 - T0) * pw;
   const L = x.side === 'L', sg = L ? 1 : -1, d = Math.abs(x.entry - x.stop0) || x.entry * 0.01;
   const tp1R = x.tp1R || acctCfg(acct).tp1R;
   const tgt = isSmcA(acct) ? x.target : x.entry + sg * (x.tpR || PT.cfg.tpR) * d;
   const tp1 = x.entry + sg * tp1R * d, best = x.entry + sg * Math.max(0, x.maxR || 0) * d;
-  const lv = [x.entry, x.stop0, x.exit, tp1, best].concat(fin(tgt) && Math.abs(tgt - x.entry) < d * 6 ? [tgt] : []).filter(fin);
-  if (plan) lv.push(...planLevels(plan));
+  const lv = tradeIn ? [x.entry, x.stop0, x.exit, tp1, best].concat(fin(tgt) && Math.abs(tgt - x.entry) < d * 6 ? [tgt] : []).filter(fin) : [];
+  if (plan) lv.push(...planLevels(plan, view ? T0 : null, view ? T1 : null));
   let lo = Math.min(...Bs.map(b => b[3]), ...lv), hi = Math.max(...Bs.map(b => b[2]), ...lv); const sp = hi - lo || hi * 0.01; lo -= sp * 0.07; hi += sp * 0.07;
   const Y = v => Y0 + 10 * f + (hi - clamp(v, lo, hi)) / (hi - lo) * (h - 34 * f);
   const xa = X(x.t0), xb = Math.max(X(x.t1), xa + 2);
+  // price grid (left edge)
+  if (view) { const st = niceStep((hi - lo) / 6); c.font = `500 ${9.5 * f}px ${FM}`; c.textBaseline = 'middle';
+    for (let v = Math.ceil(lo / st) * st; v <= hi; v += st) { const yy = Y(v); if (yy > Y0 + h - 30 * f) continue; c.strokeStyle = 'rgba(154,176,255,.07)'; c.lineWidth = 1; c.beginPath(); c.moveTo(X0, yy); c.lineTo(X0 + 6 * f + pw, yy); c.stroke(); c.fillStyle = 'rgba(154,176,255,.45)'; c.fillText(fmtPx(v), X0 + 4 * f, yy - 6 * f); }
+    c.textBaseline = 'alphabetic'; }
+  if (tradeIn) {
   // time in the trade
   c.fillStyle = 'rgba(255,209,102,.08)'; c.fillRect(xa, Y0, xb - xa, h - 22 * f);
   { const xe = X(Math.min(x.t1 + RV_FU_H * 3600e3, T1)); c.fillStyle = 'rgba(154,176,255,.05)'; c.fillRect(xb, Y0, xe - xb, h - 22 * f);
@@ -4765,8 +4838,9 @@ function drawTradeChart(c, x, acct, X0, Y0, w, h, f, E, plan) {
     c.fillStyle = 'rgba(154,176,255,.75)'; c.font = `600 ${9.5 * f}px ${FS}`; c.fillText(x.fu ? '24h after the exit' : now() < x.t1 + RV_FU_H * 3600e3 ? 'after the exit (following…)' : 'after the exit', xb + 5 * f, Y0 + 12 * f); }
   // SMC zone it entered from
   if (x.zone && fin(x.zone.lo)) { const zx = Math.max(X0 + 6 * f, xa - 8 * (pw / Bs.length)); c.fillStyle = L ? 'rgba(46,229,157,.15)' : 'rgba(255,92,122,.15)'; c.fillRect(zx, Y(x.zone.hi), xa - zx + 4, Y(x.zone.lo) - Y(x.zone.hi)); c.fillStyle = L ? UP : DN; c.font = `700 ${10 * f}px ${FS}`; c.fillText(x.zone.kind || 'zone', zx + 3 * f, Y(x.zone.hi) - 3 * f); }
+  }
   // candles
-  const bw = pw / Bs.length;
+  const bw = pw / ((T1 - T0) / e.ms);
   for (const b of Bs) {
     const cx = X(b[0] + e.ms / 2), up = b[4] >= b[1];
     c.strokeStyle = c.fillStyle = up ? 'rgba(46,229,157,.85)' : 'rgba(255,92,122,.85)'; c.lineWidth = Math.max(1, f * 0.9);
@@ -4776,6 +4850,8 @@ function drawTradeChart(c, x, acct, X0, Y0, w, h, f, E, plan) {
   // levels, from the entry onwards
   const right = X0 + 6 * f + pw;
   const used = [];
+  let tb = x.t0; const parts = (x.ex || []).slice(0, -1);
+  if (tradeIn) {
   const lvl = (v, col, label, dash) => {
     if (!fin(v) || v < lo || v > hi) return; const yy = Y(v); let ly = yy;
     for (let k = 0; k < 6 && used.some(u => Math.abs(u - ly) < 12 * f); k++) ly += 12 * f; used.push(ly);
@@ -4790,11 +4866,10 @@ function drawTradeChart(c, x, acct, X0, Y0, w, h, f, E, plan) {
   // markers: entry ▲/▼, partial ◆, exit ●
   const tri = (px, py, up, col) => { const s = 7 * f; c.fillStyle = col; c.beginPath(); if (up) { c.moveTo(px, py - s); c.lineTo(px - s, py + s * 0.7); c.lineTo(px + s, py + s * 0.7); } else { c.moveTo(px, py + s); c.lineTo(px - s, py - s * 0.7); c.lineTo(px + s, py - s * 0.7); } c.closePath(); c.fill(); c.strokeStyle = '#04070f'; c.lineWidth = 1.5; c.stroke(); };
   tri(xa, Y(x.entry), L, '#ffd166');
-  const parts = (x.ex || []).slice(0, -1);
   for (const p of parts) { const px = X(p[0]), py = Y(p[1]), s = 6 * f; c.fillStyle = UP; c.beginPath(); c.moveTo(px, py - s); c.lineTo(px + s, py); c.lineTo(px, py + s); c.lineTo(px - s, py); c.closePath(); c.fill(); }
   c.fillStyle = x.R >= 0 ? UP : DN; c.beginPath(); c.arc(xb, Y(x.exit), 6.5 * f, 0, 7); c.fill(); c.strokeStyle = '#04070f'; c.lineWidth = 1.5; c.stroke();
   // best point (the bar in the trade with the most favourable extreme)
-  let tb = x.t0; { let bv = L ? -Infinity : Infinity; for (const b of Bs) if (b[0] + e.ms > x.t0 && b[0] <= x.t1) { const v = L ? b[2] : b[3]; if (L ? v > bv : v < bv) { bv = v; tb = b[0] + e.ms / 2; } } }
+  { let bv = L ? -Infinity : Infinity; for (const b of Bs) if (b[0] + e.ms > x.t0 && b[0] <= x.t1) { const v = L ? b[2] : b[3]; if (L ? v > bv : v < bv) { bv = v; tb = b[0] + e.ms / 2; } } }
   // ✓ / ✗ tags at the spot each verdict refers to (hidden while you read the chart yourself)
   if (E && RVT.tags) {
     const at = {entry: [xa, Y(x.entry), L ? 1 : -1], best: [X(tb), Y(best), L ? -1 : 1], tp1: parts.length ? [X(parts[0][0]), Y(parts[0][1]), L ? -1 : 1] : [(xa + xb) / 2, Y(tp1), L ? -1 : 1], exit: [xb, Y(x.exit), x.R >= 0 === L ? -1 : 1], after: x.fu && x.fu.af ? [X(x.fu.af.tMax), Y(x.fu.af.pMax), L ? -1 : 1] : [xb, Y(x.exit), 1]};
@@ -4813,14 +4888,28 @@ function drawTradeChart(c, x, acct, X0, Y0, w, h, f, E, plan) {
     }
     c.textBaseline = 'alphabetic';
   }
-  // your own setup, drawn over the chart
-  const res = plan ? rvPlanSim(x, acct, plan, Bs, e.ms) : null;
-  if (plan) drawPlan(c, plan, x, X, Y, f, X0 + 6 * f, right, Y0, res);
-  c.canvas.__map = {X, Y, X0, Y0, f, pw, h, T0, T1, lo, hi, bars: Bs, ms: e.ms, right}; c.canvas.__res = res;
+  }
+  // your own setup, drawn over the chart (replayed on 15m or finer when this view is coarser? no: on the candles shown)
+  const res = plan ? rvPlanSim(x, acct, plan, all, e.ms) : null;
+  if (plan) drawPlan(c, plan, x, X, Y, f, X0 + 6 * f, right, Y0, res, h);
+  c.canvas.__map = {X, Y, X0, Y0, f, pw, h, T0, T1, lo, hi, bars: Bs, all, ms: e.ms, right}; c.canvas.__res = res;
+  // crosshair with price and time
+  if (view && RVV.hover && RVV.key === c.canvas.dataset.rvchart && !RVV.pan) {
+    const {px, py} = RVV.hover;
+    if (px >= X0 + 6 * f && px <= right && py >= Y0 && py <= Y0 + h - 24 * f) {
+      const pv = hi - (py - Y0 - 10 * f) / (h - 34 * f) * (hi - lo), tv = T0 + (px - X0 - 6 * f) / pw * (T1 - T0);
+      c.strokeStyle = 'rgba(223,230,243,.35)'; c.lineWidth = 1; c.setLineDash([4, 4]); c.beginPath(); c.moveTo(X0, py); c.lineTo(right, py); c.moveTo(px, Y0); c.lineTo(px, Y0 + h - 24 * f); c.stroke(); c.setLineDash([]);
+      c.font = `700 ${10.5 * f}px ${FM}`; c.textBaseline = 'middle';
+      const pt = fmtPx(pv), pwid = c.measureText(pt).width + 10 * f; c.fillStyle = '#dfe6f3'; rr(c, right + 2 * f, py - 8 * f, pwid, 16 * f, 3 * f); c.fill(); c.fillStyle = '#04070f'; c.fillText(pt, right + 7 * f, py + 0.5 * f);
+      const bar = Bs.find(b => b[0] <= tv && tv < b[0] + e.ms), ttx = new Date(bar ? bar[0] : tv).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'}) + (bar ? `  O ${fmtPx(bar[1])} H ${fmtPx(bar[2])} L ${fmtPx(bar[3])} C ${fmtPx(bar[4])}` : '');
+      const tw = c.measureText(ttx).width + 10 * f, tx = clamp(px - tw / 2, X0 + 2 * f, right - tw); c.fillStyle = '#dfe6f3'; rr(c, tx, Y0 + h - 22 * f, tw, 16 * f, 3 * f); c.fill(); c.fillStyle = '#04070f'; c.fillText(ttx, tx + 5 * f, Y0 + h - 14 * f);
+      c.textBaseline = 'alphabetic'; c.restore(); return;
+    }
+  }
   // time axis
   c.fillStyle = DIM; c.font = `500 ${10 * f}px ${FM}`;
   const tl = t => new Date(t).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'});
-  c.fillText(`${e.iv} candles · in ${tl(x.t0)}`, X0 + 8 * f, Y0 + h - 7 * f);
+  c.fillText(`${e.iv} candles · in ${tl(x.t0)}${view ? ' · scroll = zoom · drag = move · double-click = back to the trade' : ''}`, X0 + 8 * f, Y0 + h - 7 * f);
   c.textAlign = 'right'; c.fillText(`out ${tl(x.t1)} · held ${held(x)}`, right, Y0 + h - 7 * f); c.textAlign = 'left';
   c.restore();
 }
@@ -4986,7 +5075,7 @@ function rvChartHTML() {
       <div><div style="font-size:19px;font-weight:800">${esc(x.b)} <span class="${x.side === 'L' ? 'up' : 'dn'}" style="font-size:13px">${x.side === 'L' ? 'LONG' : 'SHORT'}</span> <span style="font-size:13px;color:${isSmcA(a) ? SMCOL : '#ffd166'}">${esc(stratName(a, x))}</span> <span class="mono ${cls(x.R)}">${fmtR(x.R)} · ${fmtMoney(x.pnl, 1)}</span></div>
       ${E.smc ? `<div style="font-size:12px;margin-top:2px;color:${SMCOL}">${esc(smcLine(E))}</div>` : ''}<div style="font-size:13px;margin-top:2px">${esc(g.note)}</div></div>
       <span class="dim" style="margin-left:auto;font-size:12px">${new Date(x.t0).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'})} → ${new Date(x.t1).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})} · held ${held(x)}</span></div>
-    ${planBarHTML(a, x)}<canvas data-rvchart="${esc(RVS.key)}" style="width:100%;height:${RVP.on ? 440 : 360}px;touch-action:none;${RVP.on ? 'cursor:crosshair;' : ''}display:block;border-radius:8px;border:1px solid var(--line);margin-top:10px"></canvas>
+    ${planBarHTML(a, x)}${rvTfBarHTML(RVS.key, x)}<canvas data-rvchart="${esc(RVS.key)}" style="width:100%;height:${RVP.on ? 480 : 420}px;touch-action:none;cursor:${RVP.on && RVP.tool !== 'pan' ? 'crosshair' : 'grab'};display:block;border-radius:8px;border:1px solid var(--line);margin-top:10px"></canvas>
     <div style="display:flex;gap:10px;align-items:center;margin-top:4px"><span class="dim" style="font-size:11px">▲/▼ entry · ◆ half taken · ● exit · shaded = time in the trade · numbered tags match the lists below · <span style="color:${MINE_C}">pink = your marks</span></span><span class="chip ${RVT.tags ? 'on' : ''}" data-rvtags="1" style="margin-left:auto;font-size:11px" title="Hide the Reviewer's ✓/✗ tags so you can read the chart yourself (T at the review wall)">${RVT.tags ? '✓/✗ on chart: ON' : '✓/✗ on chart: OFF'}</span></div>
     <div class="grid2" style="margin-top:10px"><div class="card2"><h3 style="color:${UP}">DONE RIGHT</h3>${G.map(item).join('') || '<span class="dim" style="font-size:13px">Nothing stood out.</span>'}</div>
     <div class="card2"><h3 style="color:${DN}">DONE WRONG</h3>${B.map(item).join('') || '<span class="dim" style="font-size:13px">Nothing. A clean trade by the rules.</span>'}</div></div>
@@ -4994,31 +5083,76 @@ function rvChartHTML() {
     <div class="dim" style="font-size:12px;margin-top:6px">Entry reason: ${esc(x.why || '—')}<br>Exit: ${esc(x.exitWhy || '—')}</div></div>
     ${mineFormHTML(a, x, E)}</div></div>`;
 }
+function rvTfBarHTML(key, x) {
+  const V = rvView(key, x);
+  return `<div style="display:flex;gap:6px;align-items:center;margin-top:10px;flex-wrap:wrap"><span class="dim" style="font-size:11px;letter-spacing:.08em">TIMEFRAME</span>${RV_TFS.map(([tf]) => `<span class="chip ${V.tf === tf ? 'on' : ''}" data-rvtf="${tf}" style="font-size:11px">${tf}</span>`).join('')}<span class="chip" data-rvview="reset" style="font-size:11px" title="Back to the trade (double-click the chart)">⟲ Fit the trade</span><span class="dim" style="font-size:11px;margin-left:auto">scroll = zoom · drag = move · double-click = back to the trade</span></div>`;
+}
 function drawRvCanvas(cv) {
   const k = cv.dataset.rvchart, hit = rvTrades().find(([a, x]) => tradeKey(a, x) === k); if (!hit) return;
   const r = cv.getBoundingClientRect(); if (!r.width) return;
   const dpr = Math.min(devicePixelRatio || 1, 2); cv.width = r.width * dpr; cv.height = r.height * dpr;
   const c = cv.getContext('2d'); c.scale(dpr, dpr);
   const mine = MD.key === k && MD.d ? MD.d : RVM[k], P = mine && mine.plan ? planWithDrag(mine.plan) : (RVP.drag && MD.key === k ? planWithDrag({}) : null);
-  drawTradeChart(c, hit[1], hit[0], 0, 0, r.width, r.height, 1, rvExplain(hit[1], hit[0]), P);
+  drawTradeChart(c, hit[1], hit[0], 0, 0, r.width, r.height, 1, rvExplain(hit[1], hit[0]), P, rvView(k, hit[1]));
   const st = document.getElementById('planRes'); if (st && MD.key === k) st.innerHTML = planStatusHTML(cv.__res, hit[1], MD.d && MD.d.plan);
 }
 /* ---- your own setup on the chart ----
-   plan = {side, entry: {t, p}, stop, target, zones: [{t0, t1, lo, hi}], lines: [{t0, p0, t1, p1}], labels: [{t, p, txt}], res}
+   plan = {side, entry: {t, p}, stop, target, zones: [{t0, t1, lo, hi, kind?: 'OB' | 'FVG', dir?: 'bull' | 'bear'}],
+           lines: [{t0, p0, t1, p1}], labels: [{t, p, txt}], pts: [{t, p, k: 'HH' | 'HL' | 'LH' | 'LL'}],
+           brk: [{t0, t1, p, k: 'BOS' | 'MSS'}], res}
+   OB / FVG: click a candle and the box is built from the candles (OB = that candle's full range; FVG = the gap between the
+   candles either side), or drag your own. HH / HL / LH / LL snap to the nearest swing high / low. BOS / MSS: drag from
+   the swing level to the candle that broke it.
    Prices and times, not pixels, so the marks land in the same place on the panel, the wall and any screen size.
    The Reviewer replays your entry / stop / target on the trade's candles (worst case first inside a candle, fees and
    slippage included) and compares your levels with the trader's (planPoints in review.js); those count like a comment. */
 const PLAN_C = '#ff8ad8';
-const planHas = P => !!(P && ((P.entry && fin(P.entry.p)) || fin(P.stop) || fin(P.target) || (P.zones || []).length || (P.lines || []).length || (P.labels || []).length));
-function planLevels(P) {
-  const v = [P.entry && P.entry.p, P.stop, P.target];
-  for (const z of P.zones || []) v.push(z.lo, z.hi); for (const l of P.lines || []) v.push(l.p0, l.p1); for (const l of P.labels || []) v.push(l.p);
+const planHas = P => !!(P && ((P.entry && fin(P.entry.p)) || fin(P.stop) || fin(P.target) || (P.zones || []).length || (P.lines || []).length || (P.labels || []).length || (P.pts || []).length || (P.brk || []).length));
+function planLevels(P, T0, T1) {
+  const inT = (a, b) => T0 == null || (Math.max(a, b == null ? a : b) >= T0 && Math.min(a, b == null ? a : b) <= T1);
+  const v = [];
+  if (P.entry && inT(P.entry.t)) v.push(P.entry.p, P.stop, P.target);
+  for (const z of P.zones || []) if (inT(z.t0, z.t1)) v.push(z.lo, z.hi);
+  for (const l of P.lines || []) if (inT(l.t0, l.t1)) v.push(l.p0, l.p1);
+  for (const l of P.labels || []) if (inT(l.t)) v.push(l.p);
+  for (const q of P.pts || []) if (inT(q.t)) v.push(q.p);
+  for (const b of P.brk || []) if (inT(b.t0, b.t1)) v.push(b.p);
   return v.filter(fin);
 }
+const SMC_BOX = {OB: {bull: ['rgba(46,229,157,.17)', '#2ee59d', 'Bull OB'], bear: ['rgba(255,92,122,.17)', '#ff5c7a', 'Bear OB']}, FVG: {bull: ['rgba(77,210,255,.15)', '#4dd2ff', 'Bull FVG'], bear: ['rgba(255,170,77,.16)', '#ffaa4d', 'Bear FVG']}};
+// an OB from one candle (its full range), extended until a candle closes through it (max 40 candles)
+function planAutoOB(all, ms, t) {
+  const i = all.findIndex(b => b[0] <= t && t < b[0] + ms); if (i < 0) return null;
+  const b = all[i], bull = b[4] < b[1];   // a down candle is a bullish (demand) OB, an up candle a bearish (supply) OB
+  let j = i + 1; for (; j < Math.min(all.length, i + 41); j++) if (bull ? all[j][4] < b[3] : all[j][4] > b[2]) break;
+  return {t0: b[0], t1: (all[Math.min(j, all.length - 1)] || b)[0] + ms, lo: b[3], hi: b[2], kind: 'OB', dir: bull ? 'bull' : 'bear'};
+}
+// an FVG from the clicked middle candle (or its neighbour): the gap between the candles either side, until it is filled
+function planAutoFVG(all, ms, t) {
+  const i = all.findIndex(b => b[0] <= t && t < b[0] + ms); if (i < 0) return null;
+  for (const j of [i, i - 1, i + 1]) {
+    if (j < 1 || j > all.length - 2) continue;
+    const a = all[j - 1], c = all[j + 1], bull = c[3] > a[2], bear = c[2] < a[3]; if (!bull && !bear) continue;
+    const lo = bull ? a[2] : c[2], hi = bull ? c[3] : a[3];
+    let k = j + 2; for (; k < Math.min(all.length, j + 42); k++) if (bull ? all[k][3] <= lo : all[k][2] >= hi) break;
+    return {t0: a[0], t1: (all[Math.min(k, all.length - 1)] || c)[0] + ms, lo, hi, kind: 'FVG', dir: bull ? 'bull' : 'bear'};
+  }
+  return null;
+}
+// HH / LH snap to the highest high, HL / LL to the lowest low, within 2 candles of the click
+function planSwing(all, ms, t, k) {
+  const i = all.findIndex(b => b[0] <= t && t < b[0] + ms); if (i < 0) return null;
+  const hiK = k === 'HH' || k === 'LH'; let best = i;
+  for (let j = Math.max(0, i - 2); j <= Math.min(all.length - 1, i + 2); j++) if (hiK ? all[j][2] > all[best][2] : all[j][3] < all[best][3]) best = j;
+  return {t: all[best][0] + ms / 2, p: hiK ? all[best][2] : all[best][3], k};
+}
+// a dragged box's direction: did price leave it upwards or downwards?
+function planBoxDir(all, ms, z) { const n = all.find(b => b[0] >= z.t1) || all[all.length - 1]; return n && n[4] < (z.lo + z.hi) / 2 ? 'bear' : 'bull'; }
 function planWithDrag(P) {
   const d = RVP.drag; if (!d || !d.b) return P;
   const Q = Object.assign({}, P, {zones: [...(P.zones || [])], lines: [...(P.lines || [])]});
-  if (d.tool === 'zone') Q.zones.push({t0: Math.min(d.a.t, d.b.t), t1: Math.max(d.a.t, d.b.t), lo: Math.min(d.a.p, d.b.p), hi: Math.max(d.a.p, d.b.p)});
+  if (d.tool === 'zone' || d.tool === 'ob' || d.tool === 'fvg') Q.zones.push({t0: Math.min(d.a.t, d.b.t), t1: Math.max(d.a.t, d.b.t), lo: Math.min(d.a.p, d.b.p), hi: Math.max(d.a.p, d.b.p), kind: d.tool === 'zone' ? undefined : d.tool.toUpperCase(), dir: d.dir});
+  else if (d.tool === 'bos' || d.tool === 'mss') Q.brk = [...(P.brk || []), {t0: Math.min(d.a.t, d.b.t), t1: Math.max(d.a.t, d.b.t), p: d.a.p, k: d.tool.toUpperCase()}];
   else Q.lines.push({t0: d.a.t, p0: d.a.p, t1: d.b.t, p1: d.b.p});
   return Q;
 }
@@ -5058,12 +5192,27 @@ function planStatusHTML(r, x, P) {
   const col = r.st === 'nofill' ? DIM : r.R >= 0 ? UP : DN;
   return `<span style="color:${col};font-weight:700">${esc(planResTxt(r, x))}</span>${!fin(P.target) && r.st !== 'nofill' ? ' <span class="dim">Add a target to see where you would have taken profit.</span>' : ''}`;
 }
-function drawPlan(c, P, x, X, Y, f, xL, xR, Y0, r) {
+function drawPlan(c, P, x, X, Y, f, xL, xR, Y0, r, h) {
   c.save(); c.lineWidth = 1.6 * f; c.font = `700 ${10 * f}px ${FS}`; c.textBaseline = 'middle';
   const pill = (txt, px, py, col) => { const w = c.measureText(txt).width + 10 * f; px = clamp(px, xL, xR - w); c.fillStyle = 'rgba(4,7,15,.88)'; rr(c, px, py - 8 * f, w, 16 * f, 4 * f); c.fill(); c.strokeStyle = col || PLAN_C; c.lineWidth = 1 * f; rr(c, px, py - 8 * f, w, 16 * f, 4 * f); c.stroke(); c.fillStyle = col || PLAN_C; c.fillText(txt, px + 5 * f, py + 0.5 * f); };
   for (const z of P.zones || []) {
-    const x0 = X(z.t0), x1 = Math.max(X(z.t1), x0 + 3), y0 = Y(z.hi), y1 = Y(z.lo);
-    c.fillStyle = 'rgba(255,138,216,.16)'; c.fillRect(x0, y0, x1 - x0, y1 - y0); c.strokeStyle = PLAN_C; c.lineWidth = 1.2 * f; c.strokeRect(x0, y0, x1 - x0, y1 - y0);
+    const x0 = X(z.t0), x1 = Math.max(X(z.t1), x0 + 3), y0 = Y(z.hi), y1 = Y(z.lo), st = z.kind && SMC_BOX[z.kind] && SMC_BOX[z.kind][z.dir || 'bull'];
+    c.fillStyle = st ? st[0] : 'rgba(255,138,216,.16)'; c.fillRect(x0, y0, x1 - x0, y1 - y0); c.strokeStyle = st ? st[1] : PLAN_C; c.lineWidth = 1.2 * f; c.strokeRect(x0, y0, x1 - x0, y1 - y0);
+    if (st) { c.fillStyle = st[1]; c.font = `800 ${9.5 * f}px ${FS}`; c.fillText(st[2], x0 + 4 * f, (z.dir === 'bear' ? y0 + 7 * f : y1 - 7 * f)); c.font = `700 ${10 * f}px ${FS}`; }
+  }
+  // market structure: the swing points you marked, joined in time order
+  const pts = (P.pts || []).slice().sort((a, b) => a.t - b.t);
+  if (pts.length > 1) { c.strokeStyle = 'rgba(223,230,243,.45)'; c.lineWidth = 1.3 * f; c.beginPath(); pts.forEach((q, i) => i ? c.lineTo(X(q.t), Y(q.p)) : c.moveTo(X(q.t), Y(q.p))); c.stroke(); }
+  for (const q of pts) {
+    const up = q.k === 'HH' || q.k === 'HL', top = q.k === 'HH' || q.k === 'LH', px = X(q.t), py = Y(q.p), col = up ? UP : DN;
+    c.fillStyle = col; c.beginPath(); c.arc(px, py, 3.5 * f, 0, 7); c.fill();
+    c.font = `800 ${11 * f}px ${FS}`; c.textAlign = 'center'; c.fillText(q.k, px, py + (top ? -11 : 12) * f); c.textAlign = 'left'; c.font = `700 ${10 * f}px ${FS}`;
+  }
+  // break of structure / market structure shift: the broken level, from the swing to the candle that broke it
+  for (const b of P.brk || []) {
+    const x0 = X(b.t0), x1 = Math.max(X(b.t1), x0 + 4), y = Y(b.p), col = b.k === 'MSS' ? '#ffd166' : '#dfe6f3';
+    c.strokeStyle = col; c.lineWidth = 1.5 * f; c.setLineDash([6 * f, 4 * f]); c.beginPath(); c.moveTo(x0, y); c.lineTo(x1, y); c.stroke(); c.setLineDash([]);
+    c.fillStyle = col; c.font = `800 ${10 * f}px ${FS}`; c.textAlign = 'center'; c.fillText(b.k, (x0 + x1) / 2, y - 8 * f); c.textAlign = 'left'; c.font = `700 ${10 * f}px ${FS}`;
   }
   for (const l of P.lines || []) { c.strokeStyle = PLAN_C; c.lineWidth = 2 * f; c.beginPath(); c.moveTo(X(l.t0), Y(l.p0)); c.lineTo(X(l.t1), Y(l.p1)); c.stroke(); }
   const L = (P.side || x.side) === 'L', ex = P.entry ? X(P.entry.t) : xL, en = P.entry && P.entry.p;
@@ -5092,21 +5241,31 @@ function planBarHTML(a, x) {
   if (!RVP.on) return `<div style="display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap"><button class="btn sm" data-plan="on" style="background:${PLAN_C};color:#04070f;border-color:${PLAN_C}">✏️ ${planHas(P) ? 'Edit my setup on this chart' : 'Mark my own setup on this chart'}</button><span class="dim" style="font-size:12px">Draw where you would have entered, your stop, target and zones. The Reviewer replays it on these candles and compares it with the trade.</span><span id="planRes" style="font-size:12px;flex-basis:100%">${planHas(P) && P.res ? `<span style="color:${PLAN_C}">${esc(planResTxt(P.res, x))}</span>` : ''}</span></div>`;
   const side = (P && P.side) || x.side, tool = RVP.tool;
   const chip = (attr, v, lab, on, tip) => `<span class="chip ${on ? 'on' : ''}" ${attr}="${v}" title="${esc(tip || '')}" style="${on ? `background:${PLAN_C};color:#04070f;border-color:${PLAN_C}` : ''}">${lab}</span>`;
-  const T = [['entry', 'Entry', 'Click where you would have got in (time and price)'], ['stop', 'Stop', 'Click your stop price'], ['target', 'Target', 'Click your target price'], ['zone', 'Zone', 'Drag a box over your zone: OB, FVG, POI'], ['line', 'Line', 'Drag to draw a line: trendline, level, structure'], ['text', 'Label', 'Type a label below, then click where it goes'], ['erase', 'Erase', 'Click one of your marks to remove it']];
-  const hint = {entry: 'Click where you would have entered. Your candles snap to highs, lows, opens and closes.', stop: 'Click your stop price.', target: 'Click your target price.', zone: 'Drag a box over your zone (order block, FVG, point of interest).', line: 'Drag to draw a line.', text: 'Type the label, then click on the chart where it goes.', erase: 'Click one of your pink marks to remove it.'}[tool];
+  const T = [['entry', 'Entry', 'Click where you would have got in (time and price)'], ['stop', 'Stop', 'Click your stop price'], ['target', 'Target', 'Click your target price'], null,
+    ['ob', 'OB', 'Click a candle: an order block from its full range. Or drag your own box'], ['fvg', 'FVG', 'Click the middle candle of a fair value gap. Or drag your own box'], ['zone', 'Zone', 'Drag a box over any other zone (POI, supply / demand)'],
+    ['HH', 'HH', 'Click a swing high: higher high'], ['HL', 'HL', 'Click a swing low: higher low'], ['LH', 'LH', 'Click a swing high: lower high'], ['LL', 'LL', 'Click a swing low: lower low'],
+    ['bos', 'BOS', 'Drag from the swing level to the candle that broke it (break of structure)'], ['mss', 'MSS', 'Drag from the swing level to the candle that broke it (market structure shift / CHoCH)'], null,
+    ['line', 'Line', 'Drag to draw a line: trendline, level'], ['text', 'Label', 'Type a label below, then click where it goes'], ['pan', '✋ Move', 'Drag to move the chart while drawing (scroll to zoom)'], ['erase', 'Erase', 'Click one of your marks to remove it']];
+  const hint = {entry: 'Click where you would have entered. Your clicks snap to the candle highs, lows, opens and closes.', stop: 'Click your stop price.', target: 'Click your target price.',
+    ob: 'Click the candle of the order block: the box is that candle\'s full range and runs until a candle closes through it. A down candle is a bullish OB, an up candle a bearish one. Or drag your own box.',
+    fvg: 'Click the middle candle of the gap: the box is the gap between the candles either side and runs until it is filled. Or drag your own box.',
+    zone: 'Drag a box over the zone (point of interest, supply / demand).', HH: 'Click near a swing high: it snaps to the highest high nearby.', LH: 'Click near a swing high: it snaps to the highest high nearby.',
+    HL: 'Click near a swing low: it snaps to the lowest low nearby.', LL: 'Click near a swing low: it snaps to the lowest low nearby.', bos: 'Drag from the swing that was broken to the candle that broke it.', mss: 'Drag from the swing that was broken to the candle that broke it.',
+    line: 'Drag to draw a line.', text: 'Type the label, then click on the chart where it goes.', pan: 'Drag to move the chart. Scroll to zoom, double-click to go back to the trade.', erase: 'Click one of your marks to remove it.'}[tool];
   return `<div class="card2" style="margin-top:10px;border-left:4px solid ${PLAN_C};padding:10px 12px">
     <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><b style="color:${PLAN_C};font-size:13px;margin-right:4px">MY SETUP</b>
       ${chip('data-plan-side', 'L', '▲ Long', side === 'L', 'Your trade would have been a long')}${chip('data-plan-side', 'S', '▼ Short', side === 'S', 'Your trade would have been a short')}
-      <span style="width:10px"></span>${T.map(([v, l, tip]) => chip('data-plan-tool', v, l, tool === v, tip)).join('')}
+      <span style="width:10px"></span>${T.map(q => q ? chip('data-plan-tool', q[0], q[1], tool === q[0], q[2]) : '<span style="width:8px;border-left:1px solid var(--line);height:18px"></span>').join('')}
       ${tool === 'text' ? `<input id="planTxt" maxlength="40" placeholder="e.g. BUOB · swept PDL · 1h LH" style="background:#0b1224;color:var(--txt);border:1px solid var(--line);border-radius:7px;padding:4px 8px;font:12px var(--sans);width:190px" value="${esc(RVP.txt || '')}">` : ''}
       <span style="margin-left:auto"></span><button class="btn ghost sm" data-plan="undo" ${RVP.hist.length ? '' : 'disabled'}>Undo</button><button class="btn ghost sm" data-plan="clear">Clear</button><button class="btn sm" data-plan="off">Done</button></div>
-    <div class="dim" style="font-size:12px;margin-top:6px">${hint} The trader's own ✓/✗ tags can be hidden with the button under the chart. Press <b>Save my review</b> below to keep your marks.</div>
+    <div class="dim" style="font-size:12px;margin-top:6px">${hint} Marks stay in place on every timeframe. The trader's own ✓/✗ tags can be hidden with the button under the chart. Press <b>Save my review</b> below to keep your marks.</div>
     <div id="planRes" style="font-size:13px;margin-top:6px">${planStatusHTML(null, x, P)}</div></div>`;
 }
 const planDraft = () => { if (!MD.d) return null; if (!MD.d.plan) MD.d.plan = {side: MD.x ? MD.x.side : 'L', zones: [], lines: [], labels: []}; return MD.d.plan; };
 function planPush() { RVP.hist.push(JSON.stringify(MD.d.plan || null)); if (RVP.hist.length > 40) RVP.hist.shift(); }
 function planChanged() {
-  MD.msg = 'Marks changed. Press "Save my review" to keep them.'; RVP.warn = '';
+  MD.msg = 'Marks changed. Press "Save my review" to keep them.'; const w = RVP.warn; RVP.warn = '';
+  if (w) { const st = document.getElementById('planRes'); if (st) st.innerHTML = `<span style="color:#ffd166">${esc(w)}</span>`; }
   document.querySelectorAll('canvas[data-rvchart]').forEach(drawRvCanvas);
   const r = document.getElementById('mineRead'); if (r && MD.d) r.innerHTML = mineReadHTML(MD.d, MD.x && MD.x.side, MD.x);
   const m = document.getElementById('mineMsg'); if (m) m.textContent = MD.msg;
@@ -5127,6 +5286,8 @@ function planErase(cv, pt) {
   const li = (P.labels || []).findIndex(l => Math.hypot(m.X(l.t) - pt.px, m.Y(l.p) - pt.py) < 14 || (pt.px >= m.X(l.t) && pt.px <= m.X(l.t) + 120 && near(m.Y(l.p), pt.py)));
   if (li >= 0) { P.labels.splice(li, 1); return true; }
   const ln = (P.lines || []).findIndex(l => segD(m.X(l.t0), m.Y(l.p0), m.X(l.t1), m.Y(l.p1)) < 7); if (ln >= 0) { P.lines.splice(ln, 1); return true; }
+  const pi = (P.pts || []).findIndex(q => Math.hypot(m.X(q.t) - pt.px, m.Y(q.p) - pt.py) < 14); if (pi >= 0) { P.pts.splice(pi, 1); return true; }
+  const bi = (P.brk || []).findIndex(b => segD(m.X(b.t0), m.Y(b.p), m.X(b.t1), m.Y(b.p)) < 7); if (bi >= 0) { P.brk.splice(bi, 1); return true; }
   for (const k of ['target', 'stop']) if (fin(P[k]) && pt.px >= ex - 8 && near(m.Y(P[k]), pt.py)) { delete P[k]; return true; }
   if (P.entry && pt.px >= ex - 8 && near(m.Y(P.entry.p), pt.py)) { delete P.entry; return true; }
   const z = (P.zones || []).findIndex(z => pt.px >= m.X(z.t0) - 4 && pt.px <= m.X(z.t1) + 4 && pt.py >= m.Y(z.hi) - 4 && pt.py <= m.Y(z.lo) + 4); if (z >= 0) { P.zones.splice(z, 1); return true; }
@@ -5134,10 +5295,11 @@ function planErase(cv, pt) {
 }
 const planCanvas = e => { const cv = e.target && e.target.closest && e.target.closest('canvas[data-rvchart]'); return cv && RVP.on && MD.d && cv.dataset.rvchart === MD.key ? cv : null; };
 document.getElementById('panel').addEventListener('pointerdown', e => {
-  const cv = planCanvas(e); if (!cv) return; const pt = planPt(cv, e, RVP.tool !== 'erase'); if (!pt) return;
+  const cv = planCanvas(e); if (!cv || RVP.tool === 'pan' || e.button > 0) return; const pt = planPt(cv, e, RVP.tool !== 'erase'); if (!pt) return;
   e.preventDefault(); e.stopPropagation();
-  const P = planDraft(), tool = RVP.tool;
-  if (tool === 'zone' || tool === 'line') { RVP.drag = {tool, a: pt, b: null, cv}; try { cv.setPointerCapture(e.pointerId); } catch (_) {} return; }
+  const P = planDraft(), tool = RVP.tool, m = cv.__map;
+  if (['zone', 'line', 'ob', 'fvg', 'bos', 'mss'].includes(tool)) { RVP.drag = {tool, a: pt, b: null, cv}; try { cv.setPointerCapture(e.pointerId); } catch (_) {} return; }
+  if (['HH', 'HL', 'LH', 'LL'].includes(tool)) { const q = planSwing(m.all || m.bars, m.ms, pt.t, tool); if (!q) return; planPush(); (P.pts = P.pts || []).push(q); planChanged(); return; }
   if (tool === 'erase') { planPush(); if (!planErase(cv, pt)) { RVP.hist.pop(); return; } planChanged(); return; }
   if (tool === 'text') { const inp = document.getElementById('planTxt'), txt = String((inp && inp.value) || RVP.txt || '').trim(); if (!txt) { RVP.warn = 'Type the label first, then click where it goes.'; const st = document.getElementById('planRes'); if (st) st.innerHTML = planStatusHTML(null, MD.x, P); return; } planPush(); (P.labels = P.labels || []).push({t: pt.t, p: pt.p, txt}); RVP.txt = ''; if (inp) inp.value = ''; planChanged(); return; }
   planPush();
@@ -5150,11 +5312,16 @@ document.getElementById('panel').addEventListener('pointermove', e => {
   const d = RVP.drag; if (!d) return; const pt = planPt(d.cv, e); if (!pt) return; d.b = pt; drawRvCanvas(d.cv);
 }, true);
 document.getElementById('panel').addEventListener('pointerup', e => {
-  const d = RVP.drag; if (!d) return; RVP.drag = null; const pt = planPt(d.cv, e) || d.b;
+  const d = RVP.drag; if (!d) return; RVP.drag = null; const pt = planPt(d.cv, e) || d.b, m = d.cv.__map, all = m.all || m.bars;
+  const P = planDraft();
   if (pt && Math.hypot(pt.px - d.a.px, pt.py - d.a.py) > 6) {
-    const P = planDraft(); planPush();
-    if (d.tool === 'zone') (P.zones = P.zones || []).push({t0: Math.min(d.a.t, pt.t), t1: Math.max(d.a.t, pt.t), lo: Math.min(d.a.p, pt.p), hi: Math.max(d.a.p, pt.p)});
+    planPush();
+    if (['zone', 'ob', 'fvg'].includes(d.tool)) { const z = {t0: Math.min(d.a.t, pt.t), t1: Math.max(d.a.t, pt.t), lo: Math.min(d.a.p, pt.p), hi: Math.max(d.a.p, pt.p)}; if (d.tool !== 'zone') { z.kind = d.tool.toUpperCase(); z.dir = planBoxDir(all, m.ms, z); } (P.zones = P.zones || []).push(z); }
+    else if (d.tool === 'bos' || d.tool === 'mss') (P.brk = P.brk || []).push({t0: Math.min(d.a.t, pt.t), t1: Math.max(d.a.t, pt.t), p: d.a.p, k: d.tool.toUpperCase()});
     else (P.lines = P.lines || []).push({t0: d.a.t, p0: d.a.p, t1: pt.t, p1: pt.p});
+  } else if (d.tool === 'ob' || d.tool === 'fvg') {   // a click: build it from the candles
+    const z = d.tool === 'ob' ? planAutoOB(all, m.ms, d.a.t) : planAutoFVG(all, m.ms, d.a.t);
+    if (z) { planPush(); (P.zones = P.zones || []).push(z); } else RVP.warn = d.tool === 'fvg' ? 'No gap there: click the middle candle of three where the outer two candles don\'t overlap.' : 'Click on a candle.';
   }
   planChanged();
 }, true);
@@ -5167,6 +5334,45 @@ document.getElementById('panel').addEventListener('click', e => {
   else if (el.dataset.plan === 'off') { RVP.on = false; RVP.drag = null; RVP.warn = ''; }
   else if (el.dataset.plan === 'undo' && RVP.hist.length && MD.d) { MD.d.plan = JSON.parse(RVP.hist.pop()); planChanged(); }
   else if (el.dataset.plan === 'clear' && MD.d && MD.d.plan) { planPush(); MD.d.plan = null; planChanged(); }
+  renderPanel();
+}, true);
+// chart navigation: scroll = zoom around the cursor, drag = move (while not drawing), double-click = back to the trade
+const rvCv = e => e.target && e.target.closest && e.target.closest('canvas[data-rvchart]');
+function rvRedrawOne(cv) { if (rvRedrawOne.q) return; rvRedrawOne.q = requestAnimationFrame(() => { rvRedrawOne.q = 0; drawRvCanvas(cv); }); }
+document.getElementById('panel').addEventListener('wheel', e => {
+  const cv = rvCv(e); if (!cv || RVV.key !== cv.dataset.rvchart) return; const m = cv.__map; if (!m || !m.pw) return;
+  e.preventDefault();
+  const b = cv.getBoundingClientRect(), px = clamp(e.clientX - b.left, m.X0 + 6 * m.f, m.X0 + 6 * m.f + m.pw), tc = RVV.t0 + (px - m.X0 - 6 * m.f) / m.pw * (RVV.t1 - RVV.t0);
+  const span = RVV.t1 - RVV.t0, ns = clamp(span * (e.deltaY > 0 ? 1.15 : 1 / 1.15), 15 * m.ms, 1000 * m.ms);
+  RVV.t0 = tc - (tc - RVV.t0) * ns / span; RVV.t1 = RVV.t0 + ns; rvRedrawOne(cv);
+}, {passive: false});
+document.getElementById('panel').addEventListener('pointerdown', e => {
+  const cv = rvCv(e); if (!cv || RVV.key !== cv.dataset.rvchart || e.button > 0) return;
+  if (RVP.on && RVP.tool !== 'pan' && MD.key === cv.dataset.rvchart) return;   // drawing
+  RVV.pan = {x: e.clientX, t0: RVV.t0, t1: RVV.t1, cv}; cv.style.cursor = 'grabbing'; try { cv.setPointerCapture(e.pointerId); } catch (_) {}
+});
+document.getElementById('panel').addEventListener('pointermove', e => {
+  const cv = rvCv(e) || (RVV.pan && RVV.pan.cv); if (!cv || RVV.key !== cv.dataset.rvchart) return; const m = cv.__map; if (!m || !m.pw) return;
+  const b = cv.getBoundingClientRect();
+  if (RVV.pan) { const dt = (e.clientX - RVV.pan.x) / m.pw * (RVV.pan.t1 - RVV.pan.t0); RVV.t0 = RVV.pan.t0 - dt; RVV.t1 = RVV.pan.t1 - dt; }
+  else RVV.hover = {px: e.clientX - b.left, py: e.clientY - b.top};
+  rvRedrawOne(cv);
+});
+const rvPanEnd = () => { if (RVV.pan) { const cv = RVV.pan.cv; RVV.pan = null; cv.style.cursor = RVP.on && RVP.tool !== 'pan' ? 'crosshair' : 'grab'; rvRedrawOne(cv); } };
+document.getElementById('panel').addEventListener('pointerup', rvPanEnd);
+document.getElementById('panel').addEventListener('pointercancel', rvPanEnd);
+document.getElementById('panel').addEventListener('pointerleave', e => { const cv = rvCv(e); if (cv && RVV.hover) { RVV.hover = null; rvRedrawOne(cv); } }, true);
+document.getElementById('panel').addEventListener('dblclick', e => {
+  const cv = rvCv(e); if (!cv) return; const hit = rvTrades().find(([a, x]) => tradeKey(a, x) === cv.dataset.rvchart); if (!hit) return;
+  rvViewReset(hit[1], RVV.tf || rvDefTf(hit[1])); drawRvCanvas(cv);
+});
+document.getElementById('panel').addEventListener('click', e => {
+  const el = e.target.closest('[data-rvtf],[data-rvview]'); if (!el) return; e.stopPropagation();
+  const hit = rvTrades().find(([a, x]) => tradeKey(a, x) === RVV.key); if (!hit) return;
+  if (el.dataset.rvtf) { const tf = el.dataset.rvtf, ms = RV_TFS.find(q => q[0] === tf)[1] * 60e3, mid = (RVV.t0 + RVV.t1) / 2, oldMs = RV_TFS.find(q => q[0] === RVV.tf)[1] * 60e3;
+    // keep the same centre; scale the span with the candle size, within 40–600 candles
+    const span = clamp((RVV.t1 - RVV.t0) / oldMs * ms, 40 * ms, 600 * ms); RVV.tf = tf; RVV.t0 = mid - span / 2; RVV.t1 = mid + span / 2; }
+  else rvViewReset(hit[1], RVV.tf);
   renderPanel();
 }, true);
 // how your marked plans did, against the trader on the same trades

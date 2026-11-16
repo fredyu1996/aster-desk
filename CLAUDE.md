@@ -80,7 +80,7 @@ git pull --rebase && git add -A && git commit -m "…" && git push   # Pages + t
 | `review.js` | **Reviewer** `RV`: grading, `rvRun/rvAnalyze/rvSticky`, Fred's reviews (`youRead/youReadM/youTally/planPoints`), SMC study/learning/coaching (`smStudy/smLearn/smCoach/smAudit`), 24 h follow-ups, screening criteria and memos. Everything above the marker `/* ================= REVIEWER: screens + panel` also goes into `bot/core.js` |
 | `smc_ui.js` | SMC panels, SMC wall, return race |
 | `bt_ui.js` | **Backtester** panel (key 7): read-only view of `smc-backtest-year.json` (base vs raw, ablation, patterns, months) |
-| `lessons.js` | trade charts (`drawTradeChart`), `rvExplain` ✓/✗ items, review wall, "Your review" form, chart pictures, **"Mark my own setup"** (`rvPlanSim`, `drawPlan`), `rulesNow` |
+| `lessons.js` | trade charts (`drawTradeChart`; since Nov 16 zoom / pan / timeframes 5m–1d via `RVV` + `rvBars`, crosshair), `rvExplain` ✓/✗ items, review wall, "Your review" form, chart pictures, **"Mark my own setup"** (`rvPlanSim`, `drawPlan`), `rulesNow` |
 | `sync.js` | GitHub sync (`state` and `notes` branches), roles/lock, chart-picture storage (IndexedDB + `img/` on notes) |
 
 ## The agents (desk keys)
@@ -127,11 +127,11 @@ git pull --rebase && git add -A && git commit -m "…" && git push   # Pages + t
   - comment;
   - up to 4 chart pictures with captions (shrunk to JPEG; pasted or uploaded);
   - "leave this trade out";
-  - **✏️ Mark my own setup**: side, entry, stop, target, zones, lines, labels, stored as prices and times in `plan`.
+  - **✏️ Mark my own setup**: side, entry, stop, target, zones, lines, labels, stored as prices and times in `plan`. Since Nov 16 also real SMC objects: OB (click = that candle's full range, extended until a close through it; drag = custom box), FVG (click = the 3-candle gap), zone, HH/HL/LH/LL swing points (snap to the high/low within ±2 bars, drawn as a zigzag), BOS/MSS lines. Stored as `zones[].kind/dir`, `pts[{t,p,k}]`, `brk[{t0,t1,p,k}]`; prices and times, so they stay put on every timeframe.
 - **How a review is read** (`youReadM`):
   1. If Claude has read the review (`rd`, below) and the text is unchanged, that reading is used.
   2. Otherwise the phrase reader `youRead(text, side)` runs over the comment + captions (English + Cantonese, side-aware: "should have been a short" on a long → `flip`).
-  3. Points from the chart plan are added (`planPoints`: other side → flip; entry ≥0.25R deeper → later + depth; stop ≥0.2R out/in → wider/tighter; target ≥30% short / 40% past → exitE/hold).
+  3. Points from the chart plan are added (`planPoints`: other side → flip; entry ≥0.25R deeper → later + depth; stop ≥0.2R out/in → wider/tighter; target ≥30% short / 40% past → exitE/hold). Since Nov 16 `drawPoints` also reads the drawings: last 3 swing points before the entry against the trade (LH/LL on a long) → `b: htf`, with it → `d: smc_htf`; MSS drawn against the side → `b: htf`; his same-side OB/FVG on the bot's zone → `d: smc_gap/smc_ob`, elsewhere → `b: gap/ob` + `a: later` (+depth) or `earlier`; an opposite box between entry and target → `b: room`.
 - **Weights and thresholds.** A point counts at 2 and ≥ ⅓ of his reviews that say anything, or at 3 regardless (comment or plan = 1, ticked chip only = ½). SMC rules from it:
   - flip → `needHTF`
   - later / depth → `needDepth`

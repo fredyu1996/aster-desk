@@ -1974,14 +1974,51 @@ function youReadM(m, side, x) {
 //   other side → "trade the other side" · same side, entry ≥ 0.25R deeper → "enter later" + edge entry
 //   (same entry) stop ≥ 0.2R further out / in → "wider" / "tighter stop" · target ≥ 30% short of / 40% past the trade's → "exit earlier" / "hold longer"
 function planPoints(P, x) {
-  const o = {a: [], b: [], d: []}; if (!P || !x || !P.entry || !fin(P.entry.p)) return o;
-  const side = P.side || x.side; if (side !== x.side) { o.a.push('flip'); return o; }
+  const o = {a: [], b: [], d: []}; if (!P || !x) return o;
+  drawPoints(o, P, x);
+  if (!P.entry || !fin(P.entry.p)) return o;
+  const side = P.side || x.side; if (side !== x.side) { if (!o.a.includes('flip')) o.a.push('flip'); return o; }
   const L = side === 'L', sg = L ? 1 : -1, d = Math.abs(x.entry - x.stop0) || x.entry * 0.01, en = P.entry.p;
   const deeper = (x.entry - en) * sg >= 0.25 * d;
   if (deeper) { o.a.push('later'); o.b.push('depth'); }
   else if (fin(P.stop)) { const out = (x.stop0 - P.stop) * sg; if (out >= 0.2 * d) o.a.push('wider'); else if (out <= -0.2 * d && (en - P.stop) * sg > 0) o.a.push('tighter'); }
   const bt = x.strat === 'smc' ? x.target : x.entry + sg * (x.tpR || (typeof PT !== 'undefined' ? PT.cfg.tpR : 3)) * d, span = fin(bt) ? Math.abs(bt - x.entry) : 0;
   if (fin(P.target) && span) { const q = (P.target - bt) * sg / span; if (q <= -0.3) o.a.push('exitE'); else if (q >= 0.4) o.a.push('hold'); }
+  return o;
+}
+/* What your drawings say (Nov 16): read from the objects themselves, not from words.
+   - Structure: the last 3 swing labels you put before the entry. Two of them bearish (LH / LL) with the latest one bearish
+     = a downtrend: a long went against it ("traded against the structure", like "against the HTF"); the same the other
+     way for shorts. Agreeing structure = the higher-timeframe call was fine.
+   - Your OB / FVG boxes on the trade's side, drawn before the entry: overlapping the trader's zone = that zone was fine;
+     elsewhere = the zone was poor, and "enter later" (+ depth) when yours is deeper, "enter earlier" when it is shallower.
+   - Your OB / FVG boxes on the other side, formed before the entry and sitting between the entry and the target = an
+     opposing zone in the way ("room").
+   - An MSS you drew against the trade before the entry (a break below for a long) = the structure had already turned. */
+function drawPoints(o, P, x) {
+  const L = x.side === 'L', add = (k, v) => { if (!o[k].includes(v)) o[k].push(v); }, tE = x.t0 + 15 * 60e3;
+  const S = (P.pts || []).filter(q => fin(q.t) && q.t <= tE).sort((a, b) => a.t - b.t).slice(-3);
+  if (S.length >= 2) {
+    const bull = S.filter(q => q.k === 'HH' || q.k === 'HL').length, bear = S.length - bull, last = S[S.length - 1].k;
+    const tr = bull >= 2 && (last === 'HH' || last === 'HL') ? 'bull' : bear >= 2 && (last === 'LH' || last === 'LL') ? 'bear' : null;
+    if (tr) add(...((tr === 'bull') === L ? ['d', 'smc_htf'] : ['b', 'htf']));
+  }
+  for (const b of P.brk || []) if (b.k === 'MSS' && fin(b.p) && b.t1 <= tE && fin(x.entry) && (L ? b.p < x.entry : b.p > x.entry) && Math.abs(b.p - x.entry) / x.entry < 0.15) {
+    add('b', 'htf');   // a shift drawn on the far side of the entry: below a long (support broke), above a short
+  }
+  const Z = (P.zones || []).filter(z => (z.kind === 'OB' || z.kind === 'FVG') && fin(z.lo) && fin(z.hi));
+  const mine = Z.filter(z => (z.dir === 'bull') === L && z.t0 <= tE), opp = Z.filter(z => (z.dir === 'bull') !== L && z.t0 <= tE);
+  const ref = x.zone && fin(x.zone.lo) ? x.zone : fin(x.entry) ? {lo: x.entry, hi: x.entry, kind: null} : null;
+  if (ref && mine.length) {
+    if (mine.some(z => z.lo <= ref.hi && z.hi >= ref.lo)) { if (ref.kind) add('d', ref.kind === 'FVG' ? 'smc_gap' : 'smc_ob'); }
+    else {
+      if (ref.kind) add('b', ref.kind === 'FVG' ? 'gap' : 'ob');
+      const deeper = mine.some(z => L ? z.hi < ref.lo : z.lo > ref.hi);
+      if (deeper) { add('a', 'later'); add('b', 'depth'); } else add('a', 'earlier');
+    }
+  }
+  const d = Math.abs(x.entry - x.stop0) || x.entry * 0.01, tg = x.strat === 'smc' && fin(x.target) ? x.target : x.entry + (L ? 1 : -1) * (x.tpR || (typeof PT !== 'undefined' ? PT.cfg.tpR : 3)) * d;
+  if (fin(x.entry) && fin(tg) && opp.some(z => L ? z.lo > x.entry && z.lo < tg : z.hi < x.entry && z.hi > tg)) add('b', 'room');
   return o;
 }
 // plain-language reading of a comment, for the form and the review wall

@@ -140,6 +140,44 @@ if (by.txt.tr.split(String.fromCharCode(10)).length < 4) errs.push('PAGEERR Back
 if (!/no year backtest has run yet|Connect Sync/i.test(by.empty)) errs.push('PAGEERR Backtester has no empty-state message');
 if (!by.same) errs.push('PAGEERR Backtester changed live state');
 await page.evaluate(() => closePanel());
+// review chart (Nov 16): timeframes, zoom, pan, OB / FVG / structure drawing, and what the Reviewer reads from the drawings
+const ch = await page.evaluate(async () => {
+  const out = {errs: []}, w = ms => new Promise(r => setTimeout(r, ms));
+  try {
+    const s = [...S.meta.keys()][0], t1 = now() - 2 * 3600e3, t0 = t1 - 3 * 3600e3;
+    const q = (S.tk.get(s) || {}).last || 1; PT.log.unshift({s, b: base(s), side: 'L', t0, t1, entry: q, exit: q * 0.98, qty: 100, notional: 100, pnl: -2, R: -1, fees: 0, funding: 0, why: 'test', exitWhy: 'stop loss hit', stop0: q * 0.98, maxR: 0.2, strat: 'rev', tpR: 2});
+    openPanel('rev'); PS.tab.rev = 'chart'; setTabs(); RVS.acct = 'pt'; RVS.key = tradeKey('pt', PT.log[0]); renderPanel(); await w(1500); renderPanel(); await w(300);
+    const cv = () => document.querySelector('canvas[data-rvchart]');
+    out.tfChips = document.querySelectorAll('[data-rvtf]').length;
+    const v0 = RVV.t1 - RVV.t0; cv().dispatchEvent(new WheelEvent('wheel', {deltaY: -300, clientX: cv().getBoundingClientRect().left + 200, clientY: cv().getBoundingClientRect().top + 100, bubbles: true, cancelable: true})); await w(100);
+    out.zoomIn = RVV.t1 - RVV.t0 < v0;
+    document.querySelector('[data-rvtf="1h"]').click(); await w(1500); out.tf = RVV.tf;
+    document.querySelector('[data-rvtf="15m"]').click(); await w(1500); renderPanel(); await w(200);
+    document.querySelector('[data-mine="open"],[data-mineopen]') && document.querySelector('[data-mine="open"],[data-mineopen]').click();
+    document.querySelector('[data-plan="on"]').click(); await w(200);
+    const m = cv().__map, bar = m.bars[Math.floor(m.bars.length / 3)], r = cv().getBoundingClientRect();
+    const at = (t, p) => ({clientX: r.left + m.X(t), clientY: r.top + m.Y(p), bubbles: true, cancelable: true, button: 0, pointerId: 1});
+    const click = (t, p) => { cv().dispatchEvent(new PointerEvent('pointerdown', at(t, p))); cv().dispatchEvent(new PointerEvent('pointerup', at(t, p))); };
+    document.querySelector('[data-plan-tool="ob"]').click(); await w(100); click(bar[0] + m.ms / 2, (bar[2] + bar[3]) / 2); await w(100);
+    document.querySelector('[data-plan-tool="LH"]').click(); await w(100); click(m.bars[3][0] + m.ms / 2, m.bars[3][2]);
+    document.querySelector('[data-plan-tool="LL"]').click(); await w(100); click(m.bars[8][0] + m.ms / 2, m.bars[8][3]);
+    document.querySelector('[data-plan-tool="LH"]').click(); await w(100); click(m.bars[12][0] + m.ms / 2, m.bars[12][2]); await w(200);
+    const P = MD.d && MD.d.plan; out.ob = !!(P && (P.zones || []).some(z => z.kind === 'OB' && z.dir)); out.pts = P ? (P.pts || []).length : 0;
+    // the Reviewer's reading of structure drawn against a long
+    const pp = planPoints({pts: [{t: t0 - 3 * 3600e3, p: q * 1.1, k: 'LH'}, {t: t0 - 2 * 3600e3, p: q * 0.9, k: 'LL'}, {t: t0 - 3600e3, p: q * 1.05, k: 'LH'}]}, PT.log[0]);
+    out.reads = pp.b.includes('htf');
+    const pz = planPoints({zones: [{t0: t0 - 3600e3, t1: t0, lo: q * 1.01, hi: q * 1.03, kind: 'OB', dir: 'bear'}]}, PT.log[0]); out.room = pz.b.includes('room');
+    renderPanel(); await w(400);
+  } catch (e) { out.errs.push(e.message + ' ' + (e.stack || '').split(String.fromCharCode(10))[1]); }
+  return out;
+});
+console.log('review chart:', JSON.stringify(ch));
+await page.screenshot({path: '/tmp/review-chart.png'});
+if (ch.errs.length) errs.push('PAGEERR review chart: ' + ch.errs.join('; '));
+if (!(ch.tfChips === 5 && ch.zoomIn && ch.tf === '1h')) errs.push('PAGEERR review chart timeframe / zoom');
+if (!(ch.ob && ch.pts === 3)) errs.push('PAGEERR review chart drawing (OB / swing points)');
+if (!(ch.reads && ch.room)) errs.push('PAGEERR Reviewer does not read drawn structure / opposing zone');
+await page.evaluate(() => { PT.log.shift(); closePanel(); });
 await page.screenshot({path: fileURLToPath(new URL('../desk-smoke.png', import.meta.url))});
 const bad = errs.filter(e => /PAGEERR/.test(e));
 await browser.close();

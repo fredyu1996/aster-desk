@@ -259,7 +259,7 @@ function filterNote() {
 }
 function renderPanel() {
   const id = PS.open; if (!id) return;
-  if (typeof RVP !== 'undefined' && RVP.drag) return;                       // don't rebuild the chart in the middle of a drag
+  if (typeof RVP !== 'undefined' && (RVP.drag || (typeof RVV !== 'undefined' && RVV.pan))) return;                       // don't rebuild the chart in the middle of a drag
   const ae = document.activeElement; if (ae && $('#pbody').contains(ae) && /INPUT|SELECT|TEXTAREA/.test(ae.tagName)) return; // don't wipe a field being edited
   const tab = PS.tab[id], body = $('#pbody'), sc = body.scrollTop;
   const um = () => S.universe.map(mget);
