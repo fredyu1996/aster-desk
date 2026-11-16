@@ -26,6 +26,7 @@ export const ABL = [
   {k: 'minStopPct', lab: 'Minimum stop 0.5% vs 1%', sw: 'SB_OV.minStopPct = SB_OV.minStopPct === 1 ? 0.5 : 1;'},
   {k: 'cont', lab: 'Continuation setups (cfg cont / Reviewer noCont)', sw: 'SM.cfg.cont = SM.cfg.cont && !RV.smAdj.noCont ? 0 : 1; if (SM.cfg.cont) delete RV.smAdj.noCont;'},
   {k: 'regimeGate', lab: 'HTF regime gate (smRegime)', sw: 'SM.cfg.regimeGate = SM.cfg.regimeGate === 0 ? 1 : 0;'},
+  {k: 'gmsC', lab: 'GMS supply/demand zones for the POI and room (gmsC, SMC Big on since Nov 15)', sw: 'SB_OV.gmsC = SB_OV.gmsC ? 0 : 1;'},
 ];
 
 // the universe at hour mark h: only the year coins, no tracker, so smBigList inside simulate sees just these

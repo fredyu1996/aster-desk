@@ -191,6 +191,7 @@ git pull --rebase && git add -A && git commit -m "…" && git push   # Pages + t
 - **Nov 13 (reviews):** his "poor OB" comments raise the OB quality bar (`obQ`), not FVG-only. The FVG-only rule from his comments was released (commits 943f208, a424293).
 - **Nov 14 (SMC Big exits):** SMC Big only holds through a failed entry gap (`SB_OV.invExit = 0`). 7-day backtest: hold +0.75R n15 vs exit +0.48R n16, but only 5 trades differ (3 better, 2 worse, incl. the live XRP short). Small caps keep the exit: hold made 7 of 9 differing trades worse (net +0.87R from 2 big winners). Re-check after ~20 live SMC Big trades. Wider SMC Big min stop (1.0% / 1.5%) was tested and not adopted: fewer trades, less total R.
 - **Nov 13 (SMC Big):** Fred wants to see if the SMC strategy works better on big caps. Top 10 by volume, `SB_OV` for big-cap sizes, rules follow the small-cap SMC Trader, on at deploy. Leverage option C: 10× is the margin setting, not 10× notional per trade; sizing stays 1% risk with the 10× total cap.
+- **Nov 15 (GMS C on SMC Big):** Fred: "試住C先". `SB_OV.gmsC = 1` (GMS supply/demand zones for the POI and room check, SMC Big only; SMC Trader stays 0). Nightly year backtest has a `gmsC` ablation to keep tracking it. Re-check after ~20 live SMC Big trades.
 - **Nov 14 (year backtester):** option A: BTC / ETH only, SMC Big settings, 365 days, one account. Patterns are searched on the **raw** run (Reviewer rules off), so they are not just the rules' own leftovers (Fred). Report only. Spec/plan: `docs/superpowers/`.
 
 ## Open items
@@ -204,7 +205,7 @@ git pull --rebase && git add -A && git commit -m "…" && git push   # Pages + t
   - small caps 21 d: base −9.0R n55; best BD +0.3R n26 (both halves better), B −1.7R n29 (both halves), A/D/AB… better in one half only; C −14.6R n71 (worse both halves);
   - big caps 21 d: base +6.6R n37; C +6.6R n37; every other combination worse;
   - BTC/ETH 365 d: base +13.8R n66; C +28.0R n91 (half 1 +22.6 vs +7.2, half 2 +5.4 vs +6.5); CD +15.6R n44; BCD +13.0R n38; A, B, D alone worse.
-  - No combination is better everywhere. Candidate: SMC Trader B+D, SMC Big C (via `SB_OV`). Not adopted; Fred decides.
+  - No combination is better everywhere. SMC Big C adopted Nov 15 (below); SMC Trader B+D not adopted.
 - **Start here (Nov 15):** read `docs/HANDOFF-2026-11-15.md` (what changed Nov 14–15, first year-backtest report, next steps).
 - **SMC resumed Nov 13 06:05 UTC** (`resume1113`), with `zoneLearn` still 0. Fred's call: collect ~20 new trades under the regime gate, then check whether the proposed zone rule stays stable before unlocking it. It changed 4 times in the first hour of backfill. Latest proposal: avoid 0.10–1.20 ATR zones (−0.71R n20 vs +0.59R n13) and prefer displacement zones (+0.60R n6).
 - Re-check the two SMC splits above once there are ~20 more SMC trades.
