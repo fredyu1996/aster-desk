@@ -34,7 +34,7 @@ console.log('1h falling:', snap());
 // flip the 1h to rising: the 15m short must be refused
 X(`{ const hb2 = []; let hp = 1.0; for (let i = 0; i < 72; i++) { const o = hp; hp = hp * (i % 5 === 4 ? 0.975 : 1.012); hb2.push([T - (72 - i) * 3600e3, o, Math.max(o, hp) * 1.003, Math.min(o, hp) * 0.997, hp, 1e5, 5e4]); } S.h1.set(SYM, {t: T, bars: hb2}); S.smC && S.smC.clear(); }`);
 console.log('1h rising:', snap());
-X('SM.cfg.minQ = 0; smTick();');
+X('SM.cfg.minQ = 0; SM.cfg.gmsB = 0; SM.cfg.gmsD = 0; smTick();');   // this test is about the 1h filter; its synthetic leg has no displacement candle (GMS B/D are on live since Nov 15)
 console.log('scan (1h rising)', X('JSON.stringify(SM.lastScan)').slice(0, 600));
 console.log('open', X('JSON.stringify(Object.keys(SM.pos))'));
 if (X('Object.keys(SM.pos).length') !== 0) { console.error('FAIL: took a 15m short while the 1h was rising'); process.exit(1); }

@@ -15,6 +15,7 @@ const SM_DEF = {v: 1, start: 1000, cash: 1000, pos: {}, log: [], eqs: [], day: n
 function smMigrate(p) { if (p.cfg.ownJudge !== 1) { p.cfg.useScreens = 0; p.cfg.ownJudge = 1; } if (p.cfg.lev10 !== 1) { p.cfg.maxLev = 10; p.cfg.lev10 = 1; } // Nov 11 (Fred): 10× leverage cap
   if (p.cfg.resume1113 !== 1) { if (p.cfg.pause1113 === 1) p.on = true; p.cfg.resume1113 = 1; } // Nov 13 (Fred): self-review done, resume SMC trading (zone tuning stays locked)
   if (p.cfg.pause1113 !== 1) { p.on = false; p.cfg.pause1113 = 1; } // Nov 12 (Fred): stop new SMC entries for the self-review; resume by hand
+  if (p.cfg.gmsBD1115 !== 1) { p.cfg.gmsB = 1; p.cfg.gmsD = 1; p.cfg.gmsBD1115 = 1; } // Nov 15 (Fred "開"): GMS B (clean sweep / shift + displacement) and D (displacement FVG only) for the SMC Trader; SB_OV keeps SMC Big at 0
   return p; }
 let SM = (() => {
   const saved = LS.get('awx_sm', null);
@@ -27,7 +28,7 @@ function smSave() { LS.set(SM === SB ? 'awx_sb' : 'awx_sm', SM); }
 function smReset() { const cfg = SM.cfg, big = SM === SB; SM = JSON.parse(JSON.stringify(SM_DEF)); SM.cfg = cfg; SM.created = now(); if (big) SB = SM; smSave(); }   // big: reset inside smWith(SB) must save to awx_sb
 S.smC = new Map();
 // SMC Big (Nov 13, Fred): the same strategy and Reviewer rules on the top-10 volume perps, its own $1,000 account. Only the percent numbers tuned for small caps change.
-const SB_OV = {minStopPct: 0.5, slipPct: 0.02, stopBufMul: 0.25, tightPct: 0.4, useScreens: 0, invExit: 0, obPick: 0, gmsC: 1};   // gmsC 1 (Fred, Nov 15 "試住C先"): GMS supply/demand zones for SMC Big only; BTC/ETH 365 d +28.0R n91 vs +13.8R n66 (half 2 +5.4 vs +6.5), big caps 21 d +6.6R n37 both; small caps keep 0 (−14.6R n71 vs −9.0R n55)   // obPick 0 (Nov 15): big caps keep the FVG pick; good-OB pick tested worse there (14d −6.6R n23 vs +7.3R n25; BTC/ETH year +7.7R n38 vs +13.8R n66)   // invExit 0 (Fred, Nov 14): big caps hold through a failed entry gap; 7d backtest +0.75R n15 vs +0.48R n16 (5 trades differ, 3 better)   // useScreens 0: screenGate writes Reviewer counters, and the Reviewer never learns from SB
+const SB_OV = {minStopPct: 0.5, slipPct: 0.02, stopBufMul: 0.25, tightPct: 0.4, useScreens: 0, invExit: 0, obPick: 0, gmsC: 1, gmsB: 0, gmsD: 0};   // gmsC 1 (Fred, Nov 15 "試住C先"): GMS supply/demand zones for SMC Big only; BTC/ETH 365 d +28.0R n91 vs +13.8R n66 (half 2 +5.4 vs +6.5), big caps 21 d +6.6R n37 both; small caps keep 0 (−14.6R n71 vs −9.0R n55)   // obPick 0 (Nov 15): big caps keep the FVG pick; good-OB pick tested worse there (14d −6.6R n23 vs +7.3R n25; BTC/ETH year +7.7R n38 vs +13.8R n66)   // invExit 0 (Fred, Nov 14): big caps hold through a failed entry gap; 7d backtest +0.75R n15 vs +0.48R n16 (5 trades differ, 3 better)   // useScreens 0: screenGate writes Reviewer counters, and the Reviewer never learns from SB
 const SB_DEF = Object.assign(JSON.parse(JSON.stringify(SM_DEF)), {on: true, cfg: {}});
 let SB = Object.assign(JSON.parse(JSON.stringify(SB_DEF)), LS.get('awx_sb', null) || {});
 if (!SB.created) SB.created = now();

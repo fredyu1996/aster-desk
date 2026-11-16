@@ -104,6 +104,7 @@ git pull --rebase && git add -A && git commit -m "…" && git push   # Pages + t
      - stop never closer than 1.5%;
      - exit if a candle closes through the entry gap before the half is taken;
      - draw on liquidity not scored on continuation setups.
+   - Since Nov 15: GMS B + D (`gmsB`/`gmsD` 1, migration `gmsBD1115`): a clean sweep and closed-bar shift with a displacement candle, and only displacement FVGs as the entry zone. SMC Big keeps both 0 (`SB_OV`).
 7. **SMC Big** ($1,000 paper, account `SB`, on from the first deploy):
    - Same strategy and same Reviewer rules (`smRules` / `RV.smAdj`) as the SMC Trader, on the **top 10 Aster perps by 24 h quote volume** (stock perps out unless `CFG.includeStocks`; coins in the small-cap tracker skipped). Recomputed every cycle; held coins keep being managed.
    - `SB.cfg` = live copy of `SM.cfg` + `SB_OV` (min stop 0.5%, slippage 0.02%, stop buffer ×0.25, tight 0.4%, screens off, `invExit` 0 = no exit when a candle closes through the entry gap). Sizing as above.
@@ -192,6 +193,7 @@ git pull --rebase && git add -A && git commit -m "…" && git push   # Pages + t
 - **Nov 14 (SMC Big exits):** SMC Big only holds through a failed entry gap (`SB_OV.invExit = 0`). 7-day backtest: hold +0.75R n15 vs exit +0.48R n16, but only 5 trades differ (3 better, 2 worse, incl. the live XRP short). Small caps keep the exit: hold made 7 of 9 differing trades worse (net +0.87R from 2 big winners). Re-check after ~20 live SMC Big trades. Wider SMC Big min stop (1.0% / 1.5%) was tested and not adopted: fewer trades, less total R.
 - **Nov 13 (SMC Big):** Fred wants to see if the SMC strategy works better on big caps. Top 10 by volume, `SB_OV` for big-cap sizes, rules follow the small-cap SMC Trader, on at deploy. Leverage option C: 10× is the margin setting, not 10× notional per trade; sizing stays 1% risk with the 10× total cap.
 - **Nov 15 (GMS C on SMC Big):** Fred: "試住C先". `SB_OV.gmsC = 1` (GMS supply/demand zones for the POI and room check, SMC Big only; SMC Trader stays 0). Nightly year backtest has a `gmsC` ablation to keep tracking it. Re-check after ~20 live SMC Big trades.
+- **Nov 15 (GMS B+D on the SMC Trader):** Fred: "開". `SM.cfg.gmsB = 1`, `gmsD = 1` (migration `gmsBD1115`), SMC Big unchanged (`SB_OV.gmsB/gmsD = 0`, `gmsC = 1`). Evidence: 21 d backtest +0.3R n26 vs −9.9R n56 (both halves better) + the zone study. Re-check after ~20 live SMC Trader trades. `tests/smc-sweep.mjs` turns B/D off (its synthetic leg has no displacement).
 - **Nov 14 (year backtester):** option A: BTC / ETH only, SMC Big settings, 365 days, one account. Patterns are searched on the **raw** run (Reviewer rules off), so they are not just the rules' own leftovers (Fred). Report only. Spec/plan: `docs/superpowers/`.
 
 ## Open items
@@ -205,12 +207,12 @@ git pull --rebase && git add -A && git commit -m "…" && git push   # Pages + t
   - small caps 21 d: base −9.0R n55; best BD +0.3R n26 (both halves better), B −1.7R n29 (both halves), A/D/AB… better in one half only; C −14.6R n71 (worse both halves);
   - big caps 21 d: base +6.6R n37; C +6.6R n37; every other combination worse;
   - BTC/ETH 365 d: base +13.8R n66; C +28.0R n91 (half 1 +22.6 vs +7.2, half 2 +5.4 vs +6.5); CD +15.6R n44; BCD +13.0R n38; A, B, D alone worse.
-  - No combination is better everywhere. SMC Big C adopted Nov 15 (below); SMC Trader B+D not adopted.
+  - No combination is better everywhere. SMC Big C and SMC Trader B+D adopted Nov 15 (Decisions).
 - **Nov 15 (zone study, report only):** `tools/smc-zone-study.mjs` labels EVERY candidate FVG / OB of every setup (not only the traded zone) from the candles that followed (Reviewer label + a plain midpoint trade: zone stop, +2R, 12 h, net of costs). Small caps 21 d: 2,288 setups / 5,345 zones; big caps 21 d: 1,018 / ~2,000; BTC/ETH 365 d: 3,336 / 6,455. Regime-ok setups, avg R of the plain trade:
   - small caps: FVG with a displacement middle candle (`gq`, GMS D) +0.00 n303 vs −0.13 n1081, better in both halves; the only feature that holds. Pick "newest GMS-D FVG only" +0.06 vs live −0.06 (both halves).
   - OB never beats FVG; "good OB" (FVG after, fresh, discount) no better; the OB∩FVG overlap (A+) is worse (small −0.21, BTC/ETH −0.21) except big caps 21 d (+0.01). OBs with a displacement departure beat other OBs in small caps and BTC/ETH (both halves) but add nothing at trade level (`gmsD 2`: small −3.4R n34 vs D −4.6R n22, BD +0.3R n26).
   - Newest vs first FVG: no real difference; the live pick (newest FVG, else OB) stays. BTC/ETH and big caps: no zone feature holds in both halves.
-  - So for small caps the lead is B+D (`gmsB`/`gmsD` 1), waiting for Fred's call.
+  - So for small caps the lead is B+D (`gmsB`/`gmsD` 1): adopted Nov 15 (Decisions).
 - **Start here (Nov 15):** read `docs/HANDOFF-2026-11-15.md` (what changed Nov 14–15, first year-backtest report, next steps).
 - **SMC resumed Nov 13 06:05 UTC** (`resume1113`), with `zoneLearn` still 0. Fred's call: collect ~20 new trades under the regime gate, then check whether the proposed zone rule stays stable before unlocking it. It changed 4 times in the first hour of backfill. Latest proposal: avoid 0.10–1.20 ATR zones (−0.71R n20 vs +0.59R n13) and prefer displacement zones (+0.60R n6).
 - Re-check the two SMC splits above once there are ~20 more SMC trades.
