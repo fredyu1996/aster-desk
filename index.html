@@ -1228,7 +1228,8 @@ function smRegimeOk(reg, dir, px) {
          3 candles a net move ≥ 1.2 ATR with a 60%-body candle; zone = the whole base, known only once the departure closed;
          a zone that was already touched is not a point of interest any more.
    gmsD: entry zone. Only an FVG ≥ 0.1 ATR wide whose middle candle is a displacement (body ≥ 1.2 ATR, ≥ 60% of range);
-         the order block is the last opposite candle 1–4 bars before the displacement, kept for the grade only (never the zone). */
+         the order block is the last opposite candle 1–4 bars before the displacement, kept for the grade only (never the zone).
+   gmsD 2 (zone study, Nov 15): the same FVG rule, else the usual OB if its departure candle is a displacement; nothing else. */
 const smDispG = (b, atr, bull) => !!b && (bull ? b[4] > b[1] : b[4] < b[1]) && Math.abs(b[4] - b[1]) >= 1.2 * atr && Math.abs(b[4] - b[1]) >= 0.6 * Math.max(1e-12, b[2] - b[3]);
 function smGmsAlign(reg, s, tf, tNow) {
   if (tf !== '15m' || !reg || !reg.reg) return reg;
@@ -1284,7 +1285,7 @@ function smZones(B, st, dir) {
     if (bull ? B[i - 1][2] < B[i + 1][3] : B[i - 1][3] > B[i + 1][2]) Z.push(bull ? {kind: 'FVG', lo: B[i - 1][2], hi: B[i + 1][3], i} : {kind: 'FVG', lo: B[i + 1][2], hi: B[i - 1][3], i});
   let o = st.type === 'cont' ? j : -1;   // continuation: the base candle; reversal: the last opposite candle before the shift
   if (o < 0) for (let i = k - 1; i >= j; i--) { const down = B[i][4] < B[i][1]; if (bull ? down : !down) { o = i; break; } }
-  if (SM.cfg.gmsD) {   // gmsD: the OB is the last opposite candle 1–4 bars before the first displacement candle of the leg
+  if (SM.cfg.gmsD === 1) {   // gmsD 1: the OB is the last opposite candle 1–4 bars before the first displacement candle of the leg
     const a0 = smATR(B, j) || (B[j][2] - B[j][3]) || 1e-9; let dI = -1;
     for (let m = j + 1; m <= Math.min(k + 1, n - 1); m++) if (smDispG(B[m], a0, bull)) { dI = m; break; }
     o = -1; if (dI > 0) for (let i = dI - 1; i >= Math.max(0, dI - 4); i--) { const down = B[i][4] < B[i][1]; if (bull ? down : !down) { o = i; break; } }
@@ -1360,7 +1361,7 @@ const smGradeTxt = g => g ? `grade ${g.g}${g.why.filter(x => x !== 'cont').lengt
 const smGoodOB = z => !!z && z.kind === 'OB' && z.obConf === 1 && z.fresh === 1 && z.pd === 1;
 function smZoneSet(r, Z) {
   let kz = smZonePick(Z, smRules().zone); const nG = Z.filter(z => z.kind === 'FVG').length;
-  if (SM.cfg.gmsD) { const Q = Z.filter(z => z.gq === 1); kz = Q.length ? Z.indexOf(Q[smZonePick(Q, smRules().zone)]) : -1; }
+  if (SM.cfg.gmsD) { const Q = Z.filter(z => z.gq === 1 || (SM.cfg.gmsD === 2 && !Z.some(f => f.gq === 1) && z.kind === 'OB' && z.disp === 1)); kz = Q.length ? Z.indexOf(Q[smZonePick(Q, smRules().zone)]) : -1; }
   if (SM.cfg.obPick) { const ob = Z.find(z => z.kind === 'OB'); if (SM.cfg.obPick === 1 && smGoodOB(ob)) kz = Z.indexOf(ob); else if (!nG) kz = -1; }
   if (kz < 0) return;
   const c = Z[kz]; r.zone = {lo: c.lo, hi: c.hi, kind: c.kind, i: c.i}; r.nGaps = nG; r.zc = {c: Z, k: kz};

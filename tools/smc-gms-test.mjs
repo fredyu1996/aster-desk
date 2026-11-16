@@ -10,6 +10,7 @@ const st = JSON.parse(fs.readFileSync(IN, 'utf8').replace(/^﻿/, ''));
 const H = 3600e3, M5 = 300e3, M15 = 900e3, T0 = Date.now(), log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 const L4 = ['A', 'B', 'C', 'D'], V = [];
 for (let m = 0; m < 16; m++) { const on = L4.filter((_, i) => m & (1 << i)); V.push([on.length ? on.join('') : 'base', on.map(x => `SM.cfg.gms${x} = 1;`).join(' ')]); }
+if (process.env.GT_EXTRA) V.push(...JSON.parse(process.env.GT_EXTRA));   // extra [name, setup] variants
 V.sort((a, b) => (a[0] === 'base' ? 0 : a[0].length) - (b[0] === 'base' ? 0 : b[0].length) || a[0].localeCompare(b[0]));
 const only = process.env.GT_ONLY ? process.env.GT_ONLY.split(',') : null;
 const st3 = A => { const R = A.map(x => x.R); return {n: R.length, avgR: R.length ? +(R.reduce((a, b) => a + b, 0) / R.length).toFixed(3) : null, totR: +R.reduce((a, b) => a + b, 0).toFixed(2), win: R.length ? Math.round(R.filter(v => v > 0).length / R.length * 100) : null}; };

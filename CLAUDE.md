@@ -206,6 +206,11 @@ git pull --rebase && git add -A && git commit -m "…" && git push   # Pages + t
   - big caps 21 d: base +6.6R n37; C +6.6R n37; every other combination worse;
   - BTC/ETH 365 d: base +13.8R n66; C +28.0R n91 (half 1 +22.6 vs +7.2, half 2 +5.4 vs +6.5); CD +15.6R n44; BCD +13.0R n38; A, B, D alone worse.
   - No combination is better everywhere. SMC Big C adopted Nov 15 (below); SMC Trader B+D not adopted.
+- **Nov 15 (zone study, report only):** `tools/smc-zone-study.mjs` labels EVERY candidate FVG / OB of every setup (not only the traded zone) from the candles that followed (Reviewer label + a plain midpoint trade: zone stop, +2R, 12 h, net of costs). Small caps 21 d: 2,288 setups / 5,345 zones; big caps 21 d: 1,018 / ~2,000; BTC/ETH 365 d: 3,336 / 6,455. Regime-ok setups, avg R of the plain trade:
+  - small caps: FVG with a displacement middle candle (`gq`, GMS D) +0.00 n303 vs −0.13 n1081, better in both halves; the only feature that holds. Pick "newest GMS-D FVG only" +0.06 vs live −0.06 (both halves).
+  - OB never beats FVG; "good OB" (FVG after, fresh, discount) no better; the OB∩FVG overlap (A+) is worse (small −0.21, BTC/ETH −0.21) except big caps 21 d (+0.01). OBs with a displacement departure beat other OBs in small caps and BTC/ETH (both halves) but add nothing at trade level (`gmsD 2`: small −3.4R n34 vs D −4.6R n22, BD +0.3R n26).
+  - Newest vs first FVG: no real difference; the live pick (newest FVG, else OB) stays. BTC/ETH and big caps: no zone feature holds in both halves.
+  - So for small caps the lead is B+D (`gmsB`/`gmsD` 1), waiting for Fred's call.
 - **Start here (Nov 15):** read `docs/HANDOFF-2026-11-15.md` (what changed Nov 14–15, first year-backtest report, next steps).
 - **SMC resumed Nov 13 06:05 UTC** (`resume1113`), with `zoneLearn` still 0. Fred's call: collect ~20 new trades under the regime gate, then check whether the proposed zone rule stays stable before unlocking it. It changed 4 times in the first hour of backfill. Latest proposal: avoid 0.10–1.20 ATR zones (−0.71R n20 vs +0.59R n13) and prefer displacement zones (+0.60R n6).
 - Re-check the two SMC splits above once there are ~20 more SMC trades.
