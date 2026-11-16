@@ -25,7 +25,7 @@ function rvTrades(which = 'all') {
   if ((which === 'all' || which === 'sb') && typeof SB !== 'undefined') for (const x of SB.log) A.push(['sb', x]);
   return A.sort((a, b) => b[1].t1 - a[1].t1);
 }
-const stratName = (a, x) => a === 'sb' ? 'SMC Big' : a === 'sm' ? 'SMC Trader' : x.strat === 'mom' ? 'Trader · Momentum' : 'Trader · Reversal';
+const stratName = (a, x) => a === 'sb' ? 'SMC Big' : a === 'sm' ? 'SMC Trader' : x.strat === 'mom' ? 'Trader · Momentum' : x.strat === 'fade' ? 'Trader · Fade' : 'Trader · Reversal';
 
 /* ---- candles around a closed trade (fetched once, cached) ---- */
 function rvBars(x) {

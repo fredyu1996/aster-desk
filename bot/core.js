@@ -666,10 +666,12 @@ if (typeof window !== 'undefined' && typeof setInterval === 'function') { unlLoa
 // Trades the reversal signals from the day tracker. No real orders are ever sent: fills are simulated at live
 // Aster prices with taker fee, slippage and funding charged, so the results are a fair test of the rules.
 const PT_DEF = {v: 1, start: 1000, cash: 1000, pos: {}, log: [], eqs: [], day: null, cool: {}, on: true, paused: null, created: 0,
-  cfg: {riskPct: 1, maxPos: 3, maxLev: 10, minScore: 5, dailyLossPct: 3, feePct: 0.04, slipPct: 0.10, holdH: 12, minVol: 300000, maxStopPct: 15, tp1R: 1.5, tpR: 3, stopBuf: 0.5, unlGuard: true, unlDays: 3, unlMinPct: 2, stratRev: 1, revLong: 0, useScreens: 1, stratMom: 1, momMinScore: 6, momRiskPct: 0.75, momMaxPos: 2, momHoldH: 6, momMaxExt: 8}, cands: []};
+  cfg: {riskPct: 1, maxPos: 3, maxLev: 10, minScore: 5, dailyLossPct: 3, feePct: 0.04, slipPct: 0.10, holdH: 12, minVol: 300000, maxStopPct: 15, tp1R: 1.5, tpR: 3, stopBuf: 0.5, unlGuard: true, unlDays: 3, unlMinPct: 2, stratRev: 1, revLong: 0, useScreens: 1, stratMom: 1, momMinScore: 6, momRiskPct: 0.75, momMaxPos: 2, momHoldH: 6, momMaxExt: 8,
+    momLong: 1, fadeG: 0, fadeMin1h: 2.5, fadeRiskPct: 0.75, fadeMaxPos: 2, fadeHoldH: 6, fadeTpR: 2}, cands: []};
 // Nov 11 (Fred): both traders use a 10× leverage cap (one-time switch for saved accounts)
 function ptMigrate(p) { if (p.cfg.lev10 !== 1) { p.cfg.maxLev = 10; p.cfg.lev10 = 1; }
   if (p.cfg.pause1115 !== 1) { p.on = false; p.cfg.pause1115 = 1; }   // Nov 15 (Fred): stop new entries for the losing-trade / reverse review; resume by hand (open positions keep being managed)
+  if (p.cfg.fade1115 !== 1) { p.cfg.momLong = 0; p.cfg.fadeG = 1; p.on = true; p.cfg.fade1115 = 1; }   // Nov 15 22:39 (Fred "試新策略"): momentum longs off, fade strong gainers on, Trader trades again
   return p; }
 let PT = (() => {
   const saved = LS.get('awx_pt', null);
@@ -758,6 +760,21 @@ function ptGateMom(trkSide, mo, tr, tag, s, A = ptLessons()) {
   }
   return null;
 }
+/* Fade strong gainers (Nov 15, Fred "試新策略"): when the momentum read says "strong momentum ↑" (≥ momMinScore of 8) on a
+   gainer that also rose ≥ fadeMin1h % in the last hour, short it. Backtest 30 d small caps +0.20R n103 (both halves +0.20),
+   live momentum longs reversed +0.49R n33. Rules as tested: stop = the momentum long's distance mirrored, +2R, 6 h. */
+function ptFadeCand(s, mo, tr, tk, tag, t, reading) {
+  const k = S.kl.get(s), B = k && k.bars, n = B ? B.length : 0, px = tk && tk.last;
+  const mv1h = n > 5 && px ? (px / B[n - 5][4] - 1) * 100 : null;
+  const c = {s, side: 'G', strat: 'fade', mo, tr, tk, b: base(s), tag, pref: false, mv1h, fitR: 0};
+  if (PT.pos[s]) c.skip = 'already in a position';
+  else if (PT.cool[s] && t - PT.cool[s] < 2 * 3600e3) c.skip = 'cooling down after a recent trade';
+  else if (reading) c.skip = reading;
+  else if (mo.score < PT.cfg.momMinScore) c.skip = `only ${mo.score}/8 momentum signs (fade needs ${PT.cfg.momMinScore})`;
+  else if (!fin(mv1h) || mv1h < PT.cfg.fadeMin1h) c.skip = `up ${fin(mv1h) ? mv1h.toFixed(1) : '—'}% in the last hour (fade needs ≥ ${PT.cfg.fadeMin1h}%)`;
+  else if (!tk || tk.qv < PT.cfg.minVol) c.skip = `24h volume under ${fmtUsd(PT.cfg.minVol)}`;
+  return c;
+}
 function ptR(p, px) { const d = Math.abs(p.entry - p.stop0); return d ? (p.side === 'L' ? px - p.entry : p.entry - px) / d : 0; }
 
 function ptClose(s, frac, why) {
@@ -780,13 +797,18 @@ function ptClose(s, frac, why) {
 }
 
 function ptTryEnter(c) {
-  const {s, tk} = c, mom = c.strat === 'mom', tr = mom ? c.mo : c.tr, k = S.kl.get(s); if (!k || k.bars.length < 24) return false;
-  const B = k.bars, n = B.length, px = tk.last, side = mom ? (c.side === 'G' ? 'L' : 'S') : (c.side === 'G' ? 'S' : 'L');
-  const tg = S.tagC.get(s), R = ptRules(side, tg ? tg.l : '', ptLessons(), mom ? 'mom' : 'rev'), bf = R.stopBuf / 100;
+  const {s, tk} = c, fade = c.strat === 'fade', mom = c.strat === 'mom', tr = mom || fade ? c.mo : c.tr, k = S.kl.get(s); if (!k || k.bars.length < 24) return false;
+  const B = k.bars, n = B.length, px = tk.last, side = fade ? 'S' : mom ? (c.side === 'G' ? 'L' : 'S') : (c.side === 'G' ? 'S' : 'L');
+  const tg = S.tagC.get(s), bf0 = PT.cfg.stopBuf / 100;
+  // fade: its own fixed rules, as tested (Reviewer lessons from the other strategies don't apply): no half off, target +fadeTpR, fadeHoldH hours
+  const R = fade ? {riskPct: PT.cfg.fadeRiskPct, tp1R: 99, tpR: PT.cfg.fadeTpR, holdH: PT.cfg.fadeHoldH, stopBuf: PT.cfg.stopBuf, les: []} : ptRules(side, tg ? tg.l : '', ptLessons(), mom ? 'mom' : 'rev'), bf = fade ? bf0 : R.stopBuf / 100;
   const hi = a => Math.max(...a.map(b => b[2])), lo = a => Math.min(...a.map(b => b[3]));
   const w6 = B.slice(n - 24), w3 = B.slice(n - 12), w2 = B.slice(n - 8);
   let stop;
-  if (mom) {
+  if (fade) {
+    // fade: the momentum long's stop distance (last 2h low or the 15m EMA20, whichever is lower), mirrored above the price
+    stop = px + (px - Math.min(lo(w2), tr.ema) * (1 - bf));
+  } else if (mom) {
     // momentum: stop beyond the last 2h swing or the 15m EMA20, whichever gives the move more room
     stop = side === 'L' ? Math.min(lo(w2), tr.ema) * (1 - bf) : Math.max(hi(w2), tr.ema) * (1 + bf);
   } else {
@@ -805,12 +827,12 @@ function ptTryEnter(c) {
   qty = Math.min(qty, perPosCap / fill, Math.max(0, roomLeft) / fill);
   if (qty * fill < 10) { c.skip = 'not enough room under the leverage cap'; return false; }
   const fee = qty * fill * PT.cfg.feePct / 100; PT.cash -= fee;
-  const why = `${mom ? 'Momentum' : 'Reversal'} · ${tr.state.l} ${tr.score}/8 — ${tr.checks.filter(x => x.ok).map(x => x.label.split(' (')[0].toLowerCase()).slice(0, 4).join(', ')}`;
+  const why = fade ? `Fade · ${tr.state.l} ${tr.score}/8 and up ${fin(c.mv1h) ? c.mv1h.toFixed(1) : '—'}% in the last hour — short the chase` : `${mom ? 'Momentum' : 'Reversal'} · ${tr.state.l} ${tr.score}/8 — ${tr.checks.filter(x => x.ok).map(x => x.label.split(' (')[0].toLowerCase()).slice(0, 4).join(', ')}`;
   const A = ptLessons();
   const uc = unlCtx(s);
-  PT.pos[s] = {cx: entryCtx(s, tr.checks), scr: typeof scrRec === 'function' ? scrRec(c) : null, strat: mom ? 'mom' : 'rev', unlK: uc.phase && uc.big ? uc.phase : 'none', unl: uc.phase ? unlLabel(uc) : '', st: tr.key, sc: tr.score, dist: dist * 100, les: R.les, rvId: A ? A.id || 0 : 0, tp1R: R.tp1R, tpR: R.tpR, hold: R.holdH, side, b: base(s), qty, qty0: qty, entry: fill, stop, stop0: stop, t: now(), risk: qty * Math.abs(fill - stop), realized: -fee, fees: fee,
+  PT.pos[s] = {cx: entryCtx(s, tr.checks), scr: typeof scrRec === 'function' ? scrRec(c) : null, strat: fade ? 'fade' : mom ? 'mom' : 'rev', mv1h: fade && fin(c.mv1h) ? +c.mv1h.toFixed(2) : undefined, unlK: uc.phase && uc.big ? uc.phase : 'none', unl: uc.phase ? unlLabel(uc) : '', st: tr.key, sc: tr.score, dist: dist * 100, les: R.les, rvId: A ? A.id || 0 : 0, tp1R: R.tp1R, tpR: R.tpR, hold: R.holdH, side, b: base(s), qty, qty0: qty, entry: fill, stop, stop0: stop, t: now(), risk: qty * Math.abs(fill - stop), realized: -fee, fees: fee,
     funding: 0, why, tag: tg ? tg.l : '', nf: null, be: false, tp1: false, maxR: 0, exits: []};
-  raise('trader', s, 'open' + now(), `PAPER ${mom ? 'MOMENTUM ' : ''}${side === 'L' ? 'LONG' : 'SHORT'} ${base(s)} @ ${fmtPx(fill)} · stop ${fmtPx(stop)} (${(dist * 100).toFixed(1)}%) · size ${fmtMoney(qty * fill)} · risk ${fmtMoney(qty * Math.abs(fill - stop))}${R.les.length ? ' · lessons: ' + R.les.join(', ') : ''}`, side === 'L' ? 1 : -1, 0, true);
+  raise('trader', s, 'open' + now(), `PAPER ${fade ? 'FADE ' : mom ? 'MOMENTUM ' : ''}${side === 'L' ? 'LONG' : 'SHORT'} ${base(s)} @ ${fmtPx(fill)} · stop ${fmtPx(stop)} (${(dist * 100).toFixed(1)}%) · size ${fmtMoney(qty * fill)} · risk ${fmtMoney(qty * Math.abs(fill - stop))}${R.les.length ? ' · lessons: ' + R.les.join(', ') : ''}`, side === 'L' ? 1 : -1, 0, true);
   ptSave(); return true;
 }
 
@@ -840,7 +862,7 @@ function ptManage(t, only) {
       const mo = S.moC.get(s);
       if (t - p.t > 30 * 60e3 && tr && tr.key !== 'wait' && tr.state.code >= 2) { ptClose(s, 1, 'reversal signs forming against the move'); continue; }
       if (t - p.t > 30 * 60e3 && mo && mo.key !== 'wait' && mo.state.code === 0) { ptClose(s, 1, 'momentum faded'); continue; }
-    } else if (tr && tr.key !== 'wait' && tr.state.code === 0 && t - p.t > 30 * 60e3) { ptClose(s, 1, 'reversal signals faded, trend resumed'); continue; }
+    } else if (p.strat !== 'fade' && tr && tr.key !== 'wait' && tr.state.code === 0 && t - p.t > 30 * 60e3) { ptClose(s, 1, 'reversal signals faded, trend resumed'); continue; }
     if (t - p.t > hold * 3600e3) { ptClose(s, 1, `time stop (${hold}h)`); continue; }
   }
 }
@@ -879,10 +901,13 @@ function ptTick() {
       if (!lc || t - lc.t > 15 * 60e3 || lc.key !== tr.key) PT.cands.push({t, s, b: base(s), side: e.side, key: tr.key, score: tr.score, tag});
     }
     // momentum: strong moves among the top-10 movers and tracked coins, traded in the direction of the move
-    for (const s of PT.cfg.stratMom ? h1set() : []) {
+    for (const s of PT.cfg.stratMom || PT.cfg.fadeG ? h1set() : []) {
       const mo = S.moC.get(s), tr = S.trC.get(s), tk = S.tk.get(s);
       if (!mo || mo.key === 'wait' || mo.state.code < 2) continue;
       const tg = S.tagC.get(s), tag = tg ? tg.l : '';
+      // Nov 15: a strong gainer is faded (shorted) instead of chased when momentum longs are off
+      if (mo.side === 'G' && !PT.cfg.momLong) { if (PT.cfg.fadeG) cands.push(ptFadeCand(s, mo, tr, tk, tag, t, reading)); continue; }
+      if (!PT.cfg.stratMom) continue;
       const c = {s, side: mo.side, strat: 'mom', mo, tr, tk, b: base(s), tag, pref: false};
       const gate = ptGateMom(mo.side, mo, tr, tag, s), R = ptRules(mo.side === 'G' ? 'L' : 'S', tag, ptLessons(), 'mom');
       if (PT.pos[s]) c.skip = 'already in a position';
@@ -902,6 +927,7 @@ function ptTick() {
       if (c.skip) continue;
       if (Object.keys(PT.pos).length >= PT.cfg.maxPos) { c.skip = `max ${PT.cfg.maxPos} positions open`; continue; }
       if (c.strat === 'mom' && Object.values(PT.pos).filter(p => p.strat === 'mom').length >= PT.cfg.momMaxPos) { c.skip = `max ${PT.cfg.momMaxPos} momentum positions open`; continue; }
+      if (c.strat === 'fade' && Object.values(PT.pos).filter(p => p.strat === 'fade').length >= PT.cfg.fadeMaxPos) { c.skip = `max ${PT.cfg.fadeMaxPos} fade positions open`; continue; }
       if (PT.pos[c.s]) { c.skip = 'already in a position'; continue; }
       if (ptTryEnter(c)) c.took = true;
     }
@@ -2223,7 +2249,7 @@ const RV_STICKY_MAX = 5 * 86400e3;
 function rvSticky(A, prevP, T) {
   const kept = []; if (!prevP) return kept;
   const p = A.p, oldI = rvItems(prevP), newI = rvItems(p), S = RV.sticky = RV.sticky || {};
-  const isM = x => x.strat === 'mom', Tr = T.filter(x => !isM(x)), Tm = T.filter(isM), avg = a => rvMean(a.map(x => x.R));
+  const isM = x => x.strat === 'mom', Tr = T.filter(x => (x.strat || 'rev') === 'rev'), Tm = T.filter(isM), avg = a => rvMean(a.map(x => x.R));
   for (const k in oldI) {
     if (k in newI) { S[k] = Object.assign(S[k] || {t: now()}, {last: now(), why: A.why[k] || (S[k] || {}).why || ''}); continue; }
     if (RV_HELD.includes(k)) { delete S[k]; continue; }
@@ -2255,7 +2281,7 @@ function rvSticky(A, prevP, T) {
 function rvRun(manual) {
   // the last 40 trades of EACH strategy (a mixed window was barely a day of trades, so rules kept flipping)
   const all = PT.log.filter(x => !rvManual(x));
-  const T = [...all.filter(x => x.strat !== 'mom').slice(0, RV_WIN), ...all.filter(x => x.strat === 'mom').slice(0, RV_WIN)].sort((a, b) => b.t1 - a.t1);
+  const T = [...all.filter(x => (x.strat || 'rev') === 'rev').slice(0, RV_WIN), ...all.filter(x => x.strat === 'mom').slice(0, RV_WIN)].sort((a, b) => b.t1 - a.t1);   // fade trades (Nov 15) run on fixed rules: not learned from
   if (T.length < 3) return `Need at least 3 closed trades to review. There ${T.length === 1 ? 'is' : 'are'} ${T.length} so far.`;
   T.forEach(rvPostCheck);
   const A = rvAnalyze(T), prevP = RV.active ? ((RV.reviews.find(r => r.id === RV.active.id) || {}).prop || RV.active) : null;

@@ -507,7 +507,7 @@ const RV_STICKY_MAX = 5 * 86400e3;
 function rvSticky(A, prevP, T) {
   const kept = []; if (!prevP) return kept;
   const p = A.p, oldI = rvItems(prevP), newI = rvItems(p), S = RV.sticky = RV.sticky || {};
-  const isM = x => x.strat === 'mom', Tr = T.filter(x => !isM(x)), Tm = T.filter(isM), avg = a => rvMean(a.map(x => x.R));
+  const isM = x => x.strat === 'mom', Tr = T.filter(x => (x.strat || 'rev') === 'rev'), Tm = T.filter(isM), avg = a => rvMean(a.map(x => x.R));
   for (const k in oldI) {
     if (k in newI) { S[k] = Object.assign(S[k] || {t: now()}, {last: now(), why: A.why[k] || (S[k] || {}).why || ''}); continue; }
     if (RV_HELD.includes(k)) { delete S[k]; continue; }
@@ -539,7 +539,7 @@ function rvSticky(A, prevP, T) {
 function rvRun(manual) {
   // the last 40 trades of EACH strategy (a mixed window was barely a day of trades, so rules kept flipping)
   const all = PT.log.filter(x => !rvManual(x));
-  const T = [...all.filter(x => x.strat !== 'mom').slice(0, RV_WIN), ...all.filter(x => x.strat === 'mom').slice(0, RV_WIN)].sort((a, b) => b.t1 - a.t1);
+  const T = [...all.filter(x => (x.strat || 'rev') === 'rev').slice(0, RV_WIN), ...all.filter(x => x.strat === 'mom').slice(0, RV_WIN)].sort((a, b) => b.t1 - a.t1);   // fade trades (Nov 15) run on fixed rules: not learned from
   if (T.length < 3) return `Need at least 3 closed trades to review. There ${T.length === 1 ? 'is' : 'are'} ${T.length} so far.`;
   T.forEach(rvPostCheck);
   const A = rvAnalyze(T), prevP = RV.active ? ((RV.reviews.find(r => r.id === RV.active.id) || {}).prop || RV.active) : null;
