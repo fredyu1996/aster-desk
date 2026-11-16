@@ -5695,6 +5695,13 @@ TABS.bt = [['sum', 'Summary & rules'], ['pat', 'Patterns'], ['tr', 'Trades'], ['
 /* Strategy notes (Nov 15, Fred: "the Backtester writes down the strategies and the key points, then backtests them").
    Results of the one-off studies run from Claude Code (tools/*.mjs). Aggregates only, never trade data. Newest first. */
 const BT_NOTES = [
+  {d: '2026-11-15', t: 'Fade strong gainers only after a big last hour (timing study)', st: 'testing',
+   idea: 'Fred\'s idea: the Trader\'s losing momentum longs came late (coin tracked for many hours, a big move in the last hour), so use those two as the trigger to trade the other way.',
+   pts: ['Move in the last hour is the one that holds. Short a "strong momentum ↑" gainer when it rose ≥ 2.5% in the last hour: backtest 30 d small caps +0.20R n103 (halves +0.20 / +0.20; ≥ 5%: +0.27R n54), live reversed +0.49R n33. Under 2.5%: backtest −0.04R n60, live +0.04R n32.',
+         'Hours in the tracker does not hold: live, late entries were worse (≥ 12 h: −0.48R n19), but in the backtest fading works at every age (0–2 h +0.11R, ≥ 12 h +0.07R) and early momentum longs still lose (< 2 h and a small last hour: −0.22R n10).',
+         'So momentum longs on gainers do not work early either (backtest 0–2 h −0.39R n37): the fix is to stop them, not to time them.',
+         'Losers: no clean signal. Fading a loser in its first 2 h tracked was +0.16R n46 (both halves) in the backtest but live has only 4 such trades: lead only.',
+         'Momentum read rebuilt from candles (funding / OI unknown); simple exits (stop = same distance, +2R, 6 h); 30-day window.']},
   {d: '2026-11-15', t: 'Fade strong gainers (the Trader\'s momentum longs, reversed)', st: 'testing',
    idea: 'When the Trader\'s momentum read says "strong momentum ↑" on a tracked gainer, short it instead: same price, the same stop distance on the other side, target +2R, 6 h time exit.',
    pts: ['Live: 65 momentum longs, −0.30R each as taken; replayed with plain stop / +2R / 12 h rules −0.53R, reversed +0.27R (first half 0.00, second half +0.53).',

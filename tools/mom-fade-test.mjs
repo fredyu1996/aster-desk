@@ -6,6 +6,7 @@
 //          + 0.5% (2–15% away), target +2R, time exit after 6 h;
 //   fade = the opposite side at the same price: stop the same distance the other way, target +2R, 6 h;
 //   fade12 = the same with a 12 h time exit.   All net of 0.28% round-trip costs.
+// Rows also carry trkH (hours since the coin entered the tracker) and mv1h (move over the last hour, %, signed) for the timing study (Nov 15).
 // Usage (after python3 build.py): node tools/mom-fade-test.mjs <state.json> <out.json>
 import fs from 'node:fs';
 import {mkCore, simulate, klines, aster, pool, trkHour} from '../bot/backtest.mjs';
@@ -31,7 +32,8 @@ const __st = smTick; smTick = function () { const r = __st.apply(this, arguments
     if (!f5 && !f6) continue; if (f5) __l5[s] = t; if (f6) __l6[s] = t;
     const w2 = B.slice(n - 8);
     __log('MREC ' + JSON.stringify({s, side: m.side, t, live: m.live, ema: m.ema, ext: m.ext, score: m.score, known: m.known, lo2: Math.min(...w2.map(b => b[3])), hi2: Math.max(...w2.map(b => b[2])),
-      ok: m.checks.map(c => c.ok === true ? 1 : c.ok === false ? 0 : null), mv: (S.tk.get(s) || {}).pct, f5: +f5, f6: +f6})); } } catch (e) {}
+      ok: m.checks.map(c => c.ok === true ? 1 : c.ok === false ? 0 : null), mv: (S.tk.get(s) || {}).pct, f5: +f5, f6: +f6,
+      trkH: S.trk[s] && S.trk[s].t0 ? (t - S.trk[s].t0) / 3600e3 : null, mv1h: B[n - 5] ? (m.live / B[n - 5][4] - 1) * 100 : null})); } } catch (e) {}
   return r; };`;
 const recs = [], prev = console.log;
 console.log = (...a) => { if (typeof a[0] === 'string' && a[0].startsWith('MREC ')) recs.push(JSON.parse(a[0].slice(5))); else prev(...a); };
@@ -57,7 +59,7 @@ for (const x of recs) {
   const mom = sim(B, i0, momLong, e, stop, momLong ? e + 2 * d : e - 2 * d, 72);
   const fade = sim(B, i0, !momLong, e, momLong ? e + d : e - d, momLong ? e - 2 * d : e + 2 * d, 72);
   const fade12 = sim(B, i0, !momLong, e, momLong ? e + d : e - d, momLong ? e - 2 * d : e + 2 * d, 144);
-  rows.push({f5: x.f5, f6: x.f6, s: x.s, side: x.side, t: x.t, score: x.score, known: x.known, ext: x.ext, mv: x.mv, ok: x.ok, stopPct: dist * 100, mom, fade, fade12, half: x.t < W0 + (END - W0) / 2 ? 1 : 2});
+  rows.push({trkH: x.trkH, mv1h: x.mv1h, f5: x.f5, f6: x.f6, s: x.s, side: x.side, t: x.t, score: x.score, known: x.known, ext: x.ext, mv: x.mv, ok: x.ok, stopPct: dist * 100, mom, fade, fade12, half: x.t < W0 + (END - W0) / 2 ? 1 : 2});
 }
 fs.writeFileSync(OUT, JSON.stringify({t: Date.now(), days, min: MIN, rows}));
 const f = (A, k) => { const v = A.map(r => r[k]).filter(z => z != null); return v.length ? `n ${String(v.length).padStart(4)} avg ${(v.reduce((a, b) => a + b, 0) / v.length >= 0 ? '+' : '')}${(v.reduce((a, b) => a + b, 0) / v.length).toFixed(2)}R tot ${v.reduce((a, b) => a + b, 0).toFixed(1)}R win ${Math.round(v.filter(z => z > 0).length / v.length * 100)}%` : 'n 0'; };
