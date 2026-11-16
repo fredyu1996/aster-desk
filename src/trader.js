@@ -4,7 +4,9 @@
 const PT_DEF = {v: 1, start: 1000, cash: 1000, pos: {}, log: [], eqs: [], day: null, cool: {}, on: true, paused: null, created: 0,
   cfg: {riskPct: 1, maxPos: 3, maxLev: 10, minScore: 5, dailyLossPct: 3, feePct: 0.04, slipPct: 0.10, holdH: 12, minVol: 300000, maxStopPct: 15, tp1R: 1.5, tpR: 3, stopBuf: 0.5, unlGuard: true, unlDays: 3, unlMinPct: 2, stratRev: 1, revLong: 0, useScreens: 1, stratMom: 1, momMinScore: 6, momRiskPct: 0.75, momMaxPos: 2, momHoldH: 6, momMaxExt: 8}, cands: []};
 // Nov 11 (Fred): both traders use a 10× leverage cap (one-time switch for saved accounts)
-function ptMigrate(p) { if (p.cfg.lev10 !== 1) { p.cfg.maxLev = 10; p.cfg.lev10 = 1; } return p; }
+function ptMigrate(p) { if (p.cfg.lev10 !== 1) { p.cfg.maxLev = 10; p.cfg.lev10 = 1; }
+  if (p.cfg.pause1115 !== 1) { p.on = false; p.cfg.pause1115 = 1; }   // Nov 15 (Fred): stop new entries for the losing-trade / reverse review; resume by hand (open positions keep being managed)
+  return p; }
 let PT = (() => {
   const saved = LS.get('awx_pt', null);
   const p = Object.assign(JSON.parse(JSON.stringify(PT_DEF)), saved || {});

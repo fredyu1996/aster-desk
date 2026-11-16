@@ -668,7 +668,9 @@ if (typeof window !== 'undefined' && typeof setInterval === 'function') { unlLoa
 const PT_DEF = {v: 1, start: 1000, cash: 1000, pos: {}, log: [], eqs: [], day: null, cool: {}, on: true, paused: null, created: 0,
   cfg: {riskPct: 1, maxPos: 3, maxLev: 10, minScore: 5, dailyLossPct: 3, feePct: 0.04, slipPct: 0.10, holdH: 12, minVol: 300000, maxStopPct: 15, tp1R: 1.5, tpR: 3, stopBuf: 0.5, unlGuard: true, unlDays: 3, unlMinPct: 2, stratRev: 1, revLong: 0, useScreens: 1, stratMom: 1, momMinScore: 6, momRiskPct: 0.75, momMaxPos: 2, momHoldH: 6, momMaxExt: 8}, cands: []};
 // Nov 11 (Fred): both traders use a 10× leverage cap (one-time switch for saved accounts)
-function ptMigrate(p) { if (p.cfg.lev10 !== 1) { p.cfg.maxLev = 10; p.cfg.lev10 = 1; } return p; }
+function ptMigrate(p) { if (p.cfg.lev10 !== 1) { p.cfg.maxLev = 10; p.cfg.lev10 = 1; }
+  if (p.cfg.pause1115 !== 1) { p.on = false; p.cfg.pause1115 = 1; }   // Nov 15 (Fred): stop new entries for the losing-trade / reverse review; resume by hand (open positions keep being managed)
+  return p; }
 let PT = (() => {
   const saved = LS.get('awx_pt', null);
   const p = Object.assign(JSON.parse(JSON.stringify(PT_DEF)), saved || {});
@@ -936,6 +938,7 @@ const SM_DEF = {v: 1, start: 1000, cash: 1000, pos: {}, log: [], eqs: [], day: n
 function smMigrate(p) { if (p.cfg.ownJudge !== 1) { p.cfg.useScreens = 0; p.cfg.ownJudge = 1; } if (p.cfg.lev10 !== 1) { p.cfg.maxLev = 10; p.cfg.lev10 = 1; } // Nov 11 (Fred): 10× leverage cap
   if (p.cfg.resume1113 !== 1) { if (p.cfg.pause1113 === 1) p.on = true; p.cfg.resume1113 = 1; } // Nov 13 (Fred): self-review done, resume SMC trading (zone tuning stays locked)
   if (p.cfg.pause1113 !== 1) { p.on = false; p.cfg.pause1113 = 1; } // Nov 12 (Fred): stop new SMC entries for the self-review; resume by hand
+  if (p.cfg.pause1115 !== 1) { p.on = false; p.cfg.pause1115 = 1; } // Nov 15 (Fred): stop new entries for the losing-trade / reverse review; resume by hand
   if (p.cfg.gmsBD1115 !== 1) { p.cfg.gmsB = 1; p.cfg.gmsD = 1; p.cfg.gmsBD1115 = 1; } // Nov 15 (Fred "開"): GMS B (clean sweep / shift + displacement) and D (displacement FVG only) for the SMC Trader; SB_OV keeps SMC Big at 0
   return p; }
 let SM = (() => {
@@ -953,6 +956,9 @@ const SB_OV = {minStopPct: 0.5, slipPct: 0.02, stopBufMul: 0.25, tightPct: 0.4, 
 const SB_DEF = Object.assign(JSON.parse(JSON.stringify(SM_DEF)), {on: true, cfg: {}});
 let SB = Object.assign(JSON.parse(JSON.stringify(SB_DEF)), LS.get('awx_sb', null) || {});
 if (!SB.created) SB.created = now();
+// SB keeps its one-time flags on the account itself (SB.cfg is rebuilt from SM.cfg + SB_OV)
+function sbMigrate(p) { if (p.pause1115 !== 1) { p.on = false; p.pause1115 = 1; } return p; }   // Nov 15 (Fred): stop new entries for the reverse review
+sbMigrate(SB);
 SB.cfg = Object.assign({}, SM.cfg, SB_OV);   // usable outside smWith from load on (smWith rebuilds it each swap)
 S.smCB = new Map();   // SB's per-coin reads, kept apart from the small-cap S.smC (a held SB coin can also be in S.trk)
 // run fn as SB: SM and S.smC point at the big-cap account (cfg = live copy of SM.cfg + SB_OV) and are swapped back even on a throw
