@@ -44,7 +44,7 @@ This repo is **public**: free Pages and Actions need that. It holds no data or k
      - Why a branch: a test on Nov 15 showed scheduled sessions **can create new branches but cannot delete them (HTTP 403)**, and their pushes to main did not land on Nov 12, 14 and 15.
      - Its message ends with "Desk repo updated via branch", "already up to date" or "DESK REPO NOT UPDATED: …".
      - So **`git pull` before you commit**; that commit lands every morning.
-     - **History:** Nov 12, 14, 15 pushes to main did not land; Claude published those calendars by hand. Nov 13 landed (GitHub tool fallback).
+     - **History:** Nov 12, 14, 15 pushes to main did not land; Claude published those calendars by hand. Nov 13 landed (GitHub tool fallback). Nov 16–19: no branch pushed at all; the Nov 19 run failed with "usage limit reached" (the task's runs use Fred's plan usage).
    - **"Aster reversal watch"** (hourly dashboard): **paused** on Fred's request to cut usage. Its script is in `tools/reversal-watch.py`.
 5. **The desk itself** shows "CLOUD QUIET · Xm" when the cloud has been silent for 20+ min. A connected browser takes over trading after 30 min of silence while it stays open.
 
@@ -151,22 +151,35 @@ git pull --rebase && git add -A && git commit -m "…" && git push   # Pages + t
   - "Poor OB" only (AGT ×2, ONE) is read as `a: skip` + `b: ob` (Fred, Nov 13).
   - Bot read the 1h as bull on longs Fred calls a 1h downtrend (PREDICT, IDOL, ONE).
 
-## State on Nov 12, 2026 (20:15 UTC, cloud run ~795)
+## State on Nov 19, 2026 (23:50 UTC, cloud run ~2,874; read from the `state` branch)
 | | Equity | Trades | Wins | Avg R |
 |---|---|---|---|---|
-| Trader | $935 | 129 | 48 | −0.08 |
-| · reversal | | 50 | 22 | +0.01 |
-| · momentum | | 79 | 26 | −0.13 |
-| SMC Trader | $965 | 30 | 12 | −0.12 |
+| Trader | $838 (3 open) | 322 | 127 | −0.08 |
+| · reversal | | 137 | 64 | +0.01 |
+| · momentum | | 166 | 53 | −0.17 |
+| · fade (since Nov 15 22:39 Vancouver) | | 18 | 10 | +0.11 (+1.9R) |
+| SMC Trader | $940 | 51 | 18 | −0.12 |
+| · since GMS B+D (resumed Nov 15) | | 8 | 2 | −0.05 (−0.4R) |
+| SMC Big | $939 | 16 | 6 | −0.39 |
+| · since resume Nov 15 (GMS C) | | 13 | 6 | −0.27 (−3.5R) |
 
-- **SMC rules in force (Reviewer):**
-  - HTF must agree;
-  - midpoint entries;
+Since the fade went live, the Trader's reversal shorts did −0.06R n48 (−2.9R) and its momentum shorts −0.21R n20 (−4.1R). All samples are small.
+
+- **SMC rules in force (Reviewer `RV.smAdj`):**
+  - HTF must agree (`needHTF`);
+  - midpoint / deeper entries (`needDepth`);
   - only from an HTF zone or swing (`needPOI`);
-  - quality ≥ 70 (Nov 13); order blocks ≥ 80 (`obQ`, Nov 13);
+  - quality ≥ 70; order blocks ≥ 80 (`obQ`);
   - half at +1.2R;
   - stop 0.6% beyond the sweep.
-- **Trader rules in force:** target +2R; skip "Short squeeze" setups.
+  - Zone weights are proposed but locked (`zoneLearn 0`).
+- **SMC live switches:**
+  - SMC Trader: `gmsB 1`, `gmsD 1`, `gmsA/C 0`, `obPick 0`, `regimeGate 1`, `dailyLossPct 0`.
+  - SMC Big: `SB_OV` `gmsC 1`, `gmsB/D 0`.
+- **Trader cfg:** `momLong 0`, `fadeG 1`, `fadeMin1h 2.5`, `dailyLossPct 0`.
+- **Trader Reviewer rules (`RV.active`):** target +2R, momentum size ×0.75, prefer "Fresh breakout", nothing avoided.
+- **Fred's reviews:** 35 on `notes` (33 SMC Trader, 2 SMC Big); 24 have Claude's `rd`; 9 have a chart plan.
+  - 3 reviews have text + a plan but no `rd` yet: BULLA (sm), ASTER (sb), BNB (sb).
 
 ## Decisions (Fred)
 - **Nov 8:** reversal longs off; SMC Trader on its own judgement (no screens).
@@ -200,10 +213,29 @@ git pull --rebase && git add -A && git commit -m "…" && git push   # Pages + t
   - Timing study (Fred's idea, 30 d `MF_DAYS=30`): the trigger that holds is the last-hour move. Fade a strong-momentum gainer that rose ≥ 2.5% in the last hour: backtest +0.20R n103 (halves +0.20 / +0.20), live reversed +0.49R n33; under 2.5% ≈ 0. Hours in the tracker does not hold in the backtest; early momentum longs also lose (0–2 h −0.39R n37).
   - The one that holds: fading the Trader's momentum LONGS on strong gainers. Live 65: reversed +0.27R (halves 0.00 / +0.53). Backtest 21 d small caps, score ≥ 6: momentum long −0.24R n108, fade +0.14R n108 (halves +0.14 / +0.16). Momentum shorts on losers: flat, fading them loses. Not adopted yet; Fred decides.
 - **Nov 15 22:39 (Trader: new strategy):** Fred "試新策略". Migration `fade1115`: `momLong = 0`, `fadeG = 1`, Trader trading again (`PT.on`). Evidence in the decision above and Backtester → Strategy notes. Review after ~20 fade trades (compare with the backtest +0.20R and live-reversed +0.49R).
+- **Nov 16 (review chart):** Fred asked for TradingView-style charts, real SMC drawings, and a Reviewer that understands his reviews like Claude does.
+  - (1) Zoom, pan and 5m–1d timeframes, and (2) OB / FVG / swing / BOS-MSS drawing tools plus `drawPoints` reading: done (commit c97a513; see "Fred's reviews").
+  - (3) Claude-level reading of comments and pictures **waits for his choice**:
+    - A: a claude.ai scheduled task runs "read my reviews" daily. It uses his plan's usage (the unlock task already hit the usage limit on Nov 19), and writing to `notes` from a cloud session is untested.
+    - B: the cloud bot calls the Anthropic API with a key Fred creates and stores as a repo secret himself. Reviews read within ~5 min; costs API fees.
+  - Until he picks, run the `read-my-reviews` skill when he asks.
 - **Nov 16 (no daily loss stop):** Fred: the Trader and the SMC traders keep trading even after a day's loss passes 3%. Migration `nolimit1116`: `PT.cfg` / `SM.cfg.dailyLossPct = 0` (SMC Big inherits), today's pause cleared (the Trader had stopped at −3.2% on Nov 16). `dailyLossPct > 0` turns a limit back on.
 - **Nov 14 (year backtester):** option A: BTC / ETH only, SMC Big settings, 365 days, one account. Patterns are searched on the **raw** run (Reviewer rules off), so they are not just the rules' own leftovers (Fred). Report only. Spec/plan: `docs/superpowers/`.
 
 ## Open items
+- **Start here (Nov 19), most urgent first:**
+  1. **Unlock calendar is stale since Nov 15.**
+     - No `unlock-calendar/*` branch was pushed Nov 16–19, and main's newest calendar is the Nov 15 hand publish.
+     - The scheduled task's Nov 19 run failed with "usage limit reached"; Nov 16–18 left nothing either.
+     - Fix: run the `unlock-check` skill (research + publish from here), then tell Fred. The task itself stays on and should resume when his usage allows.
+  2. **Fade check is due:** 18 of ~20 fade trades so far, +0.11R avg (backtest +0.20R n103, live-reversed +0.49R n33). Review with Fred at ~20.
+  3. **Part 3 of the Nov 16 request** (A or B, see Decisions): ask Fred.
+  4. **3 unread reviews** (BULLA, ASTER, BNB): read them when Fred says "讀吓我啲 review".
+  5. **Delete leftover test branches:** `claude/push-test-1794748419` and `push-test-1794748419` on the desk repo. Fred deletes them (scheduled sessions can't).
+  6. **SMC checks:** SMC Trader B+D (8 of ~20 trades) and SMC Big C (13 of ~20) are not due yet.
+- **Tests:** `tests/desk-smoke.mjs` now also checks the review chart: 5 timeframe chips, wheel zoom, switch to 1h, OB auto-box, 3 swing points, and the Reviewer reading LH/LL against a long plus an opposing OB as `room`.
+  - Two older checks fail on and off, on code before Nov 16 too: "SB review changed SMC learning or awx_sm" and "Backtester changed live state".
+  - Treat any other failure as real.
 - **Nov 15 (OB pick test, waiting for Fred's call):** the live pick takes an OB only when the leg left no FVG (`SMZ_DEF.fvg 100`), so every live OB entry had no FVG after it. Test switch `SM.cfg.obPick` (live 0; `SB_OV.obPick` 0): 1 = a good OB (FVG after it, fresh, in discount/premium) is the zone, the OB∩FVG overlap when ≥ 0.1 ATR, and no zone when the leg has no FVG; 2 = only that last part. `tools/smc-obpick-test.mjs`:
   - small caps 14 d: base −10.1R n43 · obPick +0.3R n22 · noWeakOB −3.9R n33 (half 1 −0.7 vs −0.3, half 2 −9.4 vs +0.6);
   - big caps 14 d: base +7.3R n25 · obPick −6.6R n23 (worse both halves); BTC/ETH 365 d: base +13.8R n66 (+0.21) · obPick +7.7R n38 (+0.20);
@@ -220,7 +252,7 @@ git pull --rebase && git add -A && git commit -m "…" && git push   # Pages + t
   - OB never beats FVG; "good OB" (FVG after, fresh, discount) no better; the OB∩FVG overlap (A+) is worse (small −0.21, BTC/ETH −0.21) except big caps 21 d (+0.01). OBs with a displacement departure beat other OBs in small caps and BTC/ETH (both halves) but add nothing at trade level (`gmsD 2`: small −3.4R n34 vs D −4.6R n22, BD +0.3R n26).
   - Newest vs first FVG: no real difference; the live pick (newest FVG, else OB) stays. BTC/ETH and big caps: no zone feature holds in both halves.
   - So for small caps the lead is B+D (`gmsB`/`gmsD` 1): adopted Nov 15 (Decisions).
-- **Start here (Nov 15):** read `docs/HANDOFF-2026-11-15.md` (what changed Nov 14–15, first year-backtest report, next steps).
+- **Background (Nov 15):** `docs/HANDOFF-2026-11-15.md` (what changed Nov 14–15, first year-backtest report, next steps).
 - **SMC resumed Nov 13 06:05 UTC** (`resume1113`), with `zoneLearn` still 0. Fred's call: collect ~20 new trades under the regime gate, then check whether the proposed zone rule stays stable before unlocking it. It changed 4 times in the first hour of backfill. Latest proposal: avoid 0.10–1.20 ATR zones (−0.71R n20 vs +0.59R n13) and prefer displacement zones (+0.60R n6).
 - Re-check the two SMC splits above once there are ~20 more SMC trades.
 - **First year report, to read with Fred** (local 365-day run, Nov 14; report only, no rule changes without his yes):
