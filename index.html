@@ -1147,7 +1147,7 @@ function ptStats() {
 // Every setup is also audited in SMC terms (sweep, liquidity, break, FVG / OB quality, premium/discount, higher timeframe,
 // entry depth) into a quality score; weak setups are skipped.
 const SM_DEF = {v: 1, start: 1000, cash: 1000, pos: {}, log: [], eqs: [], day: null, cool: {}, on: true, paused: null, created: 0, lastScan: null,
-  cfg: {riskPct: 1, maxPos: 3, maxLev: 10, minScore: 4, dailyLossPct: 3, feePct: 0.04, slipPct: 0.10, holdH: 12, minVol: 300000, maxStopPct: 15, minRR: 2, maxRR: 5, tp1R: 1.5, stopBuf: 0.3, unlGuard: 1, useScreens: 0, tf15: 1, tf1h: 1, holdH1h: 36, minQ: 55, learn: 1, poiRule: 1, ltfConfirm: 1, roomCheck: 1, cont: 1, pathCheck: 1, pdLiq: 1, invExit: 1, minStopPct: 1.5, minDepth: 15, zoneLearn: 0, regimeGate: 1, obPick: 0, gmsA: 0, gmsB: 0, gmsC: 0, gmsD: 0}};
+  cfg: {riskPct: 1, maxPos: 3, maxLev: 10, minScore: 4, dailyLossPct: 3, feePct: 0.04, slipPct: 0.10, holdH: 12, minVol: 300000, maxStopPct: 15, minRR: 2, maxRR: 5, tp1R: 1.5, stopBuf: 0.3, unlGuard: 1, useScreens: 0, tf15: 1, tf1h: 1, holdH1h: 36, minQ: 55, learn: 1, poiRule: 1, ltfConfirm: 1, roomCheck: 1, cont: 1, pathCheck: 1, pdLiq: 1, invExit: 1, minStopPct: 1.5, minDepth: 15, zoneLearn: 0, regimeGate: 1, obPick: 0, gmsA: 0, gmsB: 0, gmsC: 0, gmsD: 0, fib: 0}};
 // Nov 8: the SMC Trader trades on its own SMC judgement, without the Reviewer's screens (one-time switch-off for saved accounts)
 function smMigrate(p) { if (p.cfg.ownJudge !== 1) { p.cfg.useScreens = 0; p.cfg.ownJudge = 1; } if (p.cfg.lev10 !== 1) { p.cfg.maxLev = 10; p.cfg.lev10 = 1; } // Nov 11 (Fred): 10× leverage cap
   if (p.cfg.resume1113 !== 1) { if (p.cfg.pause1113 === 1) p.on = true; p.cfg.resume1113 = 1; } // Nov 13 (Fred): self-review done, resume SMC trading (zone tuning stays locked)
@@ -1156,6 +1156,7 @@ function smMigrate(p) { if (p.cfg.ownJudge !== 1) { p.cfg.useScreens = 0; p.cfg.
   if (p.cfg.resume1115 !== 1) { p.on = true; p.cfg.resume1115 = 1; } // Nov 15 22:00 (Fred): only the Trader stays paused; the SMC Trader trades on
   if (p.cfg.nolimit1116 !== 1) { p.cfg.dailyLossPct = 0; p.paused = null; p.cfg.nolimit1116 = 1; } // Nov 16 (Fred): no daily loss stop (SMC Big inherits it from SM.cfg)
   if (p.cfg.gmsBD1115 !== 1) { p.cfg.gmsB = 1; p.cfg.gmsD = 1; p.cfg.gmsBD1115 = 1; } // Nov 15 (Fred "開"): GMS B (clean sweep / shift + displacement) and D (displacement FVG only) for the SMC Trader; SB_OV keeps SMC Big at 0
+  if (p.cfg.fib1119 !== 1) { p.cfg.fib = 1; p.cfg.fib1119 = 1; } // Nov 19 (Fred "試下 small caps 先"): fib 1 (zone on 0.5 / 0.618 / 0.79 of the leg) for the SMC Trader; SB_OV keeps SMC Big at 0. Small caps 21 d +6.8R n24 vs base +5.3R n27 (half 1 equal, half 2 +0.2 vs -1.3)
   return p; }
 let SM = (() => {
   const saved = LS.get('awx_sm', null);
@@ -1168,7 +1169,7 @@ function smSave() { LS.set(SM === SB ? 'awx_sb' : 'awx_sm', SM); }
 function smReset() { const cfg = SM.cfg, big = SM === SB; SM = JSON.parse(JSON.stringify(SM_DEF)); SM.cfg = cfg; SM.created = now(); if (big) SB = SM; smSave(); }   // big: reset inside smWith(SB) must save to awx_sb
 S.smC = new Map();
 // SMC Big (Nov 13, Fred): the same strategy and Reviewer rules on the top-10 volume perps, its own $1,000 account. Only the percent numbers tuned for small caps change.
-const SB_OV = {minStopPct: 0.5, slipPct: 0.02, stopBufMul: 0.25, tightPct: 0.4, useScreens: 0, invExit: 0, obPick: 0, gmsC: 1, gmsB: 0, gmsD: 0};   // gmsC 1 (Fred, Nov 15 "試住C先"): GMS supply/demand zones for SMC Big only; BTC/ETH 365 d +28.0R n91 vs +13.8R n66 (half 2 +5.4 vs +6.5), big caps 21 d +6.6R n37 both; small caps keep 0 (−14.6R n71 vs −9.0R n55)   // obPick 0 (Nov 15): big caps keep the FVG pick; good-OB pick tested worse there (14d −6.6R n23 vs +7.3R n25; BTC/ETH year +7.7R n38 vs +13.8R n66)   // invExit 0 (Fred, Nov 14): big caps hold through a failed entry gap; 7d backtest +0.75R n15 vs +0.48R n16 (5 trades differ, 3 better)   // useScreens 0: screenGate writes Reviewer counters, and the Reviewer never learns from SB
+const SB_OV = {minStopPct: 0.5, slipPct: 0.02, stopBufMul: 0.25, tightPct: 0.4, useScreens: 0, invExit: 0, obPick: 0, gmsC: 1, gmsB: 0, gmsD: 0, fib: 0};   // fib 0 (Nov 19): SMC Big off; big caps 21 d fib1 +7.5R n35 vs +5.2R n44 but half 1 worse, BTC/ETH 365 d +14.7R n58 vs +24.2R n89   // gmsC 1 (Fred, Nov 15 "試住C先"): GMS supply/demand zones for SMC Big only; BTC/ETH 365 d +28.0R n91 vs +13.8R n66 (half 2 +5.4 vs +6.5), big caps 21 d +6.6R n37 both; small caps keep 0 (−14.6R n71 vs −9.0R n55)   // obPick 0 (Nov 15): big caps keep the FVG pick; good-OB pick tested worse there (14d −6.6R n23 vs +7.3R n25; BTC/ETH year +7.7R n38 vs +13.8R n66)   // invExit 0 (Fred, Nov 14): big caps hold through a failed entry gap; 7d backtest +0.75R n15 vs +0.48R n16 (5 trades differ, 3 better)   // useScreens 0: screenGate writes Reviewer counters, and the Reviewer never learns from SB
 const SB_DEF = Object.assign(JSON.parse(JSON.stringify(SM_DEF)), {on: true, cfg: {}});
 let SB = Object.assign(JSON.parse(JSON.stringify(SB_DEF)), LS.get('awx_sb', null) || {});
 if (!SB.created) SB.created = now();
@@ -1394,10 +1395,25 @@ const smGradeTxt = g => g ? `grade ${g.g}${g.why.filter(x => x !== 'cont').lengt
    OB only when the leg left no FVG at all, i.e. only the weakest OBs. With obPick 1: a good OB (an FVG after it, untouched since,
    in the discount / premium half of the leg) is the zone; where it overlaps an FVG, the entry zone is the overlap (≥ 0.1 ATR).
    A leg with no FVG gives no zone (no entries from an OB that left no imbalance). obPick 2: only that last part (live FVG pick kept). */
+/* SM.cfg.fib (Nov 19, Fred: "Fibonacci as a confluence; the key levels are 0.5, 0.618, 0.79"; TEST SWITCH, live 0 until he says yes).
+   Leg = the setup's impulse from the sweep bar (reversal) or base candle (continuation) to the shift / break bar: lo / hi = its lowest
+   low / highest high (a long's lo is the sweep extreme). Level f sits at hi - f*(hi - lo) for a long, lo + f*(hi - lo) for a short.
+   A zone hits a level that lies inside it or within 0.1 ATR. fib 1: no hit, no zone (setup skipped); fib 2: the zone must overlap the
+   0.618-0.79 band (OTE); fib 3: no gate, the pick prefers a candidate that hits a level, else the usual pick. Every chosen zone
+   carries fibHit ('0.618,0.79'; '' = none) whatever the switch, so trades can be split by level. */
+const SM_FIB = [0.5, 0.618, 0.79];
+function smFib(B, r) {
+  let lo = Infinity, hi = -Infinity; for (let m = r.j; m <= r.k; m++) { lo = Math.min(lo, B[m][3]); hi = Math.max(hi, B[m][2]); }
+  return {lo, hi, lv: SM_FIB.map(f => r.dir === 'L' ? hi - f * (hi - lo) : lo + f * (hi - lo)), tol: 0.1 * (smATR(B, r.j) || (B[r.j][2] - B[r.j][3]) || 1e-9)};
+}
+const smFibHit = (F, z) => F ? SM_FIB.filter((f, i) => F.lv[i] >= z.lo - F.tol && F.lv[i] <= z.hi + F.tol).join(',') : '';
+const smFibOte = (F, z) => !!F && z.lo <= Math.max(F.lv[1], F.lv[2]) && z.hi >= Math.min(F.lv[1], F.lv[2]);
 const smGoodOB = z => !!z && z.kind === 'OB' && z.obConf === 1 && z.fresh === 1 && z.pd === 1;
 function smZoneSet(r, Z) {
   let kz = smZonePick(Z, smRules().zone); const nG = Z.filter(z => z.kind === 'FVG').length;
-  if (SM.cfg.gmsD) { const Q = Z.filter(z => z.gq === 1 || (SM.cfg.gmsD === 2 && !Z.some(f => f.gq === 1) && z.kind === 'OB' && z.disp === 1)); kz = Q.length ? Z.indexOf(Q[smZonePick(Q, smRules().zone)]) : -1; }
+  const Q = SM.cfg.gmsD ? Z.filter(z => z.gq === 1 || (SM.cfg.gmsD === 2 && !Z.some(f => f.gq === 1) && z.kind === 'OB' && z.disp === 1)) : Z;
+  if (SM.cfg.gmsD) kz = Q.length ? Z.indexOf(Q[smZonePick(Q, smRules().zone)]) : -1;
+  if (SM.cfg.fib === 3) { const F = Q.filter(z => smFibHit(r.fib, z)); if (F.length) kz = Z.indexOf(F[smZonePick(F, smRules().zone)]); }   // fib 3: prefer a zone on a level
   if (SM.cfg.obPick) { const ob = Z.find(z => z.kind === 'OB'); if (SM.cfg.obPick === 1 && smGoodOB(ob)) kz = Z.indexOf(ob); else if (!nG) kz = -1; }
   if (kz < 0) return;
   const c = Z[kz]; r.zone = {lo: c.lo, hi: c.hi, kind: c.kind, i: c.i}; r.nGaps = nG; r.zc = {c: Z, k: kz};
@@ -1408,6 +1424,8 @@ function smZoneSet(r, Z) {
     const ov = Z.filter(f => f.kind === 'FVG').map(f => ({lo: Math.max(f.lo, c.lo), hi: Math.min(f.hi, c.hi)})).filter(o => o.hi > o.lo).sort((a, b) => (b.hi - b.lo) - (a.hi - a.lo))[0];
     if (ov && atr > 0 && ov.hi - ov.lo >= 0.1 * atr) Object.assign(r.zone, {lo: ov.lo, hi: ov.hi, ovl: 1});
   }
+  r.zone.fibHit = smFibHit(r.fib, r.zone);
+  if ((SM.cfg.fib === 1 && !r.zone.fibHit) || (SM.cfg.fib === 2 && !smFibOte(r.fib, r.zone))) { r.zone = null; delete r.zc; delete r.nGaps; }   // fib 1 / 2 gate: no zone
 }
 function smSetup(B, P, dir, live) {
   const n = B.length, bull = dir === 'L';
@@ -1429,7 +1447,7 @@ function smSetup(B, P, dir, live) {
     if (k < 0) { if (bull ? live < ext : live > ext) r.stage = 'none'; return r; }
     if (gB) { let d = false; for (let m = j + 1; m <= k; m++) if (smDispG(B[m], aB || 1e-9, bull)) { d = true; break; } if (!d) { r.stage = 'nozone'; r.weak = 1; return r; } }   // no displacement on the shift
     // entry zone: the best-scoring FVG / order block on the displacement leg (by default the newest FVG, else the order block)
-    smZoneSet(r, smZones(B, r, dir));
+    r.fib = smFib(B, r); smZoneSet(r, smZones(B, r, dir));
     if (!r.zone) { r.stage = 'nozone'; return r; }
     // after the shift: broken (closed through the zone) / tapped before / in the zone now
     // (a candle that only wicked the zone's edge, short of the depth an entry needs, hasn't used the zone)
@@ -1466,7 +1484,7 @@ function smContSetup(B, P, dir, live) {
     if (Math.abs(leg - ext) < 1.5 * atr) continue;                            // not an impulsive departure from the base
     if (SM.cfg.gmsB) { let d = false; for (let m = i + 1; m <= k; m++) if (smDispG(B[m], atr, bull)) { d = true; break; } if (!d) continue; }
     const r = {dir, type: 'cont', j: i, k, swept: null, lvl, ext, leg, stage: 'mss', zone: null, taps: 0, touch: -1};
-    smZoneSet(r, smZones(B, r, dir));   // the gap the move left, else the base candle (by default)
+    r.fib = smFib(B, r); smZoneSet(r, smZones(B, r, dir));   // the gap the move left, else the base candle (by default)
     if (!r.zone) { r.stage = 'nozone'; return r; }   // obPick: a base that left no gap
     const zh = r.zone.hi - r.zone.lo, dep = smTapDepth(r.zone);
     for (let m = Math.max(k + 1, r.zone.i + 2); m < n; m++) {
@@ -1776,7 +1794,7 @@ function smClose(s, frac, why) {
   if (frac >= 1 || p.qty <= p.qty0 * 1e-6) {
     const R = p.risk ? p.realized / p.risk : 0;
     SM.log.unshift({s, b: p.b, side: p.side, t0: p.t, t1: now(), entry: p.entry, exit: fill, qty: p.qty0, notional: p.qty0 * p.entry, pnl: p.realized, R, fees: p.fees,
-      funding: p.funding || 0, why: p.why, exitWhy: why, stop0: p.stop0, maxR: p.maxR || 0, sc: p.sc, rr: p.rr, zoneKind: p.zoneKind, target: p.target, zone: p.zone ? {lo: p.zone.lo, hi: p.zone.hi, kind: p.zone.kind, obF: p.zone.obF, ovl: p.zone.ovl} : null, sweep: p.sweep, lvl: p.lvl, unlK: p.unlK || 'none', ceBroke: p.ceBroke || 0, strat: 'smc', tf: p.tf || '15m', htfBias: p.htfBias || null, q: p.q || null, poi: p.poi || null, type: p.type || 'rev', regime: p.regime || null, play: p.play || null, zc: p.zc || null, grd: p.grd || null, holdH: p.holdH, cx: p.cx, scr: p.scr || null, ex: (p.exits || []).map(e => [e.t, e.px, e.why])});
+      funding: p.funding || 0, why: p.why, exitWhy: why, stop0: p.stop0, maxR: p.maxR || 0, sc: p.sc, rr: p.rr, zoneKind: p.zoneKind, target: p.target, zone: p.zone ? {lo: p.zone.lo, hi: p.zone.hi, kind: p.zone.kind, obF: p.zone.obF, ovl: p.zone.ovl, fibHit: p.zone.fibHit} : null, sweep: p.sweep, lvl: p.lvl, unlK: p.unlK || 'none', ceBroke: p.ceBroke || 0, strat: 'smc', tf: p.tf || '15m', htfBias: p.htfBias || null, q: p.q || null, poi: p.poi || null, type: p.type || 'rev', regime: p.regime || null, play: p.play || null, zc: p.zc || null, grd: p.grd || null, holdH: p.holdH, cx: p.cx, scr: p.scr || null, ex: (p.exits || []).map(e => [e.t, e.px, e.why])});
     if (SM.log.length > 500) SM.log.pop();
     delete SM.pos[s]; SM.cool[s] = now();
     raise('smc', s, 'close' + now(), `${smName() === 'SMC Big' ? 'SMC BIG' : 'SMC'} PAPER ${p.side === 'L' ? 'long' : 'short'} ${p.b} closed ${fmtMoney(p.realized, 1)} (${R >= 0 ? '+' : ''}${R.toFixed(2)}R) — ${why}`, p.realized >= 0 ? 1 : -1, 0, true);

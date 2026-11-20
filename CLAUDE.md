@@ -220,6 +220,10 @@ Since the fade went live, the Trader's reversal shorts did −0.06R n48 (−2.9R
     - B: the cloud bot calls the Anthropic API with a key Fred creates and stores as a repo secret himself. Reviews read within ~5 min; costs API fees.
   - Until he picks, run the `read-my-reviews` skill when he asks.
 - **Nov 16 (no daily loss stop):** Fred: the Trader and the SMC traders keep trading even after a day's loss passes 3%. Migration `nolimit1116`: `PT.cfg` / `SM.cfg.dailyLossPct = 0` (SMC Big inherits), today's pause cleared (the Trader had stopped at −3.2% on Nov 16). `dailyLossPct > 0` turns a limit back on.
+- **Nov 19 (Fibonacci confluence, SMC Trader only):** Fred "試下 small caps 先". Migration `fib1119`: `SM.cfg.fib = 1` (the entry zone must lie on, or within 0.1 ATR of, the 0.5 / 0.618 / 0.79 retracement of the setup leg, or the setup is skipped); `SB_OV.fib = 0` keeps SMC Big off. Every trade records `zone.fibHit` whatever the switch. Switch and level math: comment above `SM_FIB` in `src/smc.js`; test tool `tools/smc-fib-test.mjs` (variants base, fib0–3, each also setting `SB_OV.fib`).
+  - Backtest Nov 19 (window ending 2026-11-20 00:20 UTC), total R: small caps 21 d base +5.3R n27 · fib1 +6.8R n24 (half 1 equal, half 2 +0.2 vs −1.3; it only drops the 3 no-level trades) · fib2 (0.618–0.79 only) +1.4R n20 · fib3 (pick preference) +4.3R n27. Big caps 21 d base +5.2R n44 · fib1 +7.5R n35 (half 1 worse) · fib2 +6.9R n30 · fib3 +0.2R n51. BTC/ETH 365 d base +24.2R n89 · fib1 +14.7R n58 · fib2 +6.6R n40 · fib3 +7.2R n88; there the no-level trades did better (+0.34R n32).
+  - By level (base trades, avg R): small 0.5 +0.46 n21 · 0.618 +0.33 n18 · 0.79 −0.20 n11; big 0.5 +0.21 · 0.618 +0.33 · 0.79 +0.25; BTC/ETH 0.5 +0.32 · 0.618 +0.19 · 0.79 +0.46. No level is best everywhere.
+  - Review after ~20 live fib trades on the SMC Trader (compare with the small-caps backtest +0.29R).
 - **Nov 14 (year backtester):** option A: BTC / ETH only, SMC Big settings, 365 days, one account. Patterns are searched on the **raw** run (Reviewer rules off), so they are not just the rules' own leftovers (Fred). Report only. Spec/plan: `docs/superpowers/`.
 
 ## Open items
@@ -233,6 +237,7 @@ Since the fade went live, the Trader's reversal shorts did −0.06R n48 (−2.9R
   4. **3 unread reviews** (BULLA, ASTER, BNB): read them when Fred says "讀吓我啲 review".
   5. **Delete leftover test branches:** `claude/push-test-1794748419` and `push-test-1794748419` on the desk repo. Fred deletes them (scheduled sessions can't).
   6. **SMC checks:** SMC Trader B+D (8 of ~20 trades) and SMC Big C (13 of ~20) are not due yet.
+  7. **Fib check (since Nov 19):** SMC Trader `fib 1`, review at ~20 trades (see Decisions, Nov 19).
 - **Tests:** `tests/desk-smoke.mjs` now also checks the review chart: 5 timeframe chips, wheel zoom, switch to 1h, OB auto-box, 3 swing points, and the Reviewer reading LH/LL against a long plus an opposing OB as `room`.
   - Two older checks fail on and off, on code before Nov 16 too: "SB review changed SMC learning or awx_sm" and "Backtester changed live state".
   - Treat any other failure as real.
