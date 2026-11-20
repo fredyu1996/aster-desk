@@ -238,6 +238,10 @@ Since the fade went live, the Trader's reversal shorts did −0.06R n48 (−2.9R
   - Lead 1 (holds both halves on SM): SMC Trader longs on coins up on the day −0.53R n21 vs +0.17R n30 (same lesson as the Trader's Nov 15 fade study). Overlaps the 15–40% band (7 of 21) and flow-against (14 of 21). SB too few.
   - Lead 2: taker flow against the trade on SM −0.30R n24 vs +0.05R n27, both halves, gap shrinking (0.45R → 0.17R). SB opposite sign, too few.
   - 15–40% day move: −0.92R n11 but only 3 trades since Nov 12. SM opposite the Trader on the same coin ±6 h: −0.21R n17 vs +0.05R n16, one-sided. ~15 splits tested: leads, not rules. Next step offered to Fred: a test switch "no SMC Trader longs on day gainers", backtested like fib.
+- **Nov 19 (EMA / MA / MACD / RSI study, report only):** `tools/smc-ind-study.mjs` reads 26 features per trade at t0 on CLOSED 15m / 1h bars (price vs EMA20 / EMA50, EMA20 vs EMA50, EMA50 slope, MACD line / histogram / rising, RSI with the trade + buckets, 1h price vs SMA50 / SMA200), signed with the trade. Base = rules in force, GT_END 2026-11-20 06:00 UTC: small caps 21 d n24 +6.9R, big caps 21 d n44 +5.2R, BTC/ETH 365 d n89 +24.2R.
+  - None of 78 splits holds (≥ 0.15R, same sign both halves, n ≥ 8; ~2.0 expected by chance). SMC entries are already with the trend on almost every indicator (HTF + structure-shift rules), so the "against" cells are tiny.
+  - Leads only: (1) 15m price on the wrong side of EMA20 (pullback entry) better in all 4 sets, but as a filter it cuts total R (small 4.3 vs 6.9, BTC/ETH 10.8 vs 24.2); (2) 1h price on the trade's side of SMA200: small 9.0 vs 6.9R, big 7.9 vs 5.2R, BTC/ETH 22.6 vs 24.2R (half 1 worse), live SM opposite. Fred: no indicator filter; re-run after ~20 more SMC Trader trades.
+  - Fred, Nov 19: the "no SMC Trader longs on day gainers" test switch is on hold (not now).
 - **Nov 14 (year backtester):** option A: BTC / ETH only, SMC Big settings, 365 days, one account. Patterns are searched on the **raw** run (Reviewer rules off), so they are not just the rules' own leftovers (Fred). Report only. Spec/plan: `docs/superpowers/`.
 
 ## Open items
