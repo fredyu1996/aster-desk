@@ -24,6 +24,7 @@ Fred's walkable 3D trading workstation for small-cap perps on Aster DEX, with ru
 | Unlock calendar | `unlocks.json` (root). The desk re-fetches it every 6 h; a snapshot is embedded at build time |
 | Shared paper accounts | private repo `fredyu1996/aster-desk-data`, branch `state`, file `aster-desk-state.json`. Always a single parentless commit, force-updated. Holds `pt, rv, sm, trk, cfg, oi, cloud, lock` |
 | SMC Big account | key `sb` in the same state file; browser copy in localStorage `awx_sb` |
+| SMC BTC/ETH account | key `se` in the same state file; browser copy in localStorage `awx_se` |
 | Fred's own trade reviews | same private repo, branch `notes`: `manual-reviews.json` + `img/*.jpg` (normal commits; read → merge → write, retry on conflict) |
 | Notes | `docs/`. The claude.ai project "Trading workstation" has the same docs; this repo is now the copy to keep current |
 
@@ -72,7 +73,7 @@ git pull --rebase && git add -A && git commit -m "…" && git push   # Pages + t
 | `track.js` | day tracker (top movers for 24 h), 8-sign reversal read, momentum read, pattern tags |
 | `unlock.js` | token-unlock calendar and guard (`unlocks.json` embedded at `/*UNLOCKS_JSON*/`) |
 | `trader.js` | **Trader** paper account `PT` (reversal + momentum strategies), `ptTick`, `ptManage` |
-| `smc.js` | **SMC Trader** paper account `SM` (and `SB`, SMC Big: `SB_OV` overrides, `smWith(SB, fn)` swaps the global `SM` around `fn`): `smcRead/smcReadTf/smSetup/smContSetup/smQuality/smTick/smManage`, HTF zones, POI, path, draw, PD high/low, `SM.cfg.regimeGate` (1 live; 0 only for the year backtest's ablation) |
+| `smc.js` | **SMC Trader** paper account `SM` (and `SB`, SMC Big: `SB_OV` overrides, `smWith(SB, fn)` swaps the global `SM` around `fn`; `SE`, SMC BTC/ETH: `SE_COINS`, same `SB_OV`, `smWith(SE, fn)`, `smKey()` = 'sm' / 'sb' / 'se'): `smcRead/smcReadTf/smSetup/smContSetup/smQuality/smTick/smManage`, HTF zones, POI, path, draw, PD high/low, `SM.cfg.regimeGate` (1 live; 0 only for the year backtest's ablation) |
 | `scene.js` | three.js room, desks, wall screens (`SWALL` south wall = SMC positions, `RACE` north wall = return race) |
 | `ui.js` | panels (`TABS`, `openPanel`, `renderPanel`), keys (1–7 agents, C coin check, V review wall, B SMC wall, T toggles ✓/✗ tags at the wall, E review it yourself) |
 | `check.js` | coin check (key C) |
@@ -113,7 +114,14 @@ git pull --rebase && git add -A && git commit -m "…" && git push   # Pages + t
    - Desk: SMC panel (key 6) has a Small caps / Big caps switch with its own on/off toggle; the return race wall has a third line and an SMC BIG stats column.
    - The 7-day backtest also writes `smc-backtest-big.json` (report only; paused since Nov 14, last file stays readable).
    - A browser on the pre-deploy desk that takes the lock saves state without `sb`, and SB restarts fresh: hard refresh after a deploy.
-8. **Backtester** (key 7, report only):
+8. **SMC BTC/ETH** ($1,000 paper, account `SE`, on from the first deploy, Nov 19):
+   - SMC Big's settings exactly (`SE.cfg` = `SM.cfg` + `SB_OV`, no override table of its own), the settings of the 365-day year backtest, on **`SE_COINS` = BTCUSDT + ETHUSDT only** (one constant in `src/smc.js`; narrow it to one coin there). Held coins keep being managed.
+   - Independent of SMC Big, which keeps trading its own top-10 list (BTC / ETH included). Ticks after SB in `ptTick`, each in its own try/catch; own per-coin read cache `S.smCE`; alerts start "SMC BTC/ETH PAPER".
+   - The Reviewer never learns from SE (same as SB): trades keyed `se|SYM|t1`, skipped by `rvmLearn`; reviewable (review wall, "On the chart" SMC BTC/ETH filter, Review chip on its trade log).
+   - Desk: SMC panel (key 6) switch Small caps / Big caps / BTC/ETH (read-only tabs + own on/off toggle); race wall has a fourth line and a BTC/ETH stats column. Cloud summary: `cloud.seEq` / `seOpen`.
+   - Same pre-deploy caveat as SB: an old desk that takes the lock saves state without `se`, and SE restarts fresh.
+   - Test: `tests/smc-btceth.mjs` (in `npm test`).
+9. **Backtester** (key 7, report only):
    - Nightly year backtest of the SMC Big strategy on BTC / ETH (`smc-backtest-year.json`): never changes live rules, never touches the shared accounts.
    - Base = rules in force; raw = all Reviewer rules off (patterns come from raw); one ablation run per rule switch.
    - Read it in the panel (needs the Sync token). Details: `docs/smc-backtest.md`.
@@ -224,6 +232,12 @@ Since the fade went live, the Trader's reversal shorts did −0.06R n48 (−2.9R
   - Backtest Nov 19 (window ending 2026-11-20 00:20 UTC), total R: small caps 21 d base +5.3R n27 · fib1 +6.8R n24 (half 1 equal, half 2 +0.2 vs −1.3; it only drops the 3 no-level trades) · fib2 (0.618–0.79 only) +1.4R n20 · fib3 (pick preference) +4.3R n27. Big caps 21 d base +5.2R n44 · fib1 +7.5R n35 (half 1 worse) · fib2 +6.9R n30 · fib3 +0.2R n51. BTC/ETH 365 d base +24.2R n89 · fib1 +14.7R n58 · fib2 +6.6R n40 · fib3 +7.2R n88; there the no-level trades did better (+0.34R n32).
   - By level (base trades, avg R): small 0.5 +0.46 n21 · 0.618 +0.33 n18 · 0.79 −0.20 n11; big 0.5 +0.21 · 0.618 +0.33 · 0.79 +0.25; BTC/ETH 0.5 +0.32 · 0.618 +0.19 · 0.79 +0.46. No level is best everywhere.
   - Review after ~20 live fib trades on the SMC Trader (compare with the small-caps backtest +0.29R).
+- **Nov 19: SMC BTC/ETH account (Fred: narrow to one or two big coins).** "Add another trader that only does BTC/ETH, using our current SMC strategy, because the 365-day backtest was positive R." New paper account `SE` ($1,000) with SMC Big's settings (`SM.cfg` + `SB_OV`) on BTCUSDT + ETHUSDT only, the year backtest's setup (base +24.2R n89 on Nov 19). No rule or setting of any other account changed; SMC Big keeps its top-10 list. Compare live SE with the year backtest after ~20 trades.
+- **Nov 19 (Trader stopped + Reviewer study):** Fred "momentum trader 可以停止交易". Migration `stop1119`: `PT.on = false` (no new entries; open positions still managed by `ptManage`). Report-only study of the Trader's small-cap trades for SMC lessons (state 2026-11-20 05:50 UTC; PT n328, SM n51, SB n16; halves = median entry time):
+  - No Trader entry feature (score, funding, flow, OI, last hour, day move, time of day) separates its momentum or fade winners from losers in both halves; momentum n147 −0.17R; losers held 0.8 h vs winners 1.5 h.
+  - Lead 1 (holds both halves on SM): SMC Trader longs on coins up on the day −0.53R n21 vs +0.17R n30 (same lesson as the Trader's Nov 15 fade study). Overlaps the 15–40% band (7 of 21) and flow-against (14 of 21). SB too few.
+  - Lead 2: taker flow against the trade on SM −0.30R n24 vs +0.05R n27, both halves, gap shrinking (0.45R → 0.17R). SB opposite sign, too few.
+  - 15–40% day move: −0.92R n11 but only 3 trades since Nov 12. SM opposite the Trader on the same coin ±6 h: −0.21R n17 vs +0.05R n16, one-sided. ~15 splits tested: leads, not rules. Next step offered to Fred: a test switch "no SMC Trader longs on day gainers", backtested like fib.
 - **Nov 14 (year backtester):** option A: BTC / ETH only, SMC Big settings, 365 days, one account. Patterns are searched on the **raw** run (Reviewer rules off), so they are not just the rules' own leftovers (Fred). Report only. Spec/plan: `docs/superpowers/`.
 
 ## Open items

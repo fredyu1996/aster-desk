@@ -312,10 +312,10 @@ function renderPanel() {
   if ((id === 'ivy' || id === 'flo' || (id === 'scout' && ['g', 'l', 'w'].includes(tab))) && typeof critAgentCard === 'function') { try { h = critAgentCard(id) + h; } catch (e) { console.warn('criteria card', e.message); } }
   if ((id === 'trader' || id === 'rev' || id === 'smc') && syViewer()) h = syBanner() + h;
   body.innerHTML = h; body.scrollTop = sc;
-  if (id === 'smc') { const sm = $('#pTtl small'); if (sm) sm.textContent = SMV === 'sb' ? 'Smart Money Paper Desk — the same SMC strategy on the top-10 volume perps; its own $1,000 paper account' : AG.smc.role + ' — ' + AG.smc.blurb; }
+  if (id === 'smc') { const sm = $('#pTtl small'); if (sm) sm.textContent = SMV === 'sb' ? 'Smart Money Paper Desk — the same SMC strategy on the top-10 volume perps; its own $1,000 paper account' : SMV === 'se' ? 'Smart Money Paper Desk — SMC Big settings on BTC and ETH only (the year backtest coins); its own $1,000 paper account' : AG.smc.role + ' — ' + AG.smc.blurb; }
   if (id === 'scout' && tab === 'set') bindSettings();
   body.querySelectorAll('canvas[data-spark]').forEach(drawSpark);
-  body.querySelectorAll('canvas[data-smc]').forEach(cv => smWith(id === 'smc' && SMV === 'sb' ? SB : SM, () => drawSmcChart(cv)));
+  body.querySelectorAll('canvas[data-smc]').forEach(cv => smWith(id === 'smc' ? smvAcct() : SM, () => drawSmcChart(cv)));
   body.querySelectorAll('canvas[data-rvchart]').forEach(cv => { try { drawRvCanvas(cv); } catch (e) { console.warn('rvchart', e.message); } });
   body.querySelectorAll('canvas.cmpchart').forEach(cv => { const r = cv.getBoundingClientRect(), dpr = Math.min(devicePixelRatio || 1, 2); cv.width = r.width * dpr; cv.height = r.height * dpr; const c = cv.getContext('2d'); c.scale(dpr, dpr); drawCmp(c, 0, 0, r.width, r.height, 11); });
   body.querySelectorAll('canvas.ptchart').forEach(cv => { const r = cv.getBoundingClientRect(), dpr = Math.min(devicePixelRatio || 1, 2); cv.width = r.width * dpr; cv.height = r.height * dpr; const c = cv.getContext('2d'); c.scale(dpr, dpr); drawEq(c, 0, 0, r.width, r.height, 11); });

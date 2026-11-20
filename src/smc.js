@@ -28,8 +28,9 @@ let SM = (() => {
   if (!p.created) p.created = now();
   return smMigrate(p);
 })();
-function smSave() { LS.set(SM === SB ? 'awx_sb' : 'awx_sm', SM); }
-function smReset() { const cfg = SM.cfg, big = SM === SB; SM = JSON.parse(JSON.stringify(SM_DEF)); SM.cfg = cfg; SM.created = now(); if (big) SB = SM; smSave(); }   // big: reset inside smWith(SB) must save to awx_sb
+function smKey() { return SM === SB ? 'sb' : SM === SE ? 'se' : 'sm'; }   // which SMC account SM is right now (smWith swaps in SB or SE)
+function smSave() { LS.set('awx_' + smKey(), SM); }
+function smReset() { const cfg = SM.cfg, k = smKey(); SM = JSON.parse(JSON.stringify(SM_DEF)); SM.cfg = cfg; SM.created = now(); if (k === 'sb') SB = SM; if (k === 'se') SE = SM; smSave(); }   // big: reset inside smWith(SB / SE) must save to awx_sb / awx_se
 S.smC = new Map();
 // SMC Big (Nov 13, Fred): the same strategy and Reviewer rules on the top-10 volume perps, its own $1,000 account. Only the percent numbers tuned for small caps change.
 const SB_OV = {minStopPct: 0.5, slipPct: 0.02, stopBufMul: 0.25, tightPct: 0.4, useScreens: 0, invExit: 0, obPick: 0, gmsC: 1, gmsB: 0, gmsD: 0, fib: 0};   // fib 0 (Nov 19): SMC Big off; big caps 21 d fib1 +7.5R n35 vs +5.2R n44 but half 1 worse, BTC/ETH 365 d +14.7R n58 vs +24.2R n89   // gmsC 1 (Fred, Nov 15 "試住C先"): GMS supply/demand zones for SMC Big only; BTC/ETH 365 d +28.0R n91 vs +13.8R n66 (half 2 +5.4 vs +6.5), big caps 21 d +6.6R n37 both; small caps keep 0 (−14.6R n71 vs −9.0R n55)   // obPick 0 (Nov 15): big caps keep the FVG pick; good-OB pick tested worse there (14d −6.6R n23 vs +7.3R n25; BTC/ETH year +7.7R n38 vs +13.8R n66)   // invExit 0 (Fred, Nov 14): big caps hold through a failed entry gap; 7d backtest +0.75R n15 vs +0.48R n16 (5 trades differ, 3 better)   // useScreens 0: screenGate writes Reviewer counters, and the Reviewer never learns from SB
@@ -41,20 +42,32 @@ function sbMigrate(p) { if (p.pause1115 !== 1) { p.on = false; p.pause1115 = 1; 
 sbMigrate(SB);
 SB.cfg = Object.assign({}, SM.cfg, SB_OV);   // usable outside smWith from load on (smWith rebuilds it each swap)
 S.smCB = new Map();   // SB's per-coin reads, kept apart from the small-cap S.smC (a held SB coin can also be in S.trk)
-// run fn as SB: SM and S.smC point at the big-cap account (cfg = live copy of SM.cfg + SB_OV) and are swapped back even on a throw
+// SMC BTC/ETH (Nov 19, Fred: narrow to one or two big coins): SMC Big's settings (SM.cfg + SB_OV, as the 365-day year backtest) on SE_COINS only, its own $1,000 account
+const SE_COINS = ['BTCUSDT', 'ETHUSDT'];   // the year backtest's YEAR_COINS; narrow to one coin here
+const SE_DEF = SB_DEF;   // only ever deep-copied
+let SE = Object.assign(JSON.parse(JSON.stringify(SE_DEF)), LS.get('awx_se', null) || {});
+if (!SE.created) SE.created = now();
+function seMigrate(p) { return p; }   // SE's one-time flags go here, on the account itself like sbMigrate (it starts after every SB migration)
+seMigrate(SE);
+SE.cfg = Object.assign({}, SM.cfg, SB_OV);   // no override table of its own: exactly SB's settings
+S.smCE = new Map();   // SE's per-coin reads (BTC/ETH are also in SB's list)
+// run fn as SB or SE: SM and S.smC point at that account (cfg = live copy of SM.cfg + SB_OV) and are swapped back even on a throw
 function smWith(acct, fn) {
-  if (acct !== SB) return fn();
-  SB.cfg = Object.assign({}, SM.cfg, SB_OV);
-  const sm = SM, smc = S.smC; SM = SB; S.smC = S.smCB;
-  try { return fn(); } finally { SB = SM; S.smCB = S.smC; SM = sm; S.smC = smc; }   // SB = SM keeps an smReset() made inside
+  const k = acct === SB ? 'sb' : acct === SE ? 'se' : '';
+  if (!k) return fn();
+  acct.cfg = Object.assign({}, SM.cfg, SB_OV);
+  const sm = SM, smc = S.smC; SM = acct; S.smC = k === 'sb' ? S.smCB : S.smCE;
+  try { return fn(); } finally { if (k === 'sb') { SB = SM; S.smCB = S.smC; } else { SE = SM; S.smCE = S.smC; } SM = sm; S.smC = smc; }   // SB / SE = SM keeps an smReset() made inside
 }
 // top n USDT perps by 24h quote volume, stocks out unless CFG.includeStocks, minus the small-cap tracker's coins
 function smBigList(n = 10) {
   return [...S.meta.keys()].filter(s => S.tk.has(s) && (CFG.includeStocks || !S.meta.get(s).stock) && !S.trk[s]).sort((a, b) => S.tk.get(b).qv - S.tk.get(a).qv).slice(0, n);
 }
 function smBigCoins() { return [...new Set([...smBigList(), ...Object.keys(SB.pos)])]; }   // held SB coins stay managed after they leave the list
-function smCoins() { return SM === SB ? smBigCoins() : Object.keys(S.trk); }
-function smName() { return SM === SB ? 'SMC Big' : 'SMC Trader'; }
+function seCoins() { return [...new Set([...SE_COINS.filter(s => S.meta.has(s)), ...Object.keys(SE.pos)])]; }   // held SE coins stay managed
+function smCoins() { const k = smKey(); return k === 'sb' ? smBigCoins() : k === 'se' ? seCoins() : Object.keys(S.trk); }
+function smName() { return {sb: 'SMC Big', se: 'SMC BTC/ETH', sm: 'SMC Trader'}[smKey()]; }
+function smTag() { return {sb: 'SMC BIG', se: 'SMC BTC/ETH', sm: 'SMC'}[smKey()]; }   // alert prefix
 
 /* ---- chart reading ---- */
 // swing highs/lows (fractals): higher/lower than `L` bars on each side
@@ -660,8 +673,8 @@ function smClose(s, frac, why) {
       funding: p.funding || 0, why: p.why, exitWhy: why, stop0: p.stop0, maxR: p.maxR || 0, sc: p.sc, rr: p.rr, zoneKind: p.zoneKind, target: p.target, zone: p.zone ? {lo: p.zone.lo, hi: p.zone.hi, kind: p.zone.kind, obF: p.zone.obF, ovl: p.zone.ovl, fibHit: p.zone.fibHit} : null, sweep: p.sweep, lvl: p.lvl, unlK: p.unlK || 'none', ceBroke: p.ceBroke || 0, strat: 'smc', tf: p.tf || '15m', htfBias: p.htfBias || null, q: p.q || null, poi: p.poi || null, type: p.type || 'rev', regime: p.regime || null, play: p.play || null, zc: p.zc || null, grd: p.grd || null, holdH: p.holdH, cx: p.cx, scr: p.scr || null, ex: (p.exits || []).map(e => [e.t, e.px, e.why])});
     if (SM.log.length > 500) SM.log.pop();
     delete SM.pos[s]; SM.cool[s] = now();
-    raise('smc', s, 'close' + now(), `${smName() === 'SMC Big' ? 'SMC BIG' : 'SMC'} PAPER ${p.side === 'L' ? 'long' : 'short'} ${p.b} closed ${fmtMoney(p.realized, 1)} (${R >= 0 ? '+' : ''}${R.toFixed(2)}R) — ${why}`, p.realized >= 0 ? 1 : -1, 0, true);
-  } else raise('smc', s, 'part' + now(), `${smName() === 'SMC Big' ? 'SMC BIG' : 'SMC'} PAPER ${p.b}: ${why} (${fmtMoney(pnl - fee, 1)} banked)`, 1, 0);
+    raise('smc', s, 'close' + now(), `${smTag()} PAPER ${p.side === 'L' ? 'long' : 'short'} ${p.b} closed ${fmtMoney(p.realized, 1)} (${R >= 0 ? '+' : ''}${R.toFixed(2)}R) — ${why}`, p.realized >= 0 ? 1 : -1, 0, true);
+  } else raise('smc', s, 'part' + now(), `${smTag()} PAPER ${p.b}: ${why} (${fmtMoney(pnl - fee, 1)} banked)`, 1, 0);
 }
 function smTryEnter(c) {
   const {s, r, tk} = c, side = r.dir, px = tk.last;
@@ -679,7 +692,7 @@ function smTryEnter(c) {
   SM.pos[s] = {cx: entryCtx(s, r.checks), scr: typeof scrRec === 'function' ? scrRec(c) : null, side, b: base(s), qty, qty0: qty, entry: fill, stop, stop0: stop, target: r.target, rr, t: now(), risk: qty * Math.abs(fill - stop), realized: -fee, fees: fee, funding: 0,
     why, sc: r.score, zoneKind: r.zone.kind, zone: r.zone, sweep: r.setup.ext, lvl: r.setup.lvl.px, unlK: uc.phase && uc.big ? uc.phase : 'none', nf: null, be: false, tp1: false, maxR: 0, exits: [], dist: dist * 100,
     tf: r.tf || '15m', htfBias: r.bias || null, holdH: (r.tf === '1h' ? SM.cfg.holdH1h : SM.cfg.holdH), q: r.q ? {score: r.q.score, grade: r.q.grade, items: r.q.items, zs: r.q.zs, dz: r.q.dz} : null, tp1R: smRules().tp1R, poi: r.poi && r.poi.zone ? r.poi.zone : null, type: r.setup.type || 'rev', wid: r.widened ? 1 : 0, regime: r.regime ? r.regime.reg : null, play: r.rok ? r.rok.play : null, zc: r.setup.zc || null, grd: r.grd || null};
-  raise('smc', s, 'open' + now(), `${smName() === 'SMC Big' ? 'SMC BIG' : 'SMC'} PAPER ${side === 'L' ? 'LONG' : 'SHORT'} ${base(s)} @ ${fmtPx(fill)} · stop ${fmtPx(stop)} (${(dist * 100).toFixed(1)}%) · target ${fmtPx(r.target)} (${rr.toFixed(1)}R) · ${r.tf || '15m'} ${r.zone.kind} entry, ${r.score}/6, quality ${r.q ? r.q.grade : '?'}`, side === 'L' ? 1 : -1, 0, true);
+  raise('smc', s, 'open' + now(), `${smTag()} PAPER ${side === 'L' ? 'LONG' : 'SHORT'} ${base(s)} @ ${fmtPx(fill)} · stop ${fmtPx(stop)} (${(dist * 100).toFixed(1)}%) · target ${fmtPx(r.target)} (${rr.toFixed(1)}R) · ${r.tf || '15m'} ${r.zone.kind} entry, ${r.score}/6, quality ${r.q ? r.q.grade : '?'}`, side === 'L' ? 1 : -1, 0, true);
   smSave(); return true;
 }
 // manage positions; with `only` the cloud bot replays one coin's candles (stop / partial / target / time checks only)

@@ -203,12 +203,12 @@ function pickJob() {
   if (t >= G.tickers) return {k: 'tickers'};
   if (t >= G.funding) return {k: 'funding'};
   let best = null, bl = -1;
-  for (const s of new Set([...S.universe, ...(typeof smBigCoins === 'function' ? smBigCoins() : [])])) for (const k of ['oi', 'kl']) { // SB coins get klines (and OI) without joining the OI/Flow boards
+  for (const s of new Set([...S.universe, ...(typeof smBigCoins === 'function' ? [...smBigCoins(), ...seCoins()] : [])])) for (const k of ['oi', 'kl']) { // SB / SE coins get klines (and OI) without joining the OI/Flow boards
     const key = k + ':' + s; let late = t - (nextRun.get(key) || 0); if (late < 0) continue;
     if (S.prio.has(s)) late += 6e5; if (s === S.focus) late += 6e6;
     if (late > bl) { bl = late; best = {k, s, key}; }
   }
-  for (const s of new Set([...h1set(), ...(typeof smBigCoins === 'function' ? smBigCoins() : [])])) {
+  for (const s of new Set([...h1set(), ...(typeof smBigCoins === 'function' ? [...smBigCoins(), ...seCoins()] : [])])) {
     const key = 'h1:' + s; let late = t - (nextRun.get(key) || 0); if (late < 0) continue; late += S.h1.has(s) ? 3e5 : 7e5;
     if (late > bl) { bl = late; best = {k: 'h1', s, key}; }
   }

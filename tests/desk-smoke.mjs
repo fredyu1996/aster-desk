@@ -93,6 +93,32 @@ if (!bigRes.bodyHasBig) errs.push('PAGEERR big-mode panel does not say SMC Big')
 if (!bigRes.toggleOk) errs.push('PAGEERR big-mode toggle must flip awx_sb.on and leave awx_sm untouched');
 if (!bigRes.wording) errs.push('PAGEERR big-mode wording still small-cap');
 if (bigRes.hits < 30) errs.push('PAGEERR race wall has no SMC Big line/legend (' + bigRes.hits + ' px)');
+// SMC BTC/ETH view: read-only like Big caps, its own toggle (awx_se only), race wall draws its line and column
+const seRes = await page.evaluate(async () => {
+  openPanel('smc'); PS.tab.smc = 'acct'; setTabs(); renderPanel();
+  const before = [localStorage.getItem('awx_sm'), localStorage.getItem('awx_sb')], tabs = [], errsE = [];
+  document.querySelector('[data-smv="se"]').click();
+  tabs.push(...[...document.querySelectorAll('#pTabs [data-tab]')].map(e => e.dataset.tab));
+  for (const t of tabs) { try { PS.tab.smc = t; setTabs(); renderPanel(); } catch (e) { errsE.push(t + ': ' + e.message); } }
+  PS.tab.smc = 'acct'; setTabs(); renderPanel();
+  const body = document.querySelector('#pbody').textContent, label = /SMC BTC\/ETH/.test(body) && /BTC \+ ETH only/.test(body) && /BTC and ETH only/.test(document.querySelector('#pTtl small').textContent);
+  const on0 = SE.on; document.querySelector('[data-smb="toggle"]').click(); const on1 = JSON.parse(localStorage.getItem('awx_se') || '{}').on;
+  document.querySelector('[data-smb="toggle"]').click(); const on2 = JSON.parse(localStorage.getItem('awx_se') || '{}').on;
+  const toggleOk = on0 !== on1 && on2 === on0 && SE.on === on0 && SB.on !== undefined;
+  const same = JSON.stringify(before) === JSON.stringify([localStorage.getItem('awx_sm'), localStorage.getItem('awx_sb')]);
+  SE.eqs = [[now() - 7200e3, 1000], [now() - 3600e3, 985]]; drawRace();
+  const d = RACE.ctx.getImageData(0, 0, RACE.W, RACE.H).data; let hits = 0;
+  for (let i = 0; i < d.length; i += 4) if (d[i] > 0xa0 && d[i] < 0xc8 && d[i + 1] > 0x88 && d[i + 1] < 0xb0 && d[i + 2] > 0xe8) hits++;
+  SE.eqs = []; document.querySelector('[data-smv="sm"]').click();
+  return {tabs, errsE, label, toggleOk, same, hits};
+});
+console.log('btc/eth mode:', JSON.stringify(seRes));
+if (seRes.errsE.length) errs.push('PAGEERR btc/eth-mode tab: ' + seRes.errsE.join('; '));
+if (seRes.tabs.join() !== 'acct,set,log') errs.push('PAGEERR btc/eth-mode tabs are ' + seRes.tabs.join());
+if (!seRes.label) errs.push('PAGEERR btc/eth-mode panel does not say SMC BTC/ETH');
+if (!seRes.toggleOk) errs.push('PAGEERR btc/eth-mode toggle must flip awx_se.on');
+if (!seRes.same) errs.push('PAGEERR awx_sm / awx_sb changed in the BTC/ETH view');
+if (seRes.hits < 30) errs.push('PAGEERR race wall has no SMC BTC/ETH line/legend (' + seRes.hits + ' px)');
 // SMC Big review path: an SB trade in the Big caps log -> Review chip -> chart + form -> save writes an sb| review; the review wall lists it; no learning change
 const sbRev = await page.evaluate(async () => {
   const out = {errs: []}, smBefore = localStorage.getItem('awx_sm'), adjBefore = JSON.stringify([RV.smAdj, RV.smWhy, smRules()]);

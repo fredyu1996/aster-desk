@@ -12,8 +12,8 @@ const RVS = {key: null, acct: 'all'};
 const RVP = {on: false, tool: 'entry', drag: null, hist: [], warn: ''};             // panel selection
 const RWS = {i: 0, t: 0, key: null};              // wall rotation
 const isManual = x => /closed by you/.test(x.exitWhy || '');
-const isSmcA = a => a === 'sm' || a === 'sb';   // 'sb' = SMC Big: reviewable, never learned from
-const acctCfg = a => a === 'sb' ? SB.cfg : a === 'sm' ? SM.cfg : PT.cfg;
+const isSmcA = a => a === 'sm' || a === 'sb' || a === 'se';   // 'sb' = SMC Big, 'se' = SMC BTC/ETH: reviewable, never learned from
+const acctCfg = a => a === 'sb' ? SB.cfg : a === 'se' ? SE.cfg : a === 'sm' ? SM.cfg : PT.cfg;
 const tradeKey = (a, x) => a + '|' + x.s + '|' + x.t1;
 const fmtNum = v => String(+(+v).toFixed(2));
 
@@ -23,9 +23,10 @@ function rvTrades(which = 'all') {
   if (which === 'all' || which === 'pt') for (const x of PT.log) A.push(['pt', x]);
   if ((which === 'all' || which === 'sm') && typeof SM !== 'undefined') for (const x of SM.log) A.push(['sm', x]);
   if ((which === 'all' || which === 'sb') && typeof SB !== 'undefined') for (const x of SB.log) A.push(['sb', x]);
+  if ((which === 'all' || which === 'se') && typeof SE !== 'undefined') for (const x of SE.log) A.push(['se', x]);
   return A.sort((a, b) => b[1].t1 - a[1].t1);
 }
-const stratName = (a, x) => a === 'sb' ? 'SMC Big' : a === 'sm' ? 'SMC Trader' : x.strat === 'mom' ? 'Trader · Momentum' : x.strat === 'fade' ? 'Trader · Fade' : 'Trader · Reversal';
+const stratName = (a, x) => a === 'sb' ? 'SMC Big' : a === 'se' ? 'SMC BTC/ETH' : a === 'sm' ? 'SMC Trader' : x.strat === 'mom' ? 'Trader · Momentum' : x.strat === 'fade' ? 'Trader · Fade' : 'Trader · Reversal';
 
 /* ---- candles around a closed trade (fetched once, cached) ---- */
 /* ---- TradingView-style chart in the review panel (Nov 16, Fred): pick the timeframe, scroll to zoom, drag to move,
@@ -171,7 +172,7 @@ function smCoachHTML() {
 }
 // which Reviewer rules now in force came from trades like this one
 function rvLessonsFor(x, acct) {
-  if (acct === 'sb') return [];   // the Reviewer does not learn from SMC Big
+  if (acct === 'sb' || acct === 'se') return [];   // the Reviewer does not learn from SMC Big or SMC BTC/ETH
   if (acct === 'sm') { const A = RV.smAdj || {}, W = RV.smWhy || {}; return Object.keys(A).filter(k => W[k]).map(k => W[k]); }
   const I = rvItems(ptLessons()), ks = [], ex = x.exitWhy || '';
   if (x.strat === 'mom') ks.push('mom');
@@ -359,7 +360,7 @@ function drawReviewWall() {
     }
     sect('DONE RIGHT', UP, E.items.filter(i => i.ok)); sect('DONE WRONG', DN, E.items.filter(i => !i.ok));
     if (E.les.length && y < H - 70) { c.font = `800 22px ${FS}`; c.fillStyle = LIME; c.fillText('RULE NOW IN FORCE BECAUSE OF TRADES LIKE THIS', lx, y); y += 32; c.font = `600 21px ${FS}`; c.fillStyle = TXT; for (const l of E.les) { if (y > H - 30) break; const n = wrapText(c, '› ' + l, lx, y, lw, 25, 2); y += 25 * (n || 1) + 6; } }
-    else if (isSmcA(a) && y < H - 40) { c.font = `500 19px ${FS}`; c.fillStyle = DIM; wrapText(c, a === 'sb' ? 'SMC Big: judged on SMC terms. Your review is kept for you; it never changes any rule.' : 'Judged on SMC terms. No SMC rule change from trades like this yet: the SMC review needs 5+ trades on each side of a comparison.', lx, y, lw, 24, 2); }
+    else if (isSmcA(a) && y < H - 40) { c.font = `500 19px ${FS}`; c.fillStyle = DIM; wrapText(c, a === 'sb' || a === 'se' ? stratName(a, x) + ': judged on SMC terms. Your review is kept for you; it never changes any rule.' : 'Judged on SMC terms. No SMC rule change from trades like this yet: the SMC review needs 5+ trades on each side of a comparison.', lx, y, lw, 24, 2); }
   }
   // right: rules in force, one column per trader
   const RN = rulesNow(), colW = (W - split - 40) / 2;
@@ -444,13 +445,13 @@ function rulesBothHTML() {
 /* ---- Reviewer panel: "On the chart" tab ---- */
 function rvChartHTML() {
   const L = rvTrades(RVS.acct);
-  const filt = `<div style="display:flex;gap:6px;margin-bottom:10px">${[['all', 'Both traders'], ['pt', 'Trader'], ['sm', 'SMC Trader'], ['sb', 'SMC Big']].map(([k, l]) => `<span class="chip ${RVS.acct === k ? 'on' : ''}" data-rvacct="${k}">${l}</span>`).join('')}</div>`;
+  const filt = `<div style="display:flex;gap:6px;margin-bottom:10px">${[['all', 'Both traders'], ['pt', 'Trader'], ['sm', 'SMC Trader'], ['sb', 'SMC Big'], ['se', 'SMC BTC/ETH']].map(([k, l]) => `<span class="chip ${RVS.acct === k ? 'on' : ''}" data-rvacct="${k}">${l}</span>`).join('')}</div>`;
   const RL = rvmLearn(), mineN = RL.length, agreeN = RL.filter(r => r.ag === 'agree').length;
   const filt2 = filt + (mineN ? `<div class="dim" style="font-size:12px;margin:-4px 0 10px">You've reviewed ${mineN} trade${mineN === 1 ? '' : 's'}; you agreed with the Reviewer on ${agreeN}.</div>` : '');
   if (!L.length) return filt + '<div class="empty">No closed trades yet. When a trade closes, it shows up here on its own chart, with what the trader did right (✓) and wrong (✗) marked where it happened.</div>';
   let sel = L.find(([a, x]) => tradeKey(a, x) === RVS.key); if (!sel) { sel = L[0]; RVS.key = tradeKey(...sel); }
   const [a, x] = sel, E = rvExplain(x, a), g = E.grade;
-  const list = L.slice(0, 60).map(([a2, y]) => { const gg = rvGrade(y), k = tradeKey(a2, y); return `<div class="rvpick${k === RVS.key ? ' on' : ''}" data-rvpick="${esc(k)}" style="display:flex;gap:8px;align-items:center;padding:6px 8px;border-radius:7px;cursor:pointer;${k === RVS.key ? 'background:rgba(197,240,90,.12);' : ''}"><b style="color:${GRADE_C[gg.g]};width:14px">${gg.g}</b><b style="min-width:60px">${esc(y.b)}</b><span class="${y.side === 'L' ? 'up' : 'dn'}" style="font-size:11px">${y.side === 'L' ? 'LONG' : 'SHORT'}</span><span style="font-size:11px;color:${isSmcA(a2) ? SMCOL : '#ffd166'}">${a2 === 'sb' ? 'BIG' : a2 === 'sm' ? 'SMC' : y.strat === 'mom' ? 'MOM' : 'REV'}</span>${RVM[k] ? `<span title="Your grade" style="font-size:10px;font-weight:800;color:#04070f;background:${MINE_C};border-radius:4px;padding:0 4px">you ${esc(RVM[k].g || '✓')}</span>` : ''}<span class="mono ${cls(y.R)}" style="margin-left:auto">${fmtR(y.R)}</span><span class="dim" style="font-size:11px;width:44px;text-align:right">${ago(y.t1)}</span></div>`; }).join('');
+  const list = L.slice(0, 60).map(([a2, y]) => { const gg = rvGrade(y), k = tradeKey(a2, y); return `<div class="rvpick${k === RVS.key ? ' on' : ''}" data-rvpick="${esc(k)}" style="display:flex;gap:8px;align-items:center;padding:6px 8px;border-radius:7px;cursor:pointer;${k === RVS.key ? 'background:rgba(197,240,90,.12);' : ''}"><b style="color:${GRADE_C[gg.g]};width:14px">${gg.g}</b><b style="min-width:60px">${esc(y.b)}</b><span class="${y.side === 'L' ? 'up' : 'dn'}" style="font-size:11px">${y.side === 'L' ? 'LONG' : 'SHORT'}</span><span style="font-size:11px;color:${isSmcA(a2) ? SMCOL : '#ffd166'}">${a2 === 'sb' ? 'BIG' : a2 === 'se' ? 'B/E' : a2 === 'sm' ? 'SMC' : y.strat === 'mom' ? 'MOM' : 'REV'}</span>${RVM[k] ? `<span title="Your grade" style="font-size:10px;font-weight:800;color:#04070f;background:${MINE_C};border-radius:4px;padding:0 4px">you ${esc(RVM[k].g || '✓')}</span>` : ''}<span class="mono ${cls(y.R)}" style="margin-left:auto">${fmtR(y.R)}</span><span class="dim" style="font-size:11px;width:44px;text-align:right">${ago(y.t1)}</span></div>`; }).join('');
   const item = it => `<div class="chk" style="padding:4px 0"><span class="i" style="background:${it.ok ? UP : DN};color:#04070f;border-radius:5px;padding:0 5px;font-weight:800;min-width:30px;text-align:center">${it.ok ? '✓' : '✗'}${it.n}</span><span>${esc(it.t)}</span></div>`;
   const G = E.items.filter(i => i.ok), B = E.items.filter(i => !i.ok);
   return filt2 + `<div class="grid2" style="grid-template-columns:260px 1fr;gap:14px">
@@ -959,10 +960,10 @@ function mineFormHTML(a, x, E) {
       <span class="dim">What you'd have done <span style="font-size:11px">(½ weight)</span></span><div style="display:flex;gap:6px;flex-wrap:wrap">${Object.entries(MINE_ALT).map(([v, l]) => chip('data-mine-alt', v, l, d.alt.includes(v))).join('')}</div>
       <span></span><label style="display:flex;gap:8px;align-items:center;font-size:12px;cursor:pointer"><input type="checkbox" id="mineExcl" ${d.excl ? 'checked' : ''}> Leave this trade out of the Reviewer's learning (bad data, a fluke, or not a real setup)</label>
     </div>
-    ${(() => { const st = rvPlanStats(a); return st ? `<p class="note" style="margin-top:8px;color:${PLAN_C}">Your marked setups on ${a === 'sb' ? 'SMC Big' : a === 'sm' ? 'SMC' : 'Trader'} trades: ${st.n} filled, averaging ${fmtR(st.you)} vs ${fmtR(st.bot)} for the trader on the same trades${st.nf ? `; ${st.nf} never reached your entry` : ''}.</p>` : ''; })()}
+    ${(() => { const st = rvPlanStats(a); return st ? `<p class="note" style="margin-top:8px;color:${PLAN_C}">Your marked setups on ${a === 'sb' ? 'SMC Big' : a === 'se' ? 'SMC BTC/ETH' : a === 'sm' ? 'SMC' : 'Trader'} trades: ${st.n} filled, averaging ${fmtR(st.you)} vs ${fmtR(st.bot)} for the trader on the same trades${st.nf ? `; ${st.nf} never reached your entry` : ''}.</p>` : ''; })()}
     <div style="display:flex;gap:10px;align-items:center;margin-top:12px"><button class="btn" data-mine="save" style="background:${MINE_C};color:#04070f;border-color:${MINE_C}">Save my review</button>${saved ? '<button class="btn ghost sm" data-mine="del">Delete</button>' : ''}<span style="font-size:12px" id="mineMsg">${esc(MD.msg)}</span></div>
     <p class="note" style="margin-top:8px">${SY.on ? 'Saved to your shared account, so it shows on every computer and on the review wall.' : 'Saved in this browser only (Sync is off).'} </p>
-    ${a === 'sb' ? `<p class="note" style="margin-top:4px;color:${SMCOL}"><b>SMC Big review:</b> saved as an SMC Big review. It is kept for you and never changes any Reviewer rule.</p>` : ''}<p class="note" style="margin-top:4px"><b>How your review counts:</b> your <b>comments come first</b>. A point the Reviewer reads in a comment counts 1; a chip you tick without saying it in the comment counts ½. When the same point reaches 2 and at least a third of your ${a === 'sm' ? 'SMC' : 'Trader'} reviews that say anything (or 3, whatever the share), the Reviewer applies it at its next review. If you ask Claude in the chat to read your reviews, its reading of the comment and pictures is used instead of the phrase reader. Your marks on the chart count like a comment: another side → "trade the other side"; an entry deeper than the trade\'s → "enter later"; a stop further out or in → "wider" / "tighter stop"; a nearer or further target → "exit earlier" / "hold longer". ${a === 'sm' ? 'For the SMC Trader: "too early / wait for the retest / enter when it comes back to…" → enter at the zone\'s midpoint; "should have been a short (long)" → only when the higher timeframe clearly agrees; "against the 1h/4h" → only with the higher timeframe; "weak OB" → FVGs only; "small FVG" or "weak sweep" or "skip" → higher quality bar; "stop too tight" → wider stop; "take profit earlier" → half at +1.2R; "smaller size" → ×0.75. Saying a part was good ("good FVG", "good OB", "HTF was fine") holds the rule built on it.' : '"too early / wait for confirmation" → only at "Reversed"; "should not have traded" → one more sign; "take profit earlier" → half at +1.2R; "closed too early / should have held" → longer hold; "stop too tight / wicked out" → wider stop; "smaller size" → ×0.75. Saying a point was fine ("stop was fine", "forming was fine") holds the rule built on it.'} Trades you mark "leave out" are ignored.</p></div>`;
+    ${a === 'sb' || a === 'se' ? `<p class="note" style="margin-top:4px;color:${SMCOL}"><b>${stratName(a, x)} review:</b> saved as an ${stratName(a, x)} review. It is kept for you and never changes any Reviewer rule.</p>` : ''}<p class="note" style="margin-top:4px"><b>How your review counts:</b> your <b>comments come first</b>. A point the Reviewer reads in a comment counts 1; a chip you tick without saying it in the comment counts ½. When the same point reaches 2 and at least a third of your ${a === 'sm' ? 'SMC' : 'Trader'} reviews that say anything (or 3, whatever the share), the Reviewer applies it at its next review. If you ask Claude in the chat to read your reviews, its reading of the comment and pictures is used instead of the phrase reader. Your marks on the chart count like a comment: another side → "trade the other side"; an entry deeper than the trade\'s → "enter later"; a stop further out or in → "wider" / "tighter stop"; a nearer or further target → "exit earlier" / "hold longer". ${a === 'sm' ? 'For the SMC Trader: "too early / wait for the retest / enter when it comes back to…" → enter at the zone\'s midpoint; "should have been a short (long)" → only when the higher timeframe clearly agrees; "against the 1h/4h" → only with the higher timeframe; "weak OB" → FVGs only; "small FVG" or "weak sweep" or "skip" → higher quality bar; "stop too tight" → wider stop; "take profit earlier" → half at +1.2R; "smaller size" → ×0.75. Saying a part was good ("good FVG", "good OB", "HTF was fine") holds the rule built on it.' : '"too early / wait for confirmation" → only at "Reversed"; "should not have traded" → one more sign; "take profit earlier" → half at +1.2R; "closed too early / should have held" → longer hold; "stop too tight / wicked out" → wider stop; "smaller size" → ×0.75. Saying a point was fine ("stop was fine", "forming was fine") holds the rule built on it.'} Trades you mark "leave out" are ignored.</p></div>`;
 }
 document.getElementById('panel').addEventListener('input', e => {
   if (!MD.d) return;
@@ -1001,7 +1002,7 @@ document.getElementById('panel').addEventListener('click', async e => {
     try { const tr = rvTrades().find(([a, x]) => tradeKey(a, x) === k); if (tr) { const E = rvExplain(tr[1], tr[0]); ik = [...new Set(E.items.map(i => i.k))]; xk = [...new Set(d.x.map(n => (E.items.find(i => i.n === n) || {}).k).filter(Boolean))]; } } catch (_) {}
     let plan = planHas(d.plan) ? JSON.parse(JSON.stringify(d.plan)) : null;
     if (plan) try { const tr = rvTrades().find(([a, x]) => tradeKey(a, x) === k), e = tr && rvBars(tr[1]); const r = e && e.bars ? rvPlanSim(tr[1], tr[0], plan, e.bars, e.ms) : null; plan.res = r && !r.bad ? {st: r.st, R: fin(r.R) ? +r.R.toFixed(2) : null, rr: fin(r.rr) ? +r.rr.toFixed(2) : null, tF: r.tF || null, at: now()} : null; } catch (_) {}
-    const rec = del ? null : Object.assign({}, d, {imgs: (d.imgs || []).map(({data, ...r}) => r), plan, xk, ik, t: now(), by: SY.name || ''}, k.startsWith('sb|') ? {acct: 'sb'} : {});
+    const rec = del ? null : Object.assign({}, d, {imgs: (d.imgs || []).map(({data, ...r}) => r), plan, xk, ik, t: now(), by: SY.name || ''}, k.startsWith('sb|') ? {acct: 'sb'} : k.startsWith('se|') ? {acct: 'se'} : {});
     const add = del ? [] : (d.imgs || []).filter(i => i.data).map(i => ({p: i.p, data: i.data}));
     MD.msg = 'Saving…'; renderPanel();
     try {

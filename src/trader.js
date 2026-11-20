@@ -9,6 +9,7 @@ function ptMigrate(p) { if (p.cfg.lev10 !== 1) { p.cfg.maxLev = 10; p.cfg.lev10 
   if (p.cfg.pause1115 !== 1) { p.on = false; p.cfg.pause1115 = 1; }   // Nov 15 (Fred): stop new entries for the losing-trade / reverse review; resume by hand (open positions keep being managed)
   if (p.cfg.nolimit1116 !== 1) { p.cfg.dailyLossPct = 0; p.paused = null; p.cfg.nolimit1116 = 1; }   // Nov 16 (Fred): keep trading even after a day's loss passes 3%
   if (p.cfg.fade1115 !== 1) { p.cfg.momLong = 0; p.cfg.fadeG = 1; p.on = true; p.cfg.fade1115 = 1; }   // Nov 15 22:39 (Fred "試新策略"): momentum longs off, fade strong gainers on, Trader trades again
+  if (p.cfg.stop1119 !== 1) { p.on = false; p.cfg.stop1119 = 1; } // Nov 19 (Fred "momentum trader 可以停止交易"): no new Trader entries; open positions are still managed; the Reviewer studies its trades for the SMC traders
   return p; }
 let PT = (() => {
   const saved = LS.get('awx_pt', null);
@@ -274,7 +275,7 @@ function ptTick() {
   if (!last || t - last[0] >= 5 * 60e3) { PT.eqs.push([t, +ptEquity().toFixed(2)]); if (PT.eqs.length > 3000) PT.eqs.shift(); }
   ptSave();
   if (typeof rvTick === 'function') rvTick();
-  if (typeof smTick === 'function') { smTick(); try { smWith(SB, smTick); } catch (e) { console.warn('SMC Big tick', e.message); } } // SMC paper traders: small caps (SM), then big caps (SB), own accounts; an SB fault must not stop SM/PT
+  if (typeof smTick === 'function') { smTick(); try { smWith(SB, smTick); } catch (e) { console.warn('SMC Big tick', e.message); } try { smWith(SE, smTick); } catch (e) { console.warn('SMC BTC/ETH tick', e.message); } } // SMC paper traders: small caps (SM), then big caps (SB), then BTC/ETH (SE), own accounts; an SB / SE fault must not stop the others
 }
 function ptStats() {
   const L = PT.log, wins = L.filter(x => x.pnl > 0), eq = ptEquity();

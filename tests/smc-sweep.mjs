@@ -54,3 +54,5 @@ const fib = JSON.parse(X(`JSON.stringify((() => { const B = [[0, 1.5, 1.6, 1.4, 
   + `return {L: L.lv.map(v => +v.toFixed(6)), S: Sh.lv.map(v => +v.toFixed(6)), hit: smFibHit(L, {lo: 1.37, hi: 1.40}), near: smFibHit(Sh, {lo: 1.66, hi: 1.70}), none: smFibHit(L, {lo: 1.6, hi: 1.7}), ote: smFibOte(L, {lo: 1.3, hi: 1.35}), noOte: smFibOte(L, {lo: 1.45, hi: 1.55})}; })())`));
 assert.deepStrictEqual(fib, {L: [1.5, 1.382, 1.21], S: [1.5, 1.618, 1.79], hit: '0.618', near: '0.618', none: '', ote: true, noOte: false});
 console.log('PASS: fib levels', JSON.stringify(fib));
+// Nov 19 (stop1119): the Trader takes no new entries
+assert.strictEqual(X('PT.on'), false); console.log('PASS: Trader stopped (stop1119)');
