@@ -169,7 +169,7 @@ function topbar() {
 /* ================= PANELS ================= */
 const PS = {open: null, tab: {}, sort: {}};
 const TABS = {
-  scout: [['t', 'Day tracker'], ['u', 'Unlock calendar'], ['w', 'Watchlist'], ['set', 'Settings']],
+  scout: [['t', 'Day tracker'], ['w', 'Watchlist'], ['set', 'Settings']],
 };
 const star = s => `<span class="star ${CFG.watch.includes(s) ? 'on' : ''}" data-star="${s}">★</span>`;
 const td = (v, c = '') => `<td class="${c}">${v}</td>`;
@@ -213,7 +213,7 @@ function renderPanel() {
   const tab = PS.tab[id], body = $('#pbody'), sc = body.scrollTop;
   let h = '';
   if (id === 'scout') {
-    if (tab === 't') h += trackerHTML(); else if (tab === 'u') h += unlocksHTML(); else if (tab === 'set') h += settingsHTML(); else {
+    if (tab === 't') h += trackerHTML(); else if (tab === 'set') h += settingsHTML(); else {
     h += `<p class="note">${filterNote()}</p>`;
     const list = CFG.watch.filter(s => S.meta.has(s));
     h += table('scout' + tab, ['star', 'coin', 'price', 'p24', 'p1', 'p4', 'tag', 'trend', 'mom', 'fit', 'unl', 'vol', 'oi60', 'n1', 'fund'], list.map(mget)); }

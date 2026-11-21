@@ -9,6 +9,7 @@ function ptMigrate(p) { if (p.cfg.lev10 !== 1) { p.cfg.maxLev = 10; p.cfg.lev10 
   if (p.cfg.pause1115 !== 1) { p.on = false; p.cfg.pause1115 = 1; }   // Nov 15 (Fred): stop new entries for the losing-trade / reverse review; resume by hand (open positions keep being managed)
   if (p.cfg.nolimit1116 !== 1) { p.cfg.dailyLossPct = 0; p.paused = null; p.cfg.nolimit1116 = 1; }   // Nov 16 (Fred): keep trading even after a day's loss passes 3%
   if (p.cfg.fade1115 !== 1) { p.cfg.momLong = 0; p.cfg.fadeG = 1; p.on = true; p.cfg.fade1115 = 1; }   // Nov 15 22:39 (Fred "試新策略"): momentum longs off, fade strong gainers on, Trader trades again
+  if (p.cfg.nounl1120 !== 1) { p.cfg.unlGuard = 0; p.cfg.nounl1120 = 1; } // Nov 20 (Fred): unlock calendar stopped, guard off (it still closes nothing on stale data)
   if (p.cfg.stop1119 !== 1) { p.on = false; p.cfg.stop1119 = 1; } // Nov 19 (Fred "momentum trader 可以停止交易"): no new Trader entries; open positions are still managed; the Reviewer studies its trades for the SMC traders
   return p; }
 let PT = (() => {

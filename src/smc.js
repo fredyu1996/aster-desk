@@ -19,6 +19,7 @@ function smMigrate(p) { if (p.cfg.ownJudge !== 1) { p.cfg.useScreens = 0; p.cfg.
   if (p.cfg.resume1115 !== 1) { p.on = true; p.cfg.resume1115 = 1; } // Nov 15 22:00 (Fred): only the Trader stays paused; the SMC Trader trades on
   if (p.cfg.nolimit1116 !== 1) { p.cfg.dailyLossPct = 0; p.paused = null; p.cfg.nolimit1116 = 1; } // Nov 16 (Fred): no daily loss stop (SMC Big inherits it from SM.cfg)
   if (p.cfg.gmsBD1115 !== 1) { p.cfg.gmsB = 1; p.cfg.gmsD = 1; p.cfg.gmsBD1115 = 1; } // Nov 15 (Fred "開"): GMS B (clean sweep / shift + displacement) and D (displacement FVG only) for the SMC Trader; SB_OV keeps SMC Big at 0
+  if (p.cfg.nounl1120 !== 1) { p.cfg.unlGuard = 0; p.cfg.nounl1120 = 1; } // Nov 20 (Fred "停埋個 unlock calendar"): calendar no longer updated, so the unlock guard is off (SMC Big / BTC/ETH inherit it from SM.cfg)
   if (p.cfg.fib1119 !== 1) { p.cfg.fib = 1; p.cfg.fib1119 = 1; } // Nov 19 (Fred "試下 small caps 先"): fib 1 (zone on 0.5 / 0.618 / 0.79 of the leg) for the SMC Trader; SB_OV keeps SMC Big at 0. Small caps 21 d +6.8R n24 vs base +5.3R n27 (half 1 equal, half 2 +0.2 vs -1.3)
   return p; }
 let SM = (() => {

@@ -64,7 +64,7 @@ for (const id of ids) { await page.evaluate(i => { openPanel(i); }, id); await p
 console.log('panels checked:', ids.join(', '));
 // Nov 20 (option A): the Trader, OpenInterest and Flow panels/desks and the gainer/loser board tabs are gone
 const gone = await page.evaluate(() => ({ids: [...Object.keys(TABS), ...desks.map(d => d.a.id)].filter(k => ['trader', 'ivy', 'flo'].includes(k)), scout: TABS.scout.map(t => t[0]).join()}));
-if (gone.ids.length || gone.scout !== 't,u,w,set') errs.push('PAGEERR removed panels still present: ' + JSON.stringify(gone));
+if (gone.ids.length || gone.scout !== 't,w,set') errs.push('PAGEERR removed panels still present: ' + JSON.stringify(gone));
 // SMC Big view: read-only (awx_sm byte-identical across the switch and every visible tab), race wall draws the third line
 await page.evaluate(() => { openPanel('smc'); PS.tab.smc = 'acct'; setTabs(); renderPanel(); }); await page.waitForTimeout(500);
 const bigRes = await page.evaluate(async () => {
@@ -206,6 +206,30 @@ if (!(ch.ob && ch.pts === 3)) errs.push('PAGEERR review chart drawing (OB / swin
 if (!(ch.reads && ch.room)) errs.push('PAGEERR Reviewer does not read drawn structure / opposing zone');
 await page.evaluate(() => { PT.log.shift(); closePanel(); });
 await page.screenshot({path: fileURLToPath(new URL('../desk-smoke.png', import.meta.url))});
+// Nov 20: the race wall shows the three SMC accounts only (no Trader); the east wall shows SMC Big + SMC BTC/ETH open positions
+const wl = await page.evaluate(() => {
+  const out = {errs: []}, pos = s => { const e = ptPx(s) || 1, st = e * 1.02; return {side: 'S', b: base(s), qty: 10 / e, qty0: 10 / e, entry: e, stop: st, stop0: st, target: e * 0.95, rr: 2.5, t: now() - 3600e3, risk: 0.2, realized: 0, fees: 0, funding: 0, tf: '15m', why: 'smoke-test position', zoneKind: 'FVG', zone: {lo: e * 1.001, hi: e * 1.008, kind: 'FVG'}}; };
+  try {
+    SB.pos.ASTERUSDT = pos('ASTERUSDT'); SE.pos.BTCUSDT = pos('BTCUSDT');
+    drawRace(); out.race = RACE.names;
+    drawWall(); out.open = WALL.drawn;
+  } catch (e) { out.errs.push(e.message + ' ' + (e.stack || '').split(String.fromCharCode(10))[1]); }
+  return out;
+});
+console.log('walls:', JSON.stringify(wl));
+if (wl.errs.length) errs.push('PAGEERR walls: ' + wl.errs.join('; '));
+if ((wl.race || []).join() !== 'SMC TRADER,SMC BIG,SMC BTC/ETH' || (wl.race || []).some(n => /^TRADER$/.test(n))) errs.push('PAGEERR race wall must list the 3 SMC accounts and no Trader: ' + JSON.stringify(wl.race));
+if (!(wl.open && wl.open.length === 2 && wl.open[0].title === 'SMC BIG · OPEN POSITIONS' && wl.open[1].title === 'SMC BTC/ETH · OPEN POSITIONS' && wl.open.every(x => x.shown >= 1))) errs.push('PAGEERR east wall must draw an SMC Big and an SMC BTC/ETH position: ' + JSON.stringify(wl.open));
+if (process.env.WALL_SHOTS) {   // optional: canvas dumps + in-room shots aimed at each wall
+  const fs = await import('node:fs'), dir = process.env.WALL_SHOTS, save = (f, u) => fs.writeFileSync(dir + '/' + f, Buffer.from(u.split(',')[1], 'base64'));
+  const cv = await page.evaluate(() => ({race: RACE.cv.toDataURL('image/png'), wall: WALL.cv.toDataURL('image/png')}));
+  save('race-canvas.png', cv.race); save('east-canvas.png', cv.wall);
+  await page.evaluate(() => { P.x = RACE_X; P.z = -RZ + 4.6; P.yaw = 0; P.pitch = 0.05; }); await page.waitForTimeout(1500); await page.screenshot({path: dir + '/race-wall-3d.png'});
+  await page.evaluate(() => { P.x = RX - 8.5; P.z = WALL_Z; P.yaw = -Math.PI / 2; P.pitch = 0.05; }); await page.waitForTimeout(1500); await page.screenshot({path: dir + '/east-wall-3d.png'});
+}
+const flat = await page.evaluate(() => { delete SB.pos.ASTERUSDT; delete SE.pos.BTCUSDT; try { drawWall(); return WALL.drawn.map(x => x.shown).join(); } catch (e) { return 'ERR ' + e.message; } });
+if (flat !== '0,0') errs.push('PAGEERR east wall flat state: ' + flat);
+if (process.env.WALL_SHOTS) { const fs = await import('node:fs'); fs.writeFileSync(process.env.WALL_SHOTS + '/east-canvas-flat.png', Buffer.from((await page.evaluate(() => WALL.cv.toDataURL('image/png'))).split(',')[1], 'base64')); }
 const bad = errs.filter(e => /PAGEERR/.test(e));
 await browser.close();
 if (bad.length) { console.error('FAIL\n' + bad.join('\n')); process.exit(1); }

@@ -39,7 +39,7 @@ This repo is **public**: free Pages and Actions need that. It holds no data or k
 3. **`smc-backtest.yml`** (daily 11:23 UTC + manual): `bot/backtest.mjs` now runs the **year mode only** (`BT_WEEK '0'`): SMC Big on BTC / ETH over 365 days, written as `smc-backtest-year.json` to branch `backtest` of the data repo. The 7-day small-cap and SMC Big reports are **paused** (Fred, Nov 14); their last files stay readable on the branch. Turn them back on with `BT_WEEK '1'` in the workflow, then re-size the timeout for week + year. **Report only**: never changes live rules; the year report is shown in the Backtester panel (key 7), the 7-day ones in Reviewer → SMC review. See `docs/smc-backtest.md`.
 4. **Scheduled tasks on claude.ai** (Fred's account; not visible from Claude Code):
    - **"Aster cloud watchdog"**: hourly at :58. Reads the public Actions API; push notification on trouble.
-   - **"Aster unlock calendar research"**: daily 4:32 AM America/Creston.
+   - **"Aster unlock calendar research"**: **stopped Nov 20 (Fred pauses it on claude.ai; unlock guard off, `nounl1120`).** Was daily 4:32 AM America/Creston.
      - Web-searches unlocks and updates the project doc.
      - **Clones this repo and pushes `unlocks.json` to a new branch `unlock-calendar/<date>-<time>`** (since Nov 16). The workflow `unlocks-publish.yml` checks the file (≥5 events, dates valid, not older than main, not less than half the events), commits it to main as "unlock calendar <date> (from unlock-calendar/…)" by github-actions[bot], and deletes the `unlock-calendar/*` branches.
      - Why a branch: a test on Nov 15 showed scheduled sessions **can create new branches but cannot delete them (HTTP 403)**, and their pushes to main did not land on Nov 12, 14 and 15.
@@ -74,22 +74,22 @@ git pull --rebase && git add -A && git commit -m "…" && git push   # Pages + t
 | `unlock.js` | token-unlock calendar and guard (`unlocks.json` embedded at `/*UNLOCKS_JSON*/`) |
 | `trader.js` | **Trader** paper account `PT` (reversal + momentum strategies), `ptTick`, `ptManage` |
 | `smc.js` | **SMC Trader** paper account `SM` (and `SB`, SMC Big: `SB_OV` overrides, `smWith(SB, fn)` swaps the global `SM` around `fn`; `SE`, SMC BTC/ETH: `SE_COINS`, same `SB_OV`, `smWith(SE, fn)`, `smKey()` = 'sm' / 'sb' / 'se'): `smcRead/smcReadTf/smSetup/smContSetup/smQuality/smTick/smManage`, HTF zones, POI, path, draw, PD high/low, `SM.cfg.regimeGate` (1 live; 0 only for the year backtest's ablation) |
-| `scene.js` | three.js room, desks, wall screens (`SWALL` south wall = SMC positions, `RACE` north wall = return race) |
+| `scene.js` | three.js room, desks, wall screens (`SWALL` south wall = SMC Trader positions, `RACE` north wall = return race of the three SMC accounts, `WALL` east wall = SMC Big + SMC BTC/ETH positions) |
 | `ui.js` | panels (`TABS`, `openPanel`, `renderPanel`), keys (1 / 5 / 6 / 7 agents, C coin check, V review wall, B SMC wall, T toggles ✓/✗ tags at the wall, E review it yourself) |
 | `check.js` | coin check (key C) |
-| `trader_ui.js` | Trader position wall (east wall) only; its panel and desk were removed Nov 20 |
+| `trader_ui.js` | SMC Big + SMC BTC/ETH position wall (east wall): `drawWall` draws two sections via `drawAcctPos` inside `smWith(SB / SE, …)`; also `drawEq`, `drawPosChart`, `wrapText` (shared with the SMC wall). The Trader's wall until Nov 20; its panel and desk were removed Nov 20 |
 | `review.js` | **Reviewer** `RV`: grading, `rvRun/rvAnalyze/rvSticky`, Fred's reviews (`youRead/youReadM/youTally/planPoints`), SMC study/learning/coaching (`smStudy/smLearn/smCoach/smAudit`), 24 h follow-ups, screening criteria and memos. Everything above the marker `/* ================= REVIEWER: screens + panel` also goes into `bot/core.js` |
-| `smc_ui.js` | SMC panels, SMC wall, return race |
+| `smc_ui.js` | SMC panels, SMC wall, return race (SMC Trader, SMC Big, SMC BTC/ETH; no Trader since Nov 20) |
 | `bt_ui.js` | **Backtester** panel (key 7): read-only view of `smc-backtest-year.json` (base vs raw, ablation, patterns, months) |
 | `lessons.js` | trade charts (`drawTradeChart`; since Nov 16 zoom / pan / timeframes 5m–1d via `RVV` + `rvBars`, crosshair), `rvExplain` ✓/✗ items, review wall, "Your review" form, chart pictures, **"Mark my own setup"** (`rvPlanSim`, `drawPlan`), `rulesNow` |
 | `sync.js` | GitHub sync (`state` and `notes` branches), roles/lock, chart-picture storage (IndexedDB + `img/` on notes) |
 
 ## The agents (desk keys)
 Since Nov 20 (option A) keys 2, 3 and 4 are gone: OpenInterest, Flow and the Trader have no desk or panel. Their data feeds (OI snapshots, klines with taker volume, funding) still run for the SMC context, the tracker and the Reviewer, and their OI / flow / funding alerts still reach the alert feed (`FEED_AGENTS` in `engine.js` labels them). The whale (aggTrade) and liquidation (forceOrder) streams were removed.
-1. **GainerLoser**: day tracker, unlock calendar, watchlist, settings (the Top gainers / Top losers board tabs were removed Nov 20; `S.gainers` / `S.losers` still drive the tracker, SMC Big's coin list and the desk monitors).
+1. **GainerLoser**: day tracker, watchlist, settings (Unlock calendar tab removed Nov 20) (the Top gainers / Top losers board tabs were removed Nov 20; `S.gainers` / `S.losers` still drive the tracker, SMC Big's coin list and the desk monitors).
 2. ~~**OpenInterest**~~ (panel removed Nov 20): OI spikes and regime.
 3. ~~**Flow**~~ (panel removed Nov 20): taker flow, funding.
-4. **Trader** ($1,000 paper; panel removed Nov 20, stopped since `stop1119`, the engine still manages its open positions and hosts the SMC ticks in `ptTick`; its open positions show on the east wall):
+4. **Trader** ($1,000 paper; panel removed Nov 20, stopped since `stop1119`, the engine still manages its open positions and hosts the SMC ticks in `ptTick`; since Nov 20 its open positions are on no wall and it is off the return race):
    - Reversal: shorts gainers at "Reversal forming / Reversed" with ≥5/8 signs. Reversal longs are **off** (Fred, Nov 8).
    - Momentum: both sides at ≥6/8. **Since Nov 15 momentum longs are off** (`momLong 0`): momentum shorts on losers only.
    - **Fade** (Nov 15, `fadeG 1`, `strat: 'fade'`, `ptFadeCand`): a gainer with a strong momentum read (≥ `momMinScore`) that rose ≥ `fadeMin1h` 2.5% in the last hour is SHORTED. Fixed rules as tested: stop = the momentum long's distance mirrored above (2–15%), target +2R, no half off, 6 h, 0.75% risk, max 2. The Reviewer does not learn from fade trades (fixed rules).
@@ -112,14 +112,14 @@ Since Nov 20 (option A) keys 2, 3 and 4 are gone: OpenInterest, Flow and the Tra
    - Same strategy and same Reviewer rules (`smRules` / `RV.smAdj`) as the SMC Trader, on the **top 10 Aster perps by 24 h quote volume** (stock perps out unless `CFG.includeStocks`; coins in the small-cap tracker skipped). Recomputed every cycle; held coins keep being managed.
    - `SB.cfg` = live copy of `SM.cfg` + `SB_OV` (min stop 0.5%, slippage 0.02%, stop buffer ×0.25, tight 0.4%, screens off, `invExit` 0 = no exit when a candle closes through the entry gap). Sizing as above.
    - The Reviewer never learns from SB. Fred can review SB trades (review wall, "On the chart" SMC Big filter, Review chip on the Big caps trade log); they are keyed `sb|SYM|t1` and every learner skips them (`rvmLearn`). No south wall for it.
-   - Desk: SMC panel (key 6) has a Small caps / Big caps switch with its own on/off toggle; the return race wall has a third line and an SMC BIG stats column.
+   - Desk: SMC panel (key 6) has a Small caps / Big caps switch with its own on/off toggle; the return race wall has its card, line and SMC BIG stats column; the east wall's left half shows its open positions.
    - The 7-day backtest also writes `smc-backtest-big.json` (report only; paused since Nov 14, last file stays readable).
    - A browser on the pre-deploy desk that takes the lock saves state without `sb`, and SB restarts fresh: hard refresh after a deploy.
 8. **SMC BTC/ETH** ($1,000 paper, account `SE`, on from the first deploy, Nov 19):
    - SMC Big's settings exactly (`SE.cfg` = `SM.cfg` + `SB_OV`, no override table of its own), the settings of the 365-day year backtest, on **`SE_COINS` = BTCUSDT + ETHUSDT only** (one constant in `src/smc.js`; narrow it to one coin there). Held coins keep being managed.
    - Independent of SMC Big, which keeps trading its own top-10 list (BTC / ETH included). Ticks after SB in `ptTick`, each in its own try/catch; own per-coin read cache `S.smCE`; alerts start "SMC BTC/ETH PAPER".
    - The Reviewer never learns from SE (same as SB): trades keyed `se|SYM|t1`, skipped by `rvmLearn`; reviewable (review wall, "On the chart" SMC BTC/ETH filter, Review chip on its trade log).
-   - Desk: SMC panel (key 6) switch Small caps / Big caps / BTC/ETH (read-only tabs + own on/off toggle); race wall has a fourth line and a BTC/ETH stats column. Cloud summary: `cloud.seEq` / `seOpen`.
+   - Desk: SMC panel (key 6) switch Small caps / Big caps / BTC/ETH (read-only tabs + own on/off toggle); race wall has its card, line and BTC/ETH stats column; the east wall's right half shows its open positions. Cloud summary: `cloud.seEq` / `seOpen`.
    - Same pre-deploy caveat as SB: an old desk that takes the lock saves state without `se`, and SE restarts fresh.
    - Test: `tests/smc-btceth.mjs` (in `npm test`).
 9. **Backtester** (key 7, report only):
@@ -244,14 +244,13 @@ Since the fade went live, the Trader's reversal shorts did −0.06R n48 (−2.9R
   - Leads only: (1) 15m price on the wrong side of EMA20 (pullback entry) better in all 4 sets, but as a filter it cuts total R (small 4.3 vs 6.9, BTC/ETH 10.8 vs 24.2); (2) 1h price on the trade's side of SMA200: small 9.0 vs 6.9R, big 7.9 vs 5.2R, BTC/ETH 22.6 vs 24.2R (half 1 worse), live SM opposite. Fred: no indicator filter; re-run after ~20 more SMC Trader trades.
   - Fred, Nov 19: the "no SMC Trader longs on day gainers" test switch is on hold (not now).
 - **Nov 20 (Fred, option A):** Trader, OpenInterest, Flow panels and the Gainer/Loser board tabs removed (UI only); data feeds kept for SMC cx / tracker / Reviewer; whale + liquidation feeds removed; Trader engine kept (stopped, still manages open positions, hosts the SMC ticks) — full Trader code removal (option B) waits until its positions close and Fred asks.
+- **Nov 20 (Fred, walls):** the return race (north wall) shows only the three SMC accounts; the east wall shows SMC Big and SMC BTC/ETH open positions (two sections, each with its equity line) instead of the Trader's.
+- **Nov 20 (unlock calendar stopped):** Fred "停埋個 Unlock calendar" (chose "stop everything"). Migration `nounl1120`: `unlGuard = 0` on `SM.cfg` (SMC Big and BTC/ETH inherit it) and `PT.cfg`; Unlock calendar tab removed from GainerLoser; `unlock-check` skill deleted. Fred pauses the claude.ai "Aster unlock calendar research" task himself. `unlocks.json`, `unlock.js` and `unlocks-publish.yml` stay (inert: nothing pushes `unlock-calendar/*` any more). `unlGuard 1` turns the guard back on, but only with a fresh calendar.
 - **Nov 14 (year backtester):** option A: BTC / ETH only, SMC Big settings, 365 days, one account. Patterns are searched on the **raw** run (Reviewer rules off), so they are not just the rules' own leftovers (Fred). Report only. Spec/plan: `docs/superpowers/`.
 
 ## Open items
 - **Start here (Nov 19), most urgent first:**
-  1. **Unlock calendar is stale since Nov 15.**
-     - No `unlock-calendar/*` branch was pushed Nov 16–19, and main's newest calendar is the Nov 15 hand publish.
-     - The scheduled task's Nov 19 run failed with "usage limit reached"; Nov 16–18 left nothing either.
-     - Fix: run the `unlock-check` skill (research + publish from here), then tell Fred. The task itself stays on and should resume when his usage allows.
+  1. ~~Unlock calendar~~: stopped Nov 20 (Fred), nothing to do.
   2. **Fade check is due:** 18 of ~20 fade trades so far, +0.11R avg (backtest +0.20R n103, live-reversed +0.49R n33). Review with Fred at ~20.
   3. **Part 3 of the Nov 16 request** (A or B, see Decisions): ask Fred.
   4. **3 unread reviews** (BULLA, ASTER, BNB): read them when Fred says "讀吓我啲 review".
@@ -293,7 +292,6 @@ Since the fade went live, the Trader's reversal shorts did −0.06R n48 (−2.9R
   - feeding OI / flow into the SMC Trader;
   - flagging when the two traders hold opposite sides of a coin;
   - trimming the state file (~700 KB; the browser's localStorage write fails silently if it fills).
-- **Unlock publish:** after 4:32 AM Creston each day, check the repo has a fresh "unlock calendar" commit (`git log -3 -- unlocks.json`). If not, look at the `unlocks-publish.yml` run (a refusal says why) and for leftover `unlock-calendar/*` branches; otherwise the calendar on the desk is stale: copy the claude.ai project doc `claude/unlocks.json` here, run `python3 build.py` and push. Or ask Fred to run that research from Claude Code instead.
 
 ## Gotchas
 - `renderPanel()` skips re-rendering while an input is focused or a chart drag is in progress (`RVP.drag`).

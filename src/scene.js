@@ -55,7 +55,7 @@ const wallM = mat(0x0c1222, {roughness: .85});
 box(RX * 2, RH, 0.3, wallM, 0, RH / 2, -RZ - 0.15);           // north
 box(RX * 2, RH, 0.3, wallM, 0, RH / 2, RZ + 0.15);            // south
 box(0.3, RH, RZ * 2, wallM, -RX - 0.15, RH / 2, 0);           // west
-// east = position wall (was a window): the Trader's open positions, each beside its live chart
+// east = position wall (was a window): SMC Big and SMC BTC/ETH open positions, each beside its live chart (drawWall in trader_ui.js)
 box(0.3, RH, RZ * 2, wallM, RX + 0.15, RH / 2, 0);
 const WALL_W = 15, WALL_H = 2.8, WALL_Z = -1.2;
 const WALL = canvasTex(3200, Math.round(3200 * WALL_H / WALL_W));
@@ -77,7 +77,7 @@ const BOARD = canvasTex(2400, 640);
   const m = new THREE.Mesh(new THREE.PlaneGeometry(13, 13 * 640 / 2400), new THREE.MeshBasicMaterial({map: BOARD.tex, toneMapped: false, fog: false}));
   m.position.set(0, 2.62, -RZ + 0.15); scene.add(m);
 }
-/* ---- north wall, left of the movers board: Trader vs SMC Trader return race ---- */
+/* ---- north wall, left of the movers board: return race of the three SMC accounts ---- */
 const RACE_W = 5.6, RACE_H = 3.2, RACE_X = -10.6, RACE_Y = 2.6;
 const RACE = canvasTex(1600, Math.round(1600 * RACE_H / RACE_W));
 {

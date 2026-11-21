@@ -6,11 +6,11 @@ const smvAcct = () => SMV === 'sb' ? SB : SMV === 'se' ? SE : SM;
 function smStats() { return acctStats(SM, smEquity()); }
 // both equity curves as % from each account's $1,000 start, on one time axis
 function drawCmp(c, x, y, w, h, fs = 12, big = false) {
-  const A = PT.eqs.concat([[now(), ptEquity()]]), B = SM.eqs.concat([[now(), smEquity()]]), C = big ? SB.eqs.concat([[now(), smWith(SB, smEquity)]]) : [], E = big ? SE.eqs.concat([[now(), smWith(SE, smEquity)]]) : [];
+  const A = big ? [] : PT.eqs.concat([[now(), ptEquity()]]), B = SM.eqs.concat([[now(), smEquity()]]), C = big ? SB.eqs.concat([[now(), smWith(SB, smEquity)]]) : [], E = big ? SE.eqs.concat([[now(), smWith(SE, smEquity)]]) : [];
   const pa = A.map(([t, v]) => [t, (v / PT.start - 1) * 100]), pb = B.map(([t, v]) => [t, (v / SM.start - 1) * 100]), pc = C.map(([t, v]) => [t, (v / SB.start - 1) * 100]), pe = E.map(([t, v]) => [t, (v / SE.start - 1) * 100]);
   c.save(); c.translate(x, y);
   const all = pa.concat(pb, pc, pe);
-  if (A.length < 2 && B.length < 2 && C.length < 2) { c.fillStyle = DIM; c.font = `500 ${fs + 2}px ${FS}`; c.textAlign = 'center'; c.fillText('both curves start with the first trades', w / 2, h / 2); c.restore(); c.textAlign = 'left'; return; }
+  if (A.length < 2 && B.length < 2 && C.length < 2 && E.length < 2) { c.fillStyle = DIM; c.font = `500 ${fs + 2}px ${FS}`; c.textAlign = 'center'; c.fillText('both curves start with the first trades', w / 2, h / 2); c.restore(); c.textAlign = 'left'; return; }
   let lo = Math.min(0, ...all.map(p => p[1])), hi = Math.max(0, ...all.map(p => p[1])); const sp = (hi - lo) || 1; lo -= sp * 0.12; hi += sp * 0.12;
   const t0 = Math.min(...all.map(p => p[0])), t1 = Math.max(...all.map(p => p[0])), pad = Math.max(60, fs * 5.6);
   const X = t => 6 + (t - t0) / ((t1 - t0) || 1) * (w - pad - 10), Y = v => 8 + (hi - v) / (hi - lo) * (h - 24);
@@ -18,7 +18,7 @@ function drawCmp(c, x, y, w, h, fs = 12, big = false) {
   for (const [pts, col] of [[pa, '#ffd166'], [pb, SMCOL], [pc, SBCOL], [pe, SECOL]]) { if (pts.length < 2) continue; c.strokeStyle = col; c.lineWidth = 2.2; c.beginPath(); pts.forEach((p, i) => (i ? c.lineTo(X(p[0]), Y(p[1])) : c.moveTo(X(p[0]), Y(p[1])))); c.stroke(); }
   c.fillStyle = DIM; c.font = `500 ${fs}px ${FM}`; c.textBaseline = 'middle';
   c.fillText(fmtPct(hi, 1), w - pad + 4, 12); c.fillText(fmtPct(lo, 1), w - pad + 4, h - 14); c.fillText('0%', w - pad + 4, Y(0));
-  c.font = `700 ${fs}px ${FS}`; c.fillStyle = '#ffd166'; c.fillText('— Trader', 10, 12); c.fillStyle = SMCOL; c.fillText('— SMC Trader', 10 + fs * 6.5, 12); if (big) { c.fillStyle = SBCOL; c.fillText('— SMC Big', 10 + fs * 14.5, 12); c.fillStyle = SECOL; c.fillText('— SMC BTC/ETH', 10 + fs * 21.5, 12); }
+  c.font = `700 ${fs}px ${FS}`; if (big) { c.fillStyle = SMCOL; c.fillText('— SMC Trader', 10, 12); c.fillStyle = SBCOL; c.fillText('— SMC Big', 10 + fs * 8, 12); c.fillStyle = SECOL; c.fillText('— SMC BTC/ETH', 10 + fs * 15, 12); } else { c.fillStyle = '#ffd166'; c.fillText('— Trader', 10, 12); c.fillStyle = SMCOL; c.fillText('— SMC Trader', 10 + fs * 6.5, 12); }
   c.restore(); c.textAlign = 'left';
 }
 function drawSmcScreens(d) {
@@ -264,41 +264,41 @@ function drawSmWall() {
   T.tex.needsUpdate = true;
 }
 
-/* ---- north wall, left of the movers board: the return race, Trader vs SMC Trader ---- */
+/* ---- north wall, left of the movers board: the return race of the three SMC accounts (the Trader left it Nov 20; stopped since Nov 19) ---- */
 function drawRace() {
   if (typeof RACE === 'undefined') return;
-  const T = RACE, c = T.ctx, W = T.W, H = T.H, a = acctStats(PT, ptEquity()), b = smStats(), d = acctStats(SB, smWith(SB, smEquity)), e = acctStats(SE, smWith(SE, smEquity)), ea = ptEquity(), eb = smEquity();
+  const T = RACE, c = T.ctx, W = T.W, H = T.H;
+  const L = [[SM, smStats(), smEquity(), 'SMC TRADER', SMCOL], [SB, acctStats(SB, smWith(SB, smEquity)), smWith(SB, smEquity), 'SMC BIG', SBCOL], [SE, acctStats(SE, smWith(SE, smEquity)), smWith(SE, smEquity), 'SMC BTC/ETH', SECOL]];
+  T.names = L.map(x => x[3]);   // read by tests/desk-smoke.mjs
   c.fillStyle = '#04070f'; c.fillRect(0, 0, W, H);
   c.fillStyle = '#0a1226'; c.fillRect(0, 0, W, 62);
   c.textBaseline = 'middle'; c.font = `800 34px ${FS}`; c.fillStyle = '#cfe0ff'; c.fillText('RETURN RACE', 24, 32);
   c.font = `600 22px ${FM}`; c.fillStyle = DIM; c.textAlign = 'right'; c.fillText(`paper · from $1,000 each   ${clock()}`, W - 24, 32); c.textAlign = 'left';
-  // the two scores
-  const lead = a.ret === b.ret ? null : a.ret > b.ret ? 'a' : 'b';
-  [[a, ea, 'TRADER', '#ffd166', 'a', 24], [b, eb, 'SMC TRADER', SMCOL, 'b', W / 2 + 12]].forEach(([s, eq, name, col, k, x]) => {
-    const w = W / 2 - 36;
+  // the three scores
+  const rets = L.map(x => x[1].ret), best = Math.max(...rets), lead = rets.filter(r => r === best).length === 1 ? rets.indexOf(best) : -1, gap = 16, w = (W - 48 - 2 * gap) / 3;
+  L.forEach(([A, s, eq, name, col], i) => {
+    const x = 24 + i * (w + gap);
     c.fillStyle = 'rgba(255,255,255,.03)'; rr(c, x, 80, w, 196, 14); c.fill();
     c.fillStyle = col; c.fillRect(x, 80, 6, 196);
-    c.font = `800 26px ${FS}`; c.fillStyle = col; c.fillText(name, x + 24, 112);
-    if (lead === k) { c.font = `800 18px ${FS}`; const lw = c.measureText('LEADING').width + 22; c.fillStyle = col; rr(c, x + w - lw - 16, 96, lw, 32, 16); c.fill(); c.fillStyle = '#04070f'; c.fillText('LEADING', x + w - lw - 5, 113); }
-    c.font = `800 72px ${FM}`; c.fillStyle = tone(s.ret); c.fillText(fmtPct(s.ret, 2), x + 22, 176);
-    c.font = `700 26px ${FM}`; c.fillStyle = TXT; c.fillText(fmtMoney(eq), x + 24, 232);
-    c.fillStyle = tone(eq - 1000); c.fillText(fmtMoney(eq - (k === 'a' ? PT.start : SM.start), 1), x + 24 + c.measureText(fmtMoney(eq)).width + 24, 232);
-    c.font = `500 20px ${FM}`; c.fillStyle = DIM; c.fillText(`${s.n} trades · ${Object.keys((k === 'a' ? PT : SM).pos).length} open`, x + 24, 262);
+    c.font = `800 24px ${FS}`; c.fillStyle = col; c.fillText(name, x + 22, 112);
+    if (lead === i) { c.font = `800 16px ${FS}`; const lw = c.measureText('LEADING').width + 20; c.fillStyle = col; rr(c, x + w - lw - 12, 98, lw, 28, 14); c.fill(); c.fillStyle = '#04070f'; c.fillText('LEADING', x + w - lw - 2, 113); }
+    c.font = `800 58px ${FM}`; c.fillStyle = tone(s.ret); c.fillText(fmtPct(s.ret, 2), x + 20, 172);
+    c.font = `700 24px ${FM}`; c.fillStyle = TXT; c.fillText(fmtMoney(eq), x + 22, 226);
+    c.fillStyle = tone(eq - A.start); c.fillText(fmtMoney(eq - A.start, 1), x + 22 + c.measureText(fmtMoney(eq)).width + 18, 226);
+    c.font = `500 19px ${FM}`; c.fillStyle = DIM; c.fillText(`${s.n} trades · ${Object.keys(A.pos).length} open`, x + 22, 258);
   });
-  // both equity curves
+  // the three equity curves
   c.textBaseline = 'alphabetic';
   drawCmp(c, 24, 296, W - 48, 250, 20, true);
   // the stats side by side
-  const rows = [['Win rate', s => s.win == null ? '—' : s.win.toFixed(0) + '%', 1], ['Avg R per trade', s => fmtR(s.avgR), 1], ['Max drawdown', s => fmtPct(s.dd, 1), 1], ['Return ÷ drawdown', s => s.retDD == null ? '—' : s.retDD.toFixed(2), 1], ['Worst losing streak', s => s.streak + '', -1], ['Profit factor', s => s.pf == null ? '—' : s.pf === Infinity ? '∞' : s.pf.toFixed(2), 1]];
-  const y0 = 588, rh = 34;
-  c.font = `700 18px ${FS}`; c.fillStyle = DIM; c.fillText('', 24, y0 - 8); c.textAlign = 'right'; c.fillStyle = '#ffd166'; c.fillText('TRADER', W - 760, y0 - 10); c.fillStyle = SMCOL; c.fillText('SMC', W - 520, y0 - 10); c.fillStyle = SBCOL; c.fillText('SMC BIG', W - 280, y0 - 10); c.fillStyle = SECOL; c.fillText('BTC/ETH', W - 40, y0 - 10); c.textAlign = 'left';
-  rows.forEach(([k, f], i) => {
-    const y = y0 + 22 + i * rh; if (i % 2 === 0) { c.fillStyle = 'rgba(255,255,255,.025)'; c.fillRect(24, y - 24, W - 48, rh); }
+  const rows = [['Win rate', s => s.win == null ? '—' : s.win.toFixed(0) + '%'], ['Avg R per trade', s => fmtR(s.avgR)], ['Max drawdown', s => fmtPct(s.dd, 1)], ['Return ÷ drawdown', s => s.retDD == null ? '—' : s.retDD.toFixed(2)], ['Worst losing streak', s => s.streak + ''], ['Profit factor', s => s.pf == null ? '—' : s.pf === Infinity ? '∞' : s.pf.toFixed(2)]];
+  const y0 = 592, rh = 38, colX = i => W - 40 - (2 - i) * 330;
+  c.font = `700 18px ${FS}`; c.textAlign = 'right'; L.forEach(([, , , name, col], i) => { c.fillStyle = col; c.fillText(name, colX(i), y0 - 10); }); c.textAlign = 'left';
+  rows.forEach(([k, f], j) => {
+    const y = y0 + 24 + j * rh; if (j % 2 === 0) { c.fillStyle = 'rgba(255,255,255,.025)'; c.fillRect(24, y - 25, W - 48, rh); }
     c.font = `500 22px ${FS}`; c.fillStyle = DIM; c.fillText(k, 36, y);
-    c.font = `700 22px ${FM}`; c.textAlign = 'right'; c.fillStyle = TXT; c.fillText(f(a), W - 760, y); c.fillText(f(b), W - 520, y); c.fillText(f(d), W - 280, y); c.fillText(f(e), W - 40, y); c.textAlign = 'left';
+    c.font = `700 22px ${FM}`; c.textAlign = 'right'; c.fillStyle = TXT; L.forEach(([, s], i) => c.fillText(f(s), colX(i), y)); c.textAlign = 'left';
   });
-  const v = compareVerdict(a, b);
-  c.font = `600 20px ${FS}`; c.fillStyle = v.who === 'Trader' ? '#ffd166' : v.who ? SMCOL : '#aab6d4';
-  wrapText(c, v.t, 24, y0 + 22 + rows.length * rh + 18, W - 48, 26, 2);
+  c.font = `500 18px ${FS}`; c.fillStyle = DIM; c.fillText('The Trader stopped on Nov 19; its open positions are still managed, but no longer shown on a wall.', 24, y0 + 24 + rows.length * rh + 14);
   T.tex.needsUpdate = true;
 }

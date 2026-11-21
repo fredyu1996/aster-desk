@@ -1,16 +1,17 @@
-/* ================= TRADER: position wall (its panel and desk were removed Nov 20, option A; the engine still manages its open positions) ================= */
+/* ================= EAST WALL: SMC Big + SMC BTC/ETH open positions (the Trader's until Nov 20; its engine still manages its own) ================= */
+// equity curve of the account in SM: call inside smWith(SB / SE, ...)
 function drawEq(c, x, y, w, h, fs = 12) {
-  const pts = PT.eqs.concat([[now(), ptEquity()]]);
+  const pts = SM.eqs.concat([[now(), smEquity()]]);
   c.save(); c.translate(x, y);
   if (pts.length < 2) { c.fillStyle = DIM; c.font = `500 ${fs + 2}px ${FS}`; c.textAlign = 'center'; c.fillText('equity curve starts with the first trades', w / 2, h / 2); c.restore(); c.textAlign = 'left'; return; }
-  let lo = Math.min(PT.start, ...pts.map(p => p[1])), hi = Math.max(PT.start, ...pts.map(p => p[1])); const sp = (hi - lo) || 10; lo -= sp * 0.1; hi += sp * 0.1;
+  let lo = Math.min(SM.start, ...pts.map(p => p[1])), hi = Math.max(SM.start, ...pts.map(p => p[1])); const sp = (hi - lo) || 10; lo -= sp * 0.1; hi += sp * 0.1;
   const t0 = pts[0][0], t1 = pts[pts.length - 1][0] || t0 + 1, pad = 56;
   const X = t => 6 + (t - t0) / ((t1 - t0) || 1) * (w - pad - 10), Y = v => 8 + (hi - v) / (hi - lo) * (h - 24);
-  c.strokeStyle = 'rgba(124,137,168,.35)'; c.setLineDash([3, 4]); c.beginPath(); c.moveTo(6, Y(PT.start)); c.lineTo(w - pad, Y(PT.start)); c.stroke(); c.setLineDash([]);
-  const last = pts[pts.length - 1][1]; c.strokeStyle = last >= PT.start ? UP : DN; c.lineWidth = 2; c.beginPath();
+  c.strokeStyle = 'rgba(124,137,168,.35)'; c.setLineDash([3, 4]); c.beginPath(); c.moveTo(6, Y(SM.start)); c.lineTo(w - pad, Y(SM.start)); c.stroke(); c.setLineDash([]);
+  const last = pts[pts.length - 1][1]; c.strokeStyle = last >= SM.start ? UP : DN; c.lineWidth = 2; c.beginPath();
   pts.forEach((p, i) => (i ? c.lineTo(X(p[0]), Y(p[1])) : c.moveTo(X(p[0]), Y(p[1])))); c.stroke();
   c.fillStyle = DIM; c.font = `500 ${fs}px ${FM}`; c.textBaseline = 'middle';
-  c.fillText('$' + Math.round(hi), w - pad + 4, 12); c.fillText('$' + Math.round(lo), w - pad + 4, h - 14); c.fillText('$' + PT.start, w - pad + 4, Y(PT.start));
+  c.fillText('$' + Math.round(hi), w - pad + 4, 12); c.fillText('$' + Math.round(lo), w - pad + 4, h - 14); c.fillText('$' + SM.start, w - pad + 4, Y(SM.start));
   c.restore(); c.textAlign = 'left';
 }
 /* ================= POSITION WALL (east wall) ================= */
@@ -60,50 +61,45 @@ function drawPosChart(c, s, p, x, y, w, h, o = {}) {
   if (fin(live)) { const yy = Y(live); c.fillStyle = TXT; c.beginPath(); c.arc(X(n - 1) + bw * 0.6, yy, 7, 0, 7); c.fill(); }
   c.fillStyle = DIM; c.font = `500 20px ${FM}`; c.fillText(o.foot || '15m · last 9h', x + 16, y + h - 14);
 }
+// one account's half of the east wall; runs inside smWith(acct, ...) so SM, smEquity and smBars read that account
+function drawAcctPos(c, title, col, x0, w, H) {
+  const eq = smEquity(), pnl = eq - SM.start, P = Object.entries(SM.pos).sort((a, b) => a[1].t - b[1].t), pTxt = `${fmtMoney(pnl, 1)} (${fmtPct(pnl / SM.start * 100, 2)})`;
+  c.fillStyle = '#0d1328'; c.fillRect(x0, 0, w, 84); c.fillStyle = col; c.fillRect(x0, 82, w, 3);
+  c.textBaseline = 'middle'; c.font = `800 40px ${FS}`; c.fillStyle = col; c.fillText(title, x0 + 30, 42);
+  c.textAlign = 'right'; c.font = `600 22px ${FM}`; c.fillStyle = DIM; c.fillText(`${P.length}/${SM.cfg.maxPos} open · ${SM.log.length} closed · ${SM.on ? 'ON' : 'OFF'}`, x0 + w - 30, 24);
+  c.font = `700 28px ${FM}`; c.fillStyle = tone(pnl); c.fillText(pTxt, x0 + w - 30, 58); const pw = c.measureText(pTxt).width;
+  c.fillStyle = TXT; c.fillText(`Equity ${fmtMoney(eq)}`, x0 + w - 60 - pw, 58);
+  c.textAlign = 'left'; c.textBaseline = 'alphabetic';
+  const top = 100, bh = H - top - 16, shown = P.slice(0, 2), n = shown.length, posH = n ? bh - 130 : 0;
+  if (!n) {
+    c.font = `800 44px ${FS}`; c.fillStyle = TXT; c.fillText('Flat — no open positions', x0 + 30, top + 50);
+    c.font = `500 24px ${FS}`; c.fillStyle = DIM; wrapText(c, `Waiting for a sweep → structure shift → pullback into the FVG or order block, quality ${smRules().minQ}/100 or better.`, x0 + 30, top + 92, w - 60, 28, 1);
+  }
+  const colW = w / (n || 1), infoW = n === 1 ? 560 : 330;
+  shown.forEach(([s, p], i) => {
+    const x = x0 + i * colW, px = ptPx(s), u = px ? smUpnl(p, px) + p.realized : null, r = px ? smR(p, px) : null, L = p.side === 'L', tf = p.tf || '15m', ix = x + 26;
+    if (i) { c.fillStyle = col; c.globalAlpha = 0.25; c.fillRect(x, top, 2, posH); c.globalAlpha = 1; }
+    c.font = `800 44px ${FS}`; c.fillStyle = TXT; c.fillText(p.b, ix, top + 44);
+    const nw = c.measureText(p.b).width; c.font = `800 22px ${FS}`; c.fillStyle = L ? UP : DN; c.fillText(`${L ? 'LONG' : 'SHORT'} · ${tf} ${p.zoneKind || ''}`, ix + nw + 14, top + 42);
+    c.font = `800 36px ${FM}`; c.fillStyle = tone(u); c.fillText(fmtMoney(u, 1), ix, top + 92);
+    c.font = `700 26px ${FM}`; c.fillText(r == null ? '—' : `${r >= 0 ? '+' : ''}${r.toFixed(2)}R`, ix, top + 128);
+    const rows = [['Entry', fmtPx(p.entry)], ['Now', fmtPx(px)], [p.trail ? 'Trail stop' : p.be ? 'Stop (BE)' : 'Stop', fmtPx(p.stop)], ['Target', fmtPx(p.target)], ['Held', ago(p.t)]];
+    c.font = `500 21px ${FM}`;
+    rows.forEach(([k, v], j) => { const y = top + 166 + j * 28; c.fillStyle = DIM; c.fillText(k, ix, y); c.fillStyle = /top/.test(k) ? DN : k === 'Target' ? UP : TXT; c.textAlign = 'right'; c.fillText(v, x + infoW - 16, y); c.textAlign = 'left'; });
+    c.font = `500 18px ${FS}`; c.fillStyle = '#aab6d4'; wrapText(c, (p.tp1 ? 'Half banked · ' : '') + (p.why || ''), ix, top + 166 + 5 * 28 + 4, infoW - 40, 22, 1);
+    const B = smBars(s, tf), rrT = Math.abs(p.target - p.entry) / (Math.abs(p.entry - p.stop0) || 1);
+    drawPosChart(c, s, p, x + infoW, top + 6, colW - infoW - 20, posH - 12, {bars: B && B.length ? B : null, target: p.target, tLab: `${rrT.toFixed(1)}R`, zone: p.zone, foot: `${tf} · zone shaded`});
+  });
+  if (P.length > 2) { c.font = `700 22px ${FS}`; c.fillStyle = WARN; c.textAlign = 'right'; c.fillText(`+${P.length - 2} more open — see the SMC desk`, x0 + w - 30, top + posH + 4); c.textAlign = 'left'; }
+  drawEq(c, x0 + 30, top + (n ? posH + 10 : 120), w - 60, n ? bh - posH - 10 : bh - 120, n ? 18 : 22);
+  return {title, shown: n, open: P.length};
+}
 function drawWall() {
   if (typeof WALL === 'undefined') return;
-  const T = WALL, c = T.ctx, W = T.W, H = T.H, st = ptStats();
+  const T = WALL, c = T.ctx, W = T.W, H = T.H, half = W / 2;
   c.fillStyle = '#04070f'; c.fillRect(0, 0, W, H);
-  c.fillStyle = '#0d1328'; c.fillRect(0, 0, W, 84); c.fillStyle = '#ffd166'; c.fillRect(0, 82, W, 3);
-  c.textBaseline = 'middle'; c.font = `800 44px ${FS}`; c.fillStyle = '#ffd166'; c.fillText('TRADER · OPEN POSITIONS', 30, 42);
-  c.font = `700 22px ${FS}`; c.fillStyle = '#04070f'; const tagW = c.measureText('PAPER ACCOUNT').width + 28;
-  c.fillStyle = '#ffd166'; rr(c, 650, 24, tagW, 38, 19); c.fill(); c.fillStyle = '#04070f'; c.fillText('PAPER ACCOUNT', 664, 44);
-  c.textAlign = 'right'; c.font = `700 32px ${FM}`;
-  c.fillStyle = TXT; c.fillText(`Equity ${fmtMoney(st.eq)}`, W - 1060, 44);
-  c.fillStyle = tone(st.pnl); c.fillText(`${fmtMoney(st.pnl, 1)} (${fmtPct(st.pnlPct, 2)})`, W - 600, 44);
-  c.fillStyle = DIM; c.font = `600 26px ${FM}`; c.fillText(`${st.open}/${PT.cfg.maxPos} open · ${st.n} closed · ${PT.on ? (PT.paused ? 'PAUSED' : 'ON') : 'OFF'}  ${clock()}`, W - 30, 44);
-  c.textAlign = 'left'; c.textBaseline = 'alphabetic';
-  const P = Object.entries(PT.pos).sort((a, b) => a[1].t - b[1].t), top = 100, bh = H - top - 16;
-  if (!P.length) {
-    c.font = `800 52px ${FS}`; c.fillStyle = TXT; c.fillText('Flat — no open positions', 40, top + 70);
-    c.font = `500 28px ${FS}`; c.fillStyle = DIM; c.fillText(`Waiting for a tracked top-5 coin to reach ${ptRules('S', '').minScore}/8 reversal signs.`, 40, top + 120);
-    drawEq(c, 40, top + 150, 1500, bh - 160, 22);
-    c.font = `700 26px ${FM}`; c.fillStyle = DIM; c.fillText('LAST TRADES', 1640, top + 40);
-    PT.log.slice(0, 7).forEach((x, i) => {
-      const y = top + 90 + i * 58; c.font = `800 32px ${FS}`; c.fillStyle = TXT; c.fillText(x.b, 1640, y);
-      c.font = `700 26px ${FS}`; c.fillStyle = x.side === 'L' ? UP : DN; c.fillText(x.side === 'L' ? 'LONG' : 'SHORT', 1900, y);
-      c.font = `700 30px ${FM}`; c.fillStyle = tone(x.pnl); c.textAlign = 'right'; c.fillText(`${fmtMoney(x.pnl, 1)}   ${x.R >= 0 ? '+' : ''}${x.R.toFixed(2)}R`, W - 40, y); c.textAlign = 'left';
-      c.font = `500 20px ${FS}`; c.fillStyle = DIM; c.fillText(String(x.exitWhy).slice(0, 60), 2080, y);
-    });
-    if (!PT.log.length) { c.font = `500 28px ${FS}`; c.fillStyle = DIM; c.fillText('No closed trades yet.', 1640, top + 90); }
-    T.tex.needsUpdate = true; return;
-  }
-  const shown = P.slice(0, 3), n = shown.length, colW = W / n, infoW = n === 1 ? 900 : n === 2 ? 640 : 470, sc = n === 3 ? 1 : 1.15;
-  shown.forEach(([s, p], i) => {
-    const x0 = i * colW, px = ptPx(s), u = px ? ptUpnl(p, px) + p.realized : null, r = px ? ptR(p, px) : null, L = p.side === 'L';
-    if (i) { c.fillStyle = 'rgba(255,209,102,.25)'; c.fillRect(x0, top, 2, bh); }
-    const ix = x0 + 26;
-    c.font = `800 ${Math.round(56 * sc)}px ${FS}`; c.fillStyle = TXT; c.fillText(p.b, ix, top + 58);
-    const nw = c.measureText(p.b).width; c.font = `800 ${Math.round(26 * sc)}px ${FS}`; c.fillStyle = L ? UP : DN; c.fillText((L ? 'LONG' : 'SHORT') + (p.strat === 'mom' ? ' · MOMENTUM' : ' · REVERSAL'), ix + nw + 18, top + 56);
-    c.font = `800 ${Math.round(46 * sc)}px ${FM}`; c.fillStyle = tone(u); c.fillText(fmtMoney(u, 1), ix, top + 124);
-    c.font = `700 ${Math.round(30 * sc)}px ${FM}`; c.fillText(r == null ? '—' : `${r >= 0 ? '+' : ''}${r.toFixed(2)}R`, ix, top + 166);
-    const rows = [['Entry', fmtPx(p.entry)], ['Now', fmtPx(px)], [p.be ? (p.tp1 ? 'Trail stop' : 'Stop (BE)') : 'Stop', fmtPx(p.stop)], ['Size', fmtMoney(p.qty * (px || p.entry))], ['Held', ago(p.t)]];
-    c.font = `500 ${Math.round(24 * sc)}px ${FM}`;
-    rows.forEach(([k, v], j) => { const y = top + 214 + j * Math.round(34 * sc); c.fillStyle = DIM; c.fillText(k, ix, y); c.fillStyle = k.includes('top') ? DN : TXT; c.textAlign = 'right'; c.fillText(v, x0 + infoW - 16, y); c.textAlign = 'left'; });
-    c.font = `500 ${Math.round(19 * sc)}px ${FS}`; c.fillStyle = '#aab6d4';
-    wrapText(c, (p.tp1 ? 'Half banked · ' : '') + p.why, ix, top + 214 + 5 * Math.round(34 * sc) + 8, infoW - 40, Math.round(25 * sc), 3);
-    drawPosChart(c, s, p, x0 + infoW, top + 6, colW - infoW - 20, bh - 12);
-  });
-  if (P.length > 3) { c.font = `700 26px ${FS}`; c.fillStyle = WARN; c.textAlign = 'right'; c.fillText(`+${P.length - 3} more open`, W - 30, H - 24); c.textAlign = 'left'; }
+  // T.drawn is read by tests/desk-smoke.mjs; colours = SBCOL / SECOL, literal because smc_ui.js loads after ui.js's first drawWall() call
+  T.drawn = [smWith(SB, () => drawAcctPos(c, 'SMC BIG · OPEN POSITIONS', '#6ee7ff', 0, half, H)), smWith(SE, () => drawAcctPos(c, 'SMC BTC/ETH · OPEN POSITIONS', '#b69cff', half, half, H))];
+  c.fillStyle = 'rgba(207,224,255,.35)'; c.fillRect(half - 1, 0, 3, H);
   T.tex.needsUpdate = true;
 }

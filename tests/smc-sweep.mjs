@@ -56,3 +56,6 @@ assert.deepStrictEqual(fib, {L: [1.5, 1.382, 1.21], S: [1.5, 1.618, 1.79], hit: 
 console.log('PASS: fib levels', JSON.stringify(fib));
 // Nov 19 (stop1119): the Trader takes no new entries
 assert.strictEqual(X('PT.on'), false); console.log('PASS: Trader stopped (stop1119)');
+// Nov 20 (nounl1120): unlock guard off on every account
+assert.deepStrictEqual(JSON.parse(X(`JSON.stringify({sm: SM.cfg.unlGuard, sb: smWith(SB, () => SM.cfg.unlGuard), se: smWith(SE, () => SM.cfg.unlGuard), pt: PT.cfg.unlGuard})`)), {sm: 0, sb: 0, se: 0, pt: 0});
+console.log('PASS: unlock guard off (nounl1120)');
