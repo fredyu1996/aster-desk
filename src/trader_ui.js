@@ -1,5 +1,4 @@
-/* ================= TRADER: screens + panel ================= */
-TABS.trader = [['acct', 'Account'], ['log', 'Trade log'], ['rules', 'Rules & settings']];
+/* ================= TRADER: position wall (its panel and desk were removed Nov 20, option A; the engine still manages its open positions) ================= */
 function drawEq(c, x, y, w, h, fs = 12) {
   const pts = PT.eqs.concat([[now(), ptEquity()]]);
   c.save(); c.translate(x, y);
@@ -14,108 +13,6 @@ function drawEq(c, x, y, w, h, fs = 12) {
   c.fillText('$' + Math.round(hi), w - pad + 4, 12); c.fillText('$' + Math.round(lo), w - pad + 4, h - 14); c.fillText('$' + PT.start, w - pad + 4, Y(PT.start));
   c.restore(); c.textAlign = 'left';
 }
-function drawTraderScreens(d) {
-  const [A, B] = d.mons, st = ptStats(), col = d.a.color;
-  let c = screenFrame(A, col, 'PAPER ACCOUNT · $' + PT.start.toLocaleString(), PT.on ? (PT.paused ? 'PAUSED TODAY' : 'TRADING ON') : 'TRADING OFF');
-  c.font = `800 52px ${FS}`; c.fillStyle = TXT; c.fillText(fmtMoney(st.eq), 16, 96);
-  c.font = `700 22px ${FM}`; c.fillStyle = tone(st.pnl); c.fillText(`${fmtMoney(st.pnl, 1)}  ${fmtPct(st.pnlPct, 2)}`, 16, 138);
-  c.fillStyle = DIM; c.font = `500 17px ${FM}`; c.fillText(`today ${fmtMoney(st.today, 1)} · ${st.n} trades · win ${st.win == null ? '—' : st.win.toFixed(0) + '%'} · avg ${st.avgR == null ? '—' : st.avgR.toFixed(2) + 'R'}`, 16, 170);
-  const P = Object.entries(PT.pos);
-  c.font = `600 14px ${FM}`; c.fillStyle = DIM; c.fillText('OPEN POSITIONS', 16, 206);
-  if (!P.length) { c.font = `500 18px ${FS}`; c.fillText(RV.pending ? 'Reading the Reviewer\'s latest review…' : `Flat — waiting for a ${ptRules('S', '').minScore}/8 reversal signal`, 16, 240); }
-  P.slice(0, 4).forEach(([s, p], i) => {
-    const px = ptPx(s), u = px ? ptUpnl(p, px) + p.realized : 0, y = 240 + i * 46;
-    c.font = `800 22px ${FS}`; c.fillStyle = TXT; c.fillText(p.b, 16, y);
-    c.font = `800 18px ${FS}`; c.fillStyle = p.side === 'L' ? UP : DN; c.fillText((p.side === 'L' ? 'LONG' : 'SHORT') + (p.strat === 'mom' ? ' M' : p.strat === 'fade' ? ' F' : ''), 190, y);
-    c.font = `700 20px ${FM}`; c.fillStyle = tone(u); c.textAlign = 'right'; c.fillText(fmtMoney(u, 1), 560, y);
-    c.fillStyle = DIM; c.fillText(px ? (ptR(p, px) >= 0 ? '+' : '') + ptR(p, px).toFixed(2) + 'R' : '—', 784, y); c.textAlign = 'left';
-  });
-  A.tex.needsUpdate = true;
-  c = screenFrame(B, col, 'EQUITY CURVE · LAST TRADES');
-  drawEq(c, 0, 52, B.W, 190, 14);
-  PT.log.slice(0, 4).forEach((x, i) => {
-    const y = 272 + i * 42;
-    c.font = `700 19px ${FS}`; c.fillStyle = TXT; c.fillText(x.b, 16, y);
-    c.font = `700 16px ${FS}`; c.fillStyle = x.side === 'L' ? UP : DN; c.fillText(x.side === 'L' ? 'LONG' : 'SHORT', 150, y);
-    c.font = `700 18px ${FM}`; c.fillStyle = tone(x.pnl); c.textAlign = 'right'; c.fillText(`${fmtMoney(x.pnl, 1)}  ${x.R >= 0 ? '+' : ''}${x.R.toFixed(2)}R`, 784, y); c.textAlign = 'left';
-  });
-  if (!PT.log.length) { c.fillStyle = DIM; c.font = `500 18px ${FS}`; c.fillText('No closed trades yet.', 16, 290); }
-  B.tex.needsUpdate = true;
-}
-function traderHTML(tab) {
-  const st = ptStats(), k = (l, v, cl = '') => `<div class="kpi"><span>${l}</span><b class="${cl}">${v}</b></div>`;
-  const status = `<div class="card2" style="margin-bottom:12px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;border-left:4px solid ${PT.on ? (PT.paused ? WARN : UP) : DIM}">
-    <span class="tag" style="color:#ffd166">PAPER ACCOUNT — simulated fills, no real orders</span>
-    <b style="color:${PT.on ? (PT.paused ? WARN : UP) : DIM}">${PT.on ? (PT.paused ? 'Paused for today (daily loss limit)' : 'Trading is ON') : 'Trading is OFF'}</b>
-    <span class="dim" style="font-size:12px">started ${new Date(PT.created).toLocaleDateString()} with $${PT.start.toLocaleString()} · fees ${PT.cfg.feePct}% + slippage ${PT.cfg.slipPct}% per side, funding charged</span>
-    <span style="margin-left:auto;display:flex;gap:8px"><button class="btn sm" data-pt="toggle">${PT.on ? 'Turn trading off' : 'Turn trading on'}</button></span></div>`;
-  if (tab === 'log') {
-    if (!PT.log.length) return status + '<div class="empty">No closed trades yet. Each closed trade shows here with its entry reason, exit reason, fees and result in R (multiples of the amount risked).</div>';
-    return status + `<table class="t"><thead><tr><th>Opened</th><th>Coin</th><th>Side</th><th>Entry</th><th>Exit</th><th>Size</th><th>P&amp;L</th><th>R</th><th>Best R</th><th>Fees+funding</th><th>Held</th><th style="text-align:left">Why in → why out</th></tr></thead><tbody>${PT.log.map(x => `<tr data-sym="${x.s}"><td class="dim">${new Date(x.t0).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'})}</td><td class="sym">${esc(x.b)}</td><td class="${x.side === 'L' ? 'up' : 'dn'}">${x.side === 'L' ? 'LONG' : 'SHORT'}${x.strat === 'mom' ? '<br><span class="tag" style="color:#7fe3b8">momentum</span>' : ''}</td><td>${fmtPx(x.entry)}</td><td>${fmtPx(x.exit)}</td><td>${fmtMoney(x.notional)}</td><td class="${cls(x.pnl)}">${fmtMoney(x.pnl, 1)}</td><td class="${cls(x.R)}">${x.R >= 0 ? '+' : ''}${x.R.toFixed(2)}</td><td class="dim">${x.maxR.toFixed(1)}</td><td class="dim">${fmtMoney(x.fees - x.funding)}</td><td class="dim">${ago(now() - (x.t1 - x.t0))}</td><td style="text-align:left;white-space:normal;min-width:260px;font-family:var(--sans);font-size:12px">${x.g && x.g.g !== '—' ? `<b style="color:${GRADE_C[x.g.g]}">${x.g.g}</b> ` : ''}${esc(x.why)}<br><span class="dim">→ ${esc(x.exitWhy)}</span>${x.les && x.les.length ? `<br><span style="color:#c5f05a">lessons: ${esc(x.les.join(', '))}</span>` : ''}${x.unl ? `<br><span style="color:${x.unlK === 'none' ? DIM : WARN}">🔓 at entry: ${esc(x.unl)}</span>` : ''}</td></tr>`).join('')}</tbody></table>`;
-  }
-  if (tab === 'rules') {
-    const f = (key, label, step, min, max) => `<label>${label}<input type="number" data-ptcfg="${key}" step="${step}" min="${min}" max="${max}" value="${PT.cfg[key]}"></label>`;
-    return status + `<div style="margin-bottom:14px">${rulesCardHTML('pt')}</div><div class="grid2"><div class="card2"><h3>HOW THE TRADER TRADES · TWO STRATEGIES</h3>
-      <div class="chk"><span class="i" style="color:${PT.cfg.stratRev ? UP : DIM}">R</span><span><b>Reversal${PT.cfg.stratRev ? '' : ' (off)'}</b>: fade a top-5 mover once its move is ending (steps 1–6 below). ${PT.cfg.revLong ? 'Both sides: short gainers, buy losers.' : '<b>Shorts gainers only</b>; buying losers is switched off.'}</span></div>
-      <div class="chk"><span class="i" style="color:${PT.cfg.fadeG ? UP : DIM}">F</span><span><b>Fade strong gainers${PT.cfg.fadeG ? '' : ' (off)'}</b> (Nov 15): when the momentum read says a gainer is running hard (${PT.cfg.momMinScore}/8 signs) <b>and</b> it rose ≥ ${PT.cfg.fadeMin1h}% in the last hour, <b>short</b> it: stop the same distance a momentum long would use, mirrored above; target +${PT.cfg.fadeTpR}R; out after ${PT.cfg.fadeHoldH} h; ${PT.cfg.fadeRiskPct}% risk. Momentum longs are ${PT.cfg.momLong ? 'on' : '<b>off</b>'}.</span></div>
-      <div class="chk"><span class="i" style="color:${PT.cfg.stratMom ? UP : DIM}">M</span><span><b>Momentum${PT.cfg.stratMom ? '' : ' (off)'}</b>: trade <b>with</b> a top-10 mover while its move is still being driven, meaning ${PT.cfg.momMinScore}/8 momentum signs (fresh high/low, a sloping EMA, money flow, taker pressure, expanding volume, no funding crowding, OI building, RSI strong but not exhausted). Skips moves already more than ${PT.cfg.momMaxExt}% from the 15m EMA, and coins already showing reversal signs. Risk ${PT.cfg.momRiskPct}% per trade, at most ${PT.cfg.momMaxPos} momentum positions. Stop beyond the last 2-hour swing or the EMA. Same partial, trailing stop and target as reversals. Exits when momentum fades or reversal signs form, or after ${PT.cfg.momHoldH} h.</span></div>
-      <div class="dim" style="font-size:11px;letter-spacing:.08em;margin:10px 0 2px">REVERSAL RULES</div>
-      <div class="chk"><span class="i up">1</span><span><b>Waits for a reversal signal from GainerLoser's day tracker</b>: a tracked top-5 coin at "Reversal forming" or "Reversed" with at least ${PT.cfg.minScore}/8 signs. Gainers are <b>shorted</b> (fading the top)${PT.cfg.revLong ? '; losers are <b>bought</b> (catching the bottom)' : '. Losers are <b>not</b> bought (reversal longs are off)'}.</span></div>
-      <div class="chk"><span class="i up">2</span><span><b>Stop</b> ${PT.cfg.stopBuf}% beyond the swing it's reversing from (the 6-hour high or low, else the 3-hour). Skips the trade if that stop is more than ${PT.cfg.maxStopPct}% away; minimum 2%.</span></div>
-      <div class="chk"><span class="i up">3</span><span><b>Size</b> so a stop-out loses ${PT.cfg.riskPct}% of equity, capped at ${PT.cfg.maxLev}× total leverage and ${PT.cfg.maxPos} positions at once. Coins need ${fmtUsd(PT.cfg.minVol)}+ daily volume.</span></div>
-      <div class="chk"><span class="i up">4</span><span><b>Takes half at +${PT.cfg.tp1R}R</b> and moves the stop to entry, then trails it with the 15m EMA20. <b>Closes all at +${PT.cfg.tpR}R.</b></span></div>
-      <div class="chk"><span class="i up">5</span><span><b>Gets out early</b> if the reversal signs fade (the coin goes back to "still rising/falling" after 30 min), or after ${PT.cfg.holdH} hours.</span></div>
-      <div class="chk"><span class="i up">6</span><span>${PT.cfg.dailyLossPct > 0 ? `<b>Stops for the day</b> after losing ${PT.cfg.dailyLossPct}% of the day's starting equity.` : '<b>No daily loss stop</b> (Fred, Nov 16): keeps trading on a losing day.'} Waits 2 hours before re-trading the same coin.</span></div>
-      <div class="chk"><span class="i" style="color:${PT.cfg.unlGuard ? WARN : DIM}">7</span><span><b>Watches token unlocks</b>${PT.cfg.unlGuard ? '' : ' (off)'}: no longs within ${PT.cfg.unlDays} days before an unlock of ≥${PT.cfg.unlMinPct}% of circulating supply, and longs are closed 12 h before one. Shorts on gainers with an unlock coming within 7 days get priority. No fresh shorts in the 24 h after a big unlock, when bounces are common. The calendar is on the GainerLoser desk.</span></div>
-      <div class="chk"><span class="i" style="color:#c5f05a">8</span><span><b>Learns from the Reviewer.</b> Every ${RV.every} closed trades the Reviewer grades the results and can tighten or relax these rules. The Trader reads each review, accepts or adjusts it, and only then trades again. Your numbers on the right are the baseline; the Reviewer never raises risk above them.</span></div>
-      <p class="note" style="margin-top:10px">Market orders only: every fill pays the ${PT.cfg.feePct}% taker fee plus ${PT.cfg.slipPct}% slippage each way, and funding is paid or received at each settlement. Prices come live from Aster. With sync on, the cloud trades every ~5 min even when your computers are off, or this computer trades every 5 s if you take over.</p></div>
-      <div class="card2"><h3>SETTINGS</h3><div class="set" style="grid-template-columns:1fr 1fr">
-      ${f('riskPct', 'Risk per trade (% of equity)', 0.25, 0.25, 5)}${f('maxPos', 'Max open positions', 1, 1, 10)}
-      ${f('maxLev', 'Max total leverage (×)', 0.5, 0.5, 10)}${f('minScore', 'Min reversal signs (of 8)', 1, 3, 8)}
-      ${f('dailyLossPct', 'Daily loss limit (%, 0 = none)', 0.5, 0, 20)}${f('holdH', 'Max hold (hours)', 1, 1, 72)}
-      ${f('maxStopPct', 'Skip if stop farther than (%)', 1, 3, 40)}${f('minVol', 'Min 24h volume (USD)', 50000, 0, 1e8)}
-      ${f('tp1R', 'Take half at (R)', 0.1, 0.5, 5)}${f('tpR', 'Full target (R)', 0.5, 1, 10)}
-      ${f('stopBuf', 'Stop buffer beyond swing (%)', 0.1, 0, 5)}${f('feePct', 'Taker fee per side (%)', 0.005, 0, 1)}
-      ${f('slipPct', 'Slippage per side (%)', 0.05, 0, 2)}
-      <label>Reversal trades<select data-ptcfg="stratRev"><option value="1" ${PT.cfg.stratRev ? 'selected' : ''}>On</option><option value="0" ${PT.cfg.stratRev ? '' : 'selected'}>Off</option></select></label>
-      <label>Reversal longs (buy losers)<select data-ptcfg="revLong"><option value="0" ${PT.cfg.revLong ? '' : 'selected'}>Off: short gainers only</option><option value="1" ${PT.cfg.revLong ? 'selected' : ''}>On</option></select></label>
-      <label>Use the Reviewer's screens<select data-ptcfg="useScreens"><option value="1" ${PT.cfg.useScreens ? 'selected' : ''}>On: skip coins that fail them</option><option value="0" ${PT.cfg.useScreens ? '' : 'selected'}>Off</option></select></label>
-      <label>Momentum longs (chase gainers)<select data-ptcfg="momLong"><option value="0" ${PT.cfg.momLong ? '' : 'selected'}>Off (Nov 15)</option><option value="1" ${PT.cfg.momLong ? 'selected' : ''}>On</option></select></label>
-      <label>Fade strong gainers (short)<select data-ptcfg="fadeG"><option value="1" ${PT.cfg.fadeG ? 'selected' : ''}>On</option><option value="0" ${PT.cfg.fadeG ? '' : 'selected'}>Off</option></select></label>
-      ${f('fadeMin1h', 'Fade: min rise in the last hour (%)', 0.5, 0, 20)}${f('fadeRiskPct', 'Fade: risk per trade (%)', 0.25, 0.25, 5)}${f('fadeMaxPos', 'Fade: max positions', 1, 0, 5)}${f('fadeHoldH', 'Fade: max hold (hours)', 1, 1, 48)}${f('fadeTpR', 'Fade: target (R)', 0.5, 1, 6)}
-      <label>Momentum trades<select data-ptcfg="stratMom"><option value="1" ${PT.cfg.stratMom ? 'selected' : ''}>On</option><option value="0" ${PT.cfg.stratMom ? '' : 'selected'}>Off</option></select></label>
-      ${f('momMinScore', 'Momentum: min signs (of 8)', 1, 4, 8)}${f('momRiskPct', 'Momentum: risk per trade (%)', 0.25, 0.25, 5)}
-      ${f('momMaxPos', 'Momentum: max positions', 1, 0, 5)}${f('momHoldH', 'Momentum: max hold (hours)', 1, 1, 48)}
-      ${f('momMaxExt', 'Momentum: skip if > % from EMA', 1, 2, 30)}
-      <label>Token unlock guard<select data-ptcfg="unlGuard"><option value="1" ${PT.cfg.unlGuard ? 'selected' : ''}>On</option><option value="0" ${PT.cfg.unlGuard ? '' : 'selected'}>Off</option></select></label>
-      ${f('unlDays', 'No longs within N days before an unlock', 1, 0, 14)}${f('unlMinPct', 'Unlock counts if ≥ % of circulating', 0.5, 0.5, 50)}</div>
-      <div style="margin-top:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn sm ghost" data-pt="reset">${PT._arm ? 'Click again to reset to $1,000' : 'Reset account to $1,000'}</button><span class="dim" style="font-size:12px">Resetting clears positions, history and the equity curve.</span></div></div></div>`;
-  }
-  // account
-  const P = Object.entries(PT.pos);
-  const scan = PT.lastScan && PT.lastScan.cands && PT.lastScan.cands.length ? PT.lastScan.cands.map(x => `<div class="chk" style="padding:3px 0"><span class="i ${x.took ? 'up' : 'dim'}">${x.took ? '✓' : '·'}</span><span><b>${esc(x.b)}</b> <span class="dim">${x.strat === 'mom' ? (x.side === 'G' ? 'momentum → long' : 'momentum → short') : (x.side === 'G' ? 'reversal: gainer → short' : 'reversal: loser → long')} · ${esc(x.state)} ${x.score}/8</span></span><span class="d">${x.took ? 'entered' : esc(x.skip)}</span></div>`).join('') : '<span class="dim" style="font-size:12px">No reversal setups ("Reversal forming" / "Reversed") and no strong-momentum coins right now.</span>';
-  return status + `<div class="kpis" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr))">${k('Equity', fmtMoney(st.eq))}${k('Total P&L', `${fmtMoney(st.pnl, 1)} (${fmtPct(st.pnlPct, 2)})`, cls(st.pnl))}${k('Today', fmtMoney(st.today, 1), cls(st.today))}${k('Open', `${st.open} / ${PT.cfg.maxPos}`)}${k('Closed trades', st.n)}${k('Win rate', st.win == null ? '—' : st.win.toFixed(0) + '%')}${k('Avg result', st.avgR == null ? '—' : (st.avgR >= 0 ? '+' : '') + st.avgR.toFixed(2) + 'R', cls(st.avgR))}${k('Max drawdown', fmtPct(st.dd, 1), st.dd < 0 ? 'dn' : '')}</div>
-  <div class="grid2"><div class="card2"><h3>EQUITY CURVE (DASHED = $${PT.start.toLocaleString()} START)</h3><canvas class="ptchart" style="width:100%;height:220px;display:block;border-radius:10px;background:#060a14;border:1px solid var(--line)"></canvas></div>
-  <div class="card2"><h3>LAST SCAN — REVERSAL CANDIDATES</h3>${scan}</div></div>
-  ${rvLessonsCard()}
-  <div class="card2" style="margin-top:14px"><h3>OPEN POSITIONS</h3>${P.length ? `<table class="t"><thead><tr><th>Coin</th><th>Side</th><th>Entry</th><th>Now</th><th>Stop</th><th>Size</th><th>P&amp;L</th><th>R now</th><th>Held</th><th style="text-align:left">Why</th><th></th></tr></thead><tbody>${P.map(([s, p]) => { const px = ptPx(s), u = px ? ptUpnl(p, px) + p.realized : null; return `<tr data-sym="${s}"><td class="sym">${esc(p.b)}${p.tp1 ? ' <span class="tag up">half banked</span>' : ''}</td><td class="${p.side === 'L' ? 'up' : 'dn'}">${p.side === 'L' ? 'LONG' : 'SHORT'}${p.strat === 'mom' ? '<br><span class="tag" style="color:#7fe3b8">momentum</span>' : ''}</td><td>${fmtPx(p.entry)}</td><td>${fmtPx(px)}</td><td>${fmtPx(p.stop)}${p.be ? ' <span class="dim">(BE+)</span>' : ''}</td><td>${fmtMoney(p.qty * (px || p.entry))}</td><td class="${cls(u)}">${fmtMoney(u, 1)}</td><td class="${cls(px ? ptR(p, px) : 0)}">${px ? (ptR(p, px) >= 0 ? '+' : '') + ptR(p, px).toFixed(2) : '—'}</td><td class="dim">${ago(p.t)}</td><td style="text-align:left;white-space:normal;min-width:220px;font-family:var(--sans);font-size:12px">${esc(p.why)}</td><td><button class="btn sm ghost" data-pt-close="${s}">Close</button></td></tr>`; }).join('')}</tbody></table>` : `<div class="empty" style="padding:16px">Flat. The trader enters only when a tracked top-5 coin reaches a ${ptRules('S', '').minScore}/8 reversal signal.</div>`}</div>
-  <p class="note" style="margin-top:10px">This is a simulation to test the rules before any real money: past paper results don't guarantee live results, where fills on thin small caps can be worse.</p>`;
-}
-document.getElementById('panel').addEventListener('click', e => {
-  const b = e.target.closest('[data-pt]'), c = e.target.closest('[data-pt-close]');
-  if (c) { e.stopPropagation(); if (syBlock()) return; ptClose(c.dataset.ptClose, 1, 'closed by you'); renderPanel(); return; }
-  if (!b) return; e.stopPropagation();
-  if (syBlock()) return;
-  if (b.dataset.pt === 'toggle') { PT.on = !PT.on; ptSave(); sayFor('trader', PT.on ? 'Trading back on — watching for reversal signals.' : 'Trading off. Open positions are still managed.'); }
-  if (b.dataset.pt === 'reset') { if (PT._arm) { PT._arm = false; ptReset(); sayFor('trader', 'Fresh $1,000 paper account.'); } else { PT._arm = true; setTimeout(() => { PT._arm = false; }, 6000); } }
-  renderPanel();
-}, true);
-document.getElementById('panel').addEventListener('change', e => {
-  const i = e.target.closest('[data-ptcfg]'); if (!i) return;
-  if (syBlock()) { i.value = PT.cfg[i.dataset.ptcfg]; return; }
-  const v = +i.value; if (fin(v)) { PT.cfg[i.dataset.ptcfg] = v; ptSave(); }
-});
-
 /* ================= POSITION WALL (east wall) ================= */
 function wrapText(c, text, x, y, maxW, lh, maxLines) {
   const words = String(text).split(' '); let line = '', n = 0;
@@ -207,6 +104,6 @@ function drawWall() {
     wrapText(c, (p.tp1 ? 'Half banked · ' : '') + p.why, ix, top + 214 + 5 * Math.round(34 * sc) + 8, infoW - 40, Math.round(25 * sc), 3);
     drawPosChart(c, s, p, x0 + infoW, top + 6, colW - infoW - 20, bh - 12);
   });
-  if (P.length > 3) { c.font = `700 26px ${FS}`; c.fillStyle = WARN; c.textAlign = 'right'; c.fillText(`+${P.length - 3} more open — see the Trader's panel`, W - 30, H - 24); c.textAlign = 'left'; }
+  if (P.length > 3) { c.font = `700 26px ${FS}`; c.fillStyle = WARN; c.textAlign = 'right'; c.fillText(`+${P.length - 3} more open`, W - 30, H - 24); c.textAlign = 'left'; }
   T.tex.needsUpdate = true;
 }

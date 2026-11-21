@@ -67,7 +67,7 @@ async function syPush() {
 }
 function syRole(r, say) {
   const was = SYS.role; SYS.role = r;
-  if (say && was !== r) { sayFor('trader', say); raise('trader', 'SYNC', 'role' + now(), say, 0, 0); }
+  if (say && was !== r) { sayFor('smc', say); raise('trader', 'SYNC', 'role' + now(), say, 0, 0); }
   syChip(); if (PS.open) renderPanel();
 }
 // connect / reconnect: decide whether this computer trades or watches
@@ -98,7 +98,7 @@ async function syTick() {
     if (SYS.role === 'leader' && t - SYS.lastPush >= SY_PUSH) { await syPush(); SYS.err = ''; }
     else if (SYS.role === 'viewer' && t - SYS.lastPull >= SY_POLL) {
       SYS.lastPull = t; const head = await syHead();
-      if (head && head !== SYS.head) { const b = await syRead(head); SYS.head = head; syApply(b); if (PS.open === 'trader' || PS.open === 'rev' || PS.open === 'smc') renderPanel(); }
+      if (head && head !== SYS.head) { const b = await syRead(head); SYS.head = head; syApply(b); if (PS.open === 'rev' || PS.open === 'smc') renderPanel(); }
       if (syStale(SYS.lock)) { SYS.busy = false; await syConnect(); return; } // trader went quiet → take over
       SYS.err = '';
     }
@@ -106,7 +106,7 @@ async function syTick() {
   SYS.busy = false; syChip(); try { notesTick(); } catch (_) {}
 }
 // a viewer shouldn't change the account locally (the next reload would wipe it) — say so instead
-function syBlock() { if (!syViewer()) return false; sayFor('trader', `This computer is only viewing. Take over trading here first (trading runs on ${SYS.lock ? SYS.lock.name : 'another computer'}).`); return true; }
+function syBlock() { if (!syViewer()) return false; sayFor('smc', `This computer is only viewing. Take over trading here first (trading runs on ${SYS.lock ? SYS.lock.name : 'another computer'}).`); return true; }
 function syChip() {
   const el = document.getElementById('sSync'); if (!el) return;
   const R = SYS.role, c = !SY.on ? DIM : R === 'leader' ? UP : R === 'viewer' ? '#4dd2ff' : R === 'error' ? DN : WARN;
@@ -173,7 +173,7 @@ document.getElementById('panel').addEventListener('click', e => {
   if (a === 'take') syConnect('take');
   if (a === 'cloud') { SYS.handBack = true; SYS.lastPush = 0; syTick(); }
   if (a === 'now') { SYS.lastPush = 0; SYS.lastPull = 0; syTick(); }
-  if (a === 'off') { SY.on = false; sySave(); SYS.role = 'off'; syChip(); sayFor('trader', 'Sync off. This computer now keeps its own copy.'); }
+  if (a === 'off') { SY.on = false; sySave(); SYS.role = 'off'; syChip(); sayFor('smc', 'Sync off. This computer now keeps its own copy.'); }
   if (a === 'upload') { if (SYS._arm) { SYS._arm = false; syConnect('upload'); } else { SYS._arm = true; setTimeout(() => { SYS._arm = false; }, 6000); } }
   renderPanel();
 }, true);

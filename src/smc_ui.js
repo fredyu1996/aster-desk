@@ -1,6 +1,5 @@
 /* ================= SMC TRADER: screens + panel + comparison ================= */
 TABS.smc = [['acct', 'Account'], ['set', 'Setups now'], ['log', 'Trade log'], ['coach', 'Reviewer\'s coaching'], ['cmp', 'Compare with Trader'], ['rules', 'Rules & settings']];
-TABS.trader.push(['cmp', 'Compare with SMC']);
 const SMCOL = '#ff8ad8', SBCOL = '#6ee7ff', SECOL = '#b69cff';
 let SMV = 'sm';   // SMC panel view: 'sm' small caps | 'sb' big caps | 'se' BTC/ETH (not persisted; sb / se modes are read-only)
 const smvAcct = () => SMV === 'sb' ? SB : SMV === 'se' ? SE : SM;

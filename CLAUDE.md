@@ -75,9 +75,9 @@ git pull --rebase && git add -A && git commit -m "…" && git push   # Pages + t
 | `trader.js` | **Trader** paper account `PT` (reversal + momentum strategies), `ptTick`, `ptManage` |
 | `smc.js` | **SMC Trader** paper account `SM` (and `SB`, SMC Big: `SB_OV` overrides, `smWith(SB, fn)` swaps the global `SM` around `fn`; `SE`, SMC BTC/ETH: `SE_COINS`, same `SB_OV`, `smWith(SE, fn)`, `smKey()` = 'sm' / 'sb' / 'se'): `smcRead/smcReadTf/smSetup/smContSetup/smQuality/smTick/smManage`, HTF zones, POI, path, draw, PD high/low, `SM.cfg.regimeGate` (1 live; 0 only for the year backtest's ablation) |
 | `scene.js` | three.js room, desks, wall screens (`SWALL` south wall = SMC positions, `RACE` north wall = return race) |
-| `ui.js` | panels (`TABS`, `openPanel`, `renderPanel`), keys (1–7 agents, C coin check, V review wall, B SMC wall, T toggles ✓/✗ tags at the wall, E review it yourself) |
+| `ui.js` | panels (`TABS`, `openPanel`, `renderPanel`), keys (1 / 5 / 6 / 7 agents, C coin check, V review wall, B SMC wall, T toggles ✓/✗ tags at the wall, E review it yourself) |
 | `check.js` | coin check (key C) |
-| `trader_ui.js` | Trader panels, position wall |
+| `trader_ui.js` | Trader position wall (east wall) only; its panel and desk were removed Nov 20 |
 | `review.js` | **Reviewer** `RV`: grading, `rvRun/rvAnalyze/rvSticky`, Fred's reviews (`youRead/youReadM/youTally/planPoints`), SMC study/learning/coaching (`smStudy/smLearn/smCoach/smAudit`), 24 h follow-ups, screening criteria and memos. Everything above the marker `/* ================= REVIEWER: screens + panel` also goes into `bot/core.js` |
 | `smc_ui.js` | SMC panels, SMC wall, return race |
 | `bt_ui.js` | **Backtester** panel (key 7): read-only view of `smc-backtest-year.json` (base vs raw, ablation, patterns, months) |
@@ -85,10 +85,11 @@ git pull --rebase && git add -A && git commit -m "…" && git push   # Pages + t
 | `sync.js` | GitHub sync (`state` and `notes` branches), roles/lock, chart-picture storage (IndexedDB + `img/` on notes) |
 
 ## The agents (desk keys)
-1. **GainerLoser**: movers boards, pattern tags, day tracker, unlock calendar, settings.
-2. **OpenInterest**: OI spikes and regime.
-3. **Flow**: taker flow, funding, whales, liquidations.
-4. **Trader** ($1,000 paper):
+Since Nov 20 (option A) keys 2, 3 and 4 are gone: OpenInterest, Flow and the Trader have no desk or panel. Their data feeds (OI snapshots, klines with taker volume, funding) still run for the SMC context, the tracker and the Reviewer, and their OI / flow / funding alerts still reach the alert feed (`FEED_AGENTS` in `engine.js` labels them). The whale (aggTrade) and liquidation (forceOrder) streams were removed.
+1. **GainerLoser**: day tracker, unlock calendar, watchlist, settings (the Top gainers / Top losers board tabs were removed Nov 20; `S.gainers` / `S.losers` still drive the tracker, SMC Big's coin list and the desk monitors).
+2. ~~**OpenInterest**~~ (panel removed Nov 20): OI spikes and regime.
+3. ~~**Flow**~~ (panel removed Nov 20): taker flow, funding.
+4. **Trader** ($1,000 paper; panel removed Nov 20, stopped since `stop1119`, the engine still manages its open positions and hosts the SMC ticks in `ptTick`; its open positions show on the east wall):
    - Reversal: shorts gainers at "Reversal forming / Reversed" with ≥5/8 signs. Reversal longs are **off** (Fred, Nov 8).
    - Momentum: both sides at ≥6/8. **Since Nov 15 momentum longs are off** (`momLong 0`): momentum shorts on losers only.
    - **Fade** (Nov 15, `fadeG 1`, `strat: 'fade'`, `ptFadeCand`): a gainer with a strong momentum read (≥ `momMinScore`) that rose ≥ `fadeMin1h` 2.5% in the last hour is SHORTED. Fixed rules as tested: stop = the momentum long's distance mirrored above (2–15%), target +2R, no half off, 6 h, 0.75% risk, max 2. The Reviewer does not learn from fade trades (fixed rules).
@@ -242,6 +243,7 @@ Since the fade went live, the Trader's reversal shorts did −0.06R n48 (−2.9R
   - None of 78 splits holds (≥ 0.15R, same sign both halves, n ≥ 8; ~2.0 expected by chance). SMC entries are already with the trend on almost every indicator (HTF + structure-shift rules), so the "against" cells are tiny.
   - Leads only: (1) 15m price on the wrong side of EMA20 (pullback entry) better in all 4 sets, but as a filter it cuts total R (small 4.3 vs 6.9, BTC/ETH 10.8 vs 24.2); (2) 1h price on the trade's side of SMA200: small 9.0 vs 6.9R, big 7.9 vs 5.2R, BTC/ETH 22.6 vs 24.2R (half 1 worse), live SM opposite. Fred: no indicator filter; re-run after ~20 more SMC Trader trades.
   - Fred, Nov 19: the "no SMC Trader longs on day gainers" test switch is on hold (not now).
+- **Nov 20 (Fred, option A):** Trader, OpenInterest, Flow panels and the Gainer/Loser board tabs removed (UI only); data feeds kept for SMC cx / tracker / Reviewer; whale + liquidation feeds removed; Trader engine kept (stopped, still manages open positions, hosts the SMC ticks) — full Trader code removal (option B) waits until its positions close and Fred asks.
 - **Nov 14 (year backtester):** option A: BTC / ETH only, SMC Big settings, 365 days, one account. Patterns are searched on the **raw** run (Reviewer rules off), so they are not just the rules' own leftovers (Fred). Report only. Spec/plan: `docs/superpowers/`.
 
 ## Open items

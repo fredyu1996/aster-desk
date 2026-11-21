@@ -148,7 +148,7 @@ const LEDS = [];
 }
 
 /* ---- desks & agents ---- */
-const DESK_POS = {ivy: [-6.4, -4.2], scout: [0, -2.2], flo: [6.4, -4.2], trader: [9.6, 4.4], rev: [4.4, 6.9], smc: [6.6, 2.0], bt: [-11.2, -5.2]};
+const DESK_POS = {scout: [0, -2.2], rev: [4.4, 6.9], smc: [6.6, 2.0], bt: [-11.2, -5.2]};
 const desks = [];
 function makeMonitor(w, h, parent, x, y, z, ry) {
   const T = canvasTex(800, Math.round(800 * h / w));
@@ -210,7 +210,7 @@ function makeAgent(color) {
 for (const a of AGENTS) {
   const [x, z] = DESK_POS[a.id];
   const grp = new THREE.Group(); grp.position.set(x, 0, z);
-  const [tx, tz] = a.id === 'trader' || a.id === 'rev' || a.id === 'smc' ? [RX, WALL_Z] : [0, -12]; grp.rotation.y = Math.atan2(-(tx - x), -(tz - z)); scene.add(grp);
+  const [tx, tz] = a.id === 'rev' || a.id === 'smc' ? [RX, WALL_Z] : [0, -12]; grp.rotation.y = Math.atan2(-(tx - x), -(tz - z)); scene.add(grp);
   const big = a.id === 'scout', W = big ? 3.4 : 2.5;
   const top = mat(0x121a2e, {metalness: .55, roughness: .35});
   box(W, 0.06, 0.95, top, 0, 0.75, 0, grp);

@@ -10,28 +10,8 @@ function screenFrame(T, color, title, sub) {
   c.fillStyle = 'rgba(255,255,255,.025)'; for (let y = 48; y < H; y += 4) c.fillRect(0, y, W, 1);
   return c;
 }
-// cols: [{h, x, a:'l'|'r', f:m=>[text,color]}]
-function drawTable(T, cols, rows, y0 = 64, rh = 34, fsz = 19) {
-  const c = T.ctx;
-  c.font = `600 14px ${FM}`; c.fillStyle = DIM; c.textBaseline = 'middle';
-  for (const k of cols) { c.textAlign = k.a === 'r' ? 'right' : 'left'; c.fillText(k.h, k.x, y0 + 8); }
-  let y = y0 + 8 + rh;
-  for (let i = 0; i < rows.length; i++) {
-    if (y > T.H - 10) break;
-    if (i % 2) { c.fillStyle = 'rgba(255,255,255,.03)'; c.fillRect(0, y - rh / 2, T.W, rh); }
-    for (const k of cols) {
-      const [t, col, bold] = k.f(rows[i]); c.fillStyle = col || TXT; c.textAlign = k.a === 'r' ? 'right' : 'left';
-      c.font = `${bold ? 800 : 600} ${fsz}px ${bold ? FS : FM}`; c.fillText(t, k.x, y);
-    }
-    y += rh;
-  }
-  if (!rows.length) { c.textAlign = 'center'; c.fillStyle = DIM; c.font = `500 20px ${FS}`; c.fillText('collecting data…', T.W / 2, T.H / 2 + 20); }
-  c.textAlign = 'left';
-}
-const col_sym = x => ({h: 'COIN', x: 16, f: m => [m.b, TXT, 1]});
 function drawScreens(d) {
   const a = d.a, [A, B, C] = d.mons;
-  if (a.id === 'trader') return drawTraderScreens(d);
   if (a.id === 'rev') return drawReviewerScreens(d);
   if (a.id === 'bt') { try { return drawBtScreens(d); } catch (_) { return; } }
   if (a.id === 'smc') { try { return drawSmcScreens(d); } catch (_) { return; } } // may be called before the SMC code has loaded
@@ -52,22 +32,6 @@ function drawScreens(d) {
         c.textAlign = 'left'; if (e && fin(e.px0)) c.fillText(`since ${hhmm(e.t0)}: ${fmtPct((m.last / e.px0 - 1) * 100)}`, 16, y + 25);
         const u = unlCtx(s); if (u.phase && u.big) { c.font = `700 15px ${FS}`; c.fillStyle = u.phase === 'ahead' ? WARN : DIM; c.fillText(`UNLOCK ${unlWhen(u).toUpperCase()}`, 350, y + 25); }
       });
-    }
-  } else if (a.id === 'ivy') {
-    const w = 'oi' + CFG.oiWindow;
-    const have = S.universe.map(mget).filter(m => fin(m[w]));
-    const up = [...have].sort((x, y) => y[w] - x[w]).filter(m => m[w] > 0), dn = [...have].sort((x, y) => x[w] - y[w]).filter(m => m[w] < 0);
-    const hist = oiHistoryMins();
-    for (const [T, list, ttl] of [[A, up, `OI SPIKES · Δ${CFG.oiWindow}M`], [B, dn, `OI DROPS · Δ${CFG.oiWindow}M`]]) {
-      screenFrame(T, a.color, ttl, hist < CFG.oiWindow ? `warming ${Math.floor(hist)}/${CFG.oiWindow}m` : null);
-      drawTable(T, [col_sym(), {h: 'OI $', x: 300, a: 'r', f: m => [fmtUsd(m.oiUsd), TXT]}, {h: 'Δ' + CFG.oiWindow + 'M', x: 450, a: 'r', f: m => [fmtPct(m[w]), tone(m[w])]}, {h: 'PRICE', x: 590, a: 'r', f: m => [fmtPct(m['oipx' + CFG.oiWindow]), tone(m['oipx' + CFG.oiWindow])]}, {h: 'Δ1H', x: 784, a: 'r', f: m => [fmtPct(m.oi60), tone(m.oi60)]}], list.slice(0, 11));
-    }
-  } else if (a.id === 'flo') {
-    const have = S.universe.map(mget).filter(m => fin(m.net1h));
-    const inn = [...have].sort((x, y) => y.net1h - x.net1h).filter(m => m.net1h > 0), out = [...have].sort((x, y) => x.net1h - y.net1h).filter(m => m.net1h < 0);
-    for (const [T, list, ttl] of [[A, inn, 'MONEY IN · NET TAKER FLOW 1H'], [B, out, 'MONEY OUT · NET TAKER FLOW 1H']]) {
-      screenFrame(T, a.color, ttl);
-      drawTable(T, [col_sym(), {h: 'NET 1H', x: 320, a: 'r', f: m => [fmtUsd(m.net1h, 1), tone(m.net1h)]}, {h: 'B/S 1H', x: 450, a: 'r', f: m => [fmtRatio(m.ratio1h), tone((m.ratio1h || 1) - 1)]}, {h: 'FUNDING', x: 640, a: 'r', f: m => [fmtFund(m.fund), fin(m.fund) && Math.abs(m.fund) >= 0.0005 ? WARN : TXT]}, {h: '24H', x: 784, a: 'r', f: m => [fmtPct(m.pct24), tone(m.pct24)]}], list.slice(0, 11));
     }
   }
   d.mons.forEach(T => T.tex.needsUpdate = true);
@@ -205,9 +169,7 @@ function topbar() {
 /* ================= PANELS ================= */
 const PS = {open: null, tab: {}, sort: {}};
 const TABS = {
-  scout: [['t', 'Day tracker'], ['g', 'Top gainers'], ['l', 'Top losers'], ['u', 'Unlock calendar'], ['w', 'Watchlist'], ['set', 'Settings']],
-  ivy: [['up', 'OI spikes'], ['dn', 'OI drops'], ['all', 'All coins']],
-  flo: [['in', 'Money in'], ['out', 'Money out'], ['lp', 'Buy pressure'], ['sp', 'Sell pressure'], ['fd', 'Funding extremes'], ['wh', 'Whale trades'], ['lq', 'Liquidations']],
+  scout: [['t', 'Day tracker'], ['u', 'Unlock calendar'], ['w', 'Watchlist'], ['set', 'Settings']],
 };
 const star = s => `<span class="star ${CFG.watch.includes(s) ? 'on' : ''}" data-star="${s}">★</span>`;
 const td = (v, c = '') => `<td class="${c}">${v}</td>`;
@@ -219,22 +181,9 @@ const C = {
   p1: {h: '1h', v: m => m.pct1h, f: m => td(fmtPct(m.pct1h), cls(m.pct1h))},
   p4: {h: '4h', v: m => m.pct4h, f: m => td(fmtPct(m.pct4h), cls(m.pct4h))},
   vol: {h: 'Vol 24h', v: m => m.qv, f: m => td(fmtUsd(m.qv))},
-  oiu: {h: 'OI $', v: m => m.oiUsd, f: m => td(fmtUsd(m.oiUsd))},
-  oi5: {h: 'OI Δ5m', v: m => m.oi5, f: m => td(fmtPct(m.oi5), cls(m.oi5))},
-  oi15: {h: 'OI Δ15m', v: m => m.oi15, f: m => td(fmtPct(m.oi15), cls(m.oi15))},
   oi60: {h: 'OI Δ1h', v: m => m.oi60, f: m => td(fmtPct(m.oi60), cls(m.oi60))},
-  oi240: {h: 'OI Δ4h', v: m => m.oi240, f: m => td(fmtPct(m.oi240), cls(m.oi240))},
-  reg: {h: 'Read', f: m => { const r = regime(m); return td(r ? `<span class="tag" style="color:${r.tone}">${r.label}</span>` : '<span class="dim">…</span>'); }},
-  n15: {h: 'Net 15m', v: m => m.net15, f: m => td(fmtUsd(m.net15, 1), cls(m.net15))},
   n1: {h: 'Net 1h', v: m => m.net1h, f: m => td(fmtUsd(m.net1h, 1), cls(m.net1h))},
-  n4: {h: 'Net 4h', v: m => m.net4h, f: m => td(fmtUsd(m.net4h, 1), cls(m.net4h))},
-  n24: {h: 'Net 24h', v: m => m.net24, f: m => td(fmtUsd(m.net24, 1), cls(m.net24))},
-  v1: {h: 'Vol 1h', v: m => m.vol1h, f: m => td(fmtUsd(m.vol1h))},
-  r1: {h: 'Taker B/S 1h', v: m => m.ratio1h, f: m => td(fmtRatio(m.ratio1h), cls((m.ratio1h || 1) - 1))},
-  r4: {h: 'B/S 4h', v: m => m.ratio4h, f: m => td(fmtRatio(m.ratio4h), cls((m.ratio4h || 1) - 1))},
   fund: {h: 'Funding', v: m => m.fund, f: m => td(fmtFund(m.fund), fin(m.fund) && Math.abs(m.fund) >= 0.0005 ? 'warn' : '')},
-  nxt: {h: 'Next funding', v: m => m.next, f: m => td(fin(m.next) && m.next > now() ? ago(2 * now() - m.next).replace(/^/, 'in ') : '—', 'dim')},
-  crowd: {h: 'Positioning', f: m => td(crowdTag(m))},
   tag: {h: 'Pattern', f: m => { const t = S.tagC.get(m.s); return td(t ? `<span class="tag" style="color:${t.c}" title="${esc(t.d)}">${t.l}</span>` : '<span class="dim">—</span>'); }},
   trend: {h: 'Trend now', v: m => { const r = S.trC.get(m.s); return r ? r.state.code * 10 + r.score : null; }, f: m => { const r = S.trC.get(m.s); return td(r && r.key !== 'wait' ? `<span class="tag" style="color:${r.state.c}">${r.state.l}</span> <span class="dim">${r.score}/8</span>` : '<span class="dim">—</span>'); }},
   mom: {h: 'Momentum', v: m => { const r = S.moC.get(m.s); return r ? r.state.code * 10 + r.score : null; }, f: m => { const r = S.moC.get(m.s); return td(r && r.key !== 'wait' ? `<span class="tag" style="color:${r.state.c}">${r.state.l}</span> <span class="dim">${r.score}/8</span>` : '<span class="dim">—</span>'); }},
@@ -262,44 +211,15 @@ function renderPanel() {
   if (typeof RVP !== 'undefined' && (RVP.drag || (typeof RVV !== 'undefined' && RVV.pan))) return;                       // don't rebuild the chart in the middle of a drag
   const ae = document.activeElement; if (ae && $('#pbody').contains(ae) && /INPUT|SELECT|TEXTAREA/.test(ae.tagName)) return; // don't wipe a field being edited
   const tab = PS.tab[id], body = $('#pbody'), sc = body.scrollTop;
-  const um = () => S.universe.map(mget);
   let h = '';
   if (id === 'scout') {
     if (tab === 't') h += trackerHTML(); else if (tab === 'u') h += unlocksHTML(); else if (tab === 'set') h += settingsHTML(); else {
-    h += `<p class="note">${filterNote()} Pattern, reversal and momentum are read for the top 10 on each side.</p>`;
-    const list = tab === 'g' ? S.gainers : tab === 'l' ? S.losers : CFG.watch.filter(s => S.meta.has(s));
+    h += `<p class="note">${filterNote()}</p>`;
+    const list = CFG.watch.filter(s => S.meta.has(s));
     h += table('scout' + tab, ['star', 'coin', 'price', 'p24', 'p1', 'p4', 'tag', 'trend', 'mom', 'fit', 'unl', 'vol', 'oi60', 'n1', 'fund'], list.map(mget)); }
     if (tab === 'w' && !CFG.watch.length) h += '<div class="empty">Star coins (★) anywhere to add them here.</div>';
-  } else if (id === 'ivy') {
-    const hm = oiHistoryMins();
-    h += `<p class="note">Aster has no open-interest history API, so <b>the OpenInterest agent records a snapshot of every coin's OI every 30s–2min</b> while this page is open and keeps 26h of it in this browser. History so far: <b>${hm < 60 ? Math.floor(hm) + ' min' : (hm / 60).toFixed(1) + ' h'}</b>${hm < 60 ? ' — Δ1h and Δ4h columns fill in as it grows' : ''}. Alerts fire when OI moves ≥ <b>${CFG.oiAlertPct}%</b> in <b>${CFG.oiWindow} min</b>. "Read" pairs the OI change with the price change.</p>`;
-    const w = 'oi' + CFG.oiWindow, rows = um().filter(m => fin(m.oi));
-    if (tab === 'up') h += table('ivyup', ['star', 'coin', 'price', 'oiu', 'oi5', 'oi15', 'oi60', 'oi240', 'p1', 'reg'], rows.filter(m => m[w] > 0), {k: w, d: 1});
-    else if (tab === 'dn') h += table('ivydn', ['star', 'coin', 'price', 'oiu', 'oi5', 'oi15', 'oi60', 'oi240', 'p1', 'reg'], rows.filter(m => m[w] < 0), {k: w, d: -1});
-    else h += table('ivyall', ['star', 'coin', 'price', 'p24', 'oiu', 'oi5', 'oi15', 'oi60', 'oi240', 'reg'], rows, {k: 'oiu', d: 1});
-  } else if (id === 'flo') {
-    if (tab === 'in' || tab === 'out') {
-      h += `<p class="note"><b>Net flow</b> = market-buy volume − market-sell volume (taker side), from 15-minute candles. Positive = buyers lifting offers (money flowing in); negative = sellers hitting bids. Alerts fire when one 15m candle shows ≥ <b>${fmtUsd(CFG.flowAlertUsd)}</b> net and ≥30% of its volume.</p>`;
-      const rows = um().filter(m => fin(m.net1h));
-      h += tab === 'in' ? table('floin', ['star', 'coin', 'price', 'p24', 'n15', 'n1', 'n4', 'n24', 'r1', 'v1'], rows.filter(m => m.net1h > 0), {k: 'n1', d: 1})
-                        : table('floout', ['star', 'coin', 'price', 'p24', 'n15', 'n1', 'n4', 'n24', 'r1', 'v1'], rows.filter(m => m.net1h < 0), {k: 'n1', d: -1});
-    } else if (tab === 'wh') {
-      h += `<p class="note">Single market orders ≥ <b>${fmtUsd(CFG.whaleUsd)}</b> on the ~40 coins in focus (top movers, watchlist, focus coin), streamed live. Change the threshold in GainerLoser → Settings.</p>`;
-      h += S.whales.length ? `<table class="t"><thead><tr><th>Time</th><th>Coin</th><th>Side</th><th>Size</th><th>Price</th><th>24h</th></tr></thead><tbody>${S.whales.slice(0, 120).map(w => { const m = mget(w.s); return `<tr data-sym="${w.s}"><td class="dim">${new Date(w.t).toTimeString().slice(0, 8)}</td><td class="sym">${esc(base(w.s))}</td><td class="${w.side === 'BUY' ? 'up' : 'dn'}">${w.side}</td><td>${fmtUsd(w.usd)}</td><td>${fmtPx(w.px)}</td><td class="${cls(m.pct24)}">${fmtPct(m.pct24)}</td></tr>`; }).join('')}</tbody></table>` : '<div class="empty">No whale prints yet in this session.</div>';
-    } else if (tab === 'lq') {
-      h += `<p class="note">Forced liquidations across all Aster markets, streamed live. Long liquidations = forced selling; short liquidations = forced buying.</p>`;
-      h += S.liqs.length ? `<table class="t"><thead><tr><th>Time</th><th>Coin</th><th>Liquidated</th><th>Size</th><th>Price</th></tr></thead><tbody>${S.liqs.slice(0, 120).map(l => `<tr data-sym="${l.s}"><td class="dim">${new Date(l.t).toTimeString().slice(0, 8)}</td><td class="sym">${esc(base(l.s))}</td><td class="${l.side === 'LONG' ? 'dn' : 'up'}">${l.side === 'LONG' ? 'Longs' : 'Shorts'}</td><td>${fmtUsd(l.usd)}</td><td>${fmtPx(l.px)}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No liquidations seen yet in this session.</div>';
-    } else {
-      h += `<p class="note">Aster doesn't publish an account long/short ratio. Flow reads positioning from two things it does publish: <b>taker buy/sell ratio</b> (who is hitting the market — above 1× means market buyers dominate) and <b>funding</b> (positive = longs pay shorts, so longs are the crowded side). Funding beyond ±0.05% per interval is highlighted.</p>`;
-      const rows = um().filter(m => fin(m.ratio1h) && m.vol1h > 5e3);
-      if (tab === 'lp') h += table('sagelp', ['star', 'coin', 'price', 'p24', 'p1', 'r1', 'r4', 'fund', 'nxt', 'crowd'], rows.filter(m => m.ratio1h > 1), {k: 'r1', d: 1});
-      else if (tab === 'sp') h += table('sagesp', ['star', 'coin', 'price', 'p24', 'p1', 'r1', 'r4', 'fund', 'nxt', 'crowd'], rows.filter(m => m.ratio1h < 1), {k: 'r1', d: -1});
-      else { const fr = S.eligible.map(mget).filter(m => fin(m.fund) && Math.abs(m.fund) >= 0.0003); h += table('sagefd', ['star', 'coin', 'price', 'p24', 'fund', 'nxt', 'r1', 'crowd'], fr, {k: 'fund', d: 1}); }
-    }
   } else if (id === 'check') {
     h += checkHTML();
-  } else if (id === 'trader') {
-    h += tab === 'cmp' ? compareHTML() : traderHTML(tab);
   } else if (id === 'smc') {
     h += smcHTML(tab);
   } else if (id === 'rev') {
@@ -309,8 +229,8 @@ function renderPanel() {
   } else if (id === 'sync') {
     h += syncHTML();
   }
-  if ((id === 'ivy' || id === 'flo' || (id === 'scout' && ['g', 'l', 'w'].includes(tab))) && typeof critAgentCard === 'function') { try { h = critAgentCard(id) + h; } catch (e) { console.warn('criteria card', e.message); } }
-  if ((id === 'trader' || id === 'rev' || id === 'smc') && syViewer()) h = syBanner() + h;
+  if (id === 'scout' && tab === 'w' && typeof critAgentCard === 'function') { try { h = critAgentCard(id) + h; } catch (e) { console.warn('criteria card', e.message); } }
+  if ((id === 'rev' || id === 'smc') && syViewer()) h = syBanner() + h;
   body.innerHTML = h; body.scrollTop = sc;
   if (id === 'smc') { const sm = $('#pTtl small'); if (sm) sm.textContent = SMV === 'sb' ? 'Smart Money Paper Desk — the same SMC strategy on the top-10 volume perps; its own $1,000 paper account' : SMV === 'se' ? 'Smart Money Paper Desk — SMC Big settings on BTC and ETH only (the year backtest coins); its own $1,000 paper account' : AG.smc.role + ' — ' + AG.smc.blurb; }
   if (id === 'scout' && tab === 'set') bindSettings();
@@ -318,7 +238,6 @@ function renderPanel() {
   body.querySelectorAll('canvas[data-smc]').forEach(cv => smWith(id === 'smc' ? smvAcct() : SM, () => drawSmcChart(cv)));
   body.querySelectorAll('canvas[data-rvchart]').forEach(cv => { try { drawRvCanvas(cv); } catch (e) { console.warn('rvchart', e.message); } });
   body.querySelectorAll('canvas.cmpchart').forEach(cv => { const r = cv.getBoundingClientRect(), dpr = Math.min(devicePixelRatio || 1, 2); cv.width = r.width * dpr; cv.height = r.height * dpr; const c = cv.getContext('2d'); c.scale(dpr, dpr); drawCmp(c, 0, 0, r.width, r.height, 11); });
-  body.querySelectorAll('canvas.ptchart').forEach(cv => { const r = cv.getBoundingClientRect(), dpr = Math.min(devicePixelRatio || 1, 2); cv.width = r.width * dpr; cv.height = r.height * dpr; const c = cv.getContext('2d'); c.scale(dpr, dpr); drawEq(c, 0, 0, r.width, r.height, 11); });
   const cv = body.querySelector('canvas.chart');
   if (cv && S.focus) { const r = cv.getBoundingClientRect(), dpr = Math.min(devicePixelRatio || 1, 2); cv.width = r.width * dpr; cv.height = r.height * dpr; const c = cv.getContext('2d'); c.scale(dpr, dpr); c.fillStyle = '#060a14'; c.fillRect(0, 0, r.width, r.height); drawChart(c, 0, 0, r.width, r.height, S.focus, 13); }
 }
@@ -329,7 +248,7 @@ function settingsHTML() {
   <label>Track movers that moved at least (%)<input type="number" id="cTm" step="1" min="0" value="${CFG.trkMinMove}"></label>
   <label>OI alert: move ≥ %<input type="number" id="cOiP" step="1" min="1" value="${CFG.oiAlertPct}"></label>
   <label>OI alert window<select id="cOiW">${[5, 15, 60].map(w => `<option value="${w}" ${CFG.oiWindow === w ? 'selected' : ''}>${w} min</option>`).join('')}</select></label>
-  <label>Whale print ≥ (USD)<input type="number" id="cWh" step="10000" min="5000" value="${CFG.whaleUsd}"></label>
+  <label>Coin check: large trade ≥ (USD)<input type="number" id="cWh" step="10000" min="5000" value="${CFG.whaleUsd}"></label>
   <label>Flow alert: net 15m ≥ (USD)<input type="number" id="cFl" step="25000" min="10000" value="${CFG.flowAlertUsd}"></label>
   <label class="cb"><input type="checkbox" id="cSm" ${CFG.smallCapOnly ? 'checked' : ''}>Small caps only (hide Top 17)</label>
   <label class="cb"><input type="checkbox" id="cSt" ${CFG.includeStocks ? 'checked' : ''}>Include stock perps</label>
@@ -497,7 +416,7 @@ $('#enter').onclick = () => {
   started = true; $('#start').style.display = 'none';
   if (CFG.sound && !audioCtx) try { audioCtx = new AudioContext(); } catch (_) {}
   lockPointer();
-  setTimeout(() => sayFor('scout', 'Welcome to the floor. Walk up to any desk and press E, or hit 1 to 6.'), 600);
+  setTimeout(() => sayFor('scout', 'Welcome to the floor. Walk up to any desk and press E, or hit 1, 5, 6 or 7.'), 600);
 };
 // start screen: show whether this computer is on the shared account, with a button to connect it
 function startSyncHTML() {

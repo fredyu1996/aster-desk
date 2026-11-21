@@ -52,8 +52,6 @@ await page.route('https://fapi.asterdex.com/**',async r=>{calls++;const u=new UR
 await page.routeWebSocket(/fstream\.asterdex\.com/,ws=>{
  let n=0;const iv=setInterval(()=>{n++;try{
   ws.send(JSON.stringify({stream:'!markPrice@arr@1s',data:syms.map(o=>({s:o.s,p:String(px(o)),r:String((rnd(o.i,4)-0.5)*0.003),T:now+3600e3}))}));
-  if(n%3===0)ws.send(JSON.stringify({stream:'idolusdt@aggTrade',data:{e:'aggTrade',s:'IDOLUSDT',p:'0.03',q:String(4e6+n*1e5),m:n%2===0,T:Date.now()}}));
-  if(n%4===0)ws.send(JSON.stringify({stream:'!forceOrder@arr',data:{e:'forceOrder',o:{s:'AKEUSDT',S:'SELL',q:'900000',p:'0.05',ap:'0.05',z:'900000',T:Date.now()}}}));
  }catch(e){clearInterval(iv)}},1000);
  ws.onMessage(()=>{});
 });
@@ -64,6 +62,9 @@ await page.click('#enter', {timeout: 120000, noWaitAfter: true}); await page.wai
 const ids = await page.evaluate(() => Object.keys(TABS));
 for (const id of ids) { await page.evaluate(i => { openPanel(i); }, id); await page.waitForTimeout(700); for (const [t] of await page.evaluate(i => TABS[i], id)) { await page.evaluate(([i, t]) => { PS.tab[i] = t; setTabs(); renderPanel(); }, [id, t]); await page.waitForTimeout(250); } await page.evaluate(() => closePanel()); }
 console.log('panels checked:', ids.join(', '));
+// Nov 20 (option A): the Trader, OpenInterest and Flow panels/desks and the gainer/loser board tabs are gone
+const gone = await page.evaluate(() => ({ids: [...Object.keys(TABS), ...desks.map(d => d.a.id)].filter(k => ['trader', 'ivy', 'flo'].includes(k)), scout: TABS.scout.map(t => t[0]).join()}));
+if (gone.ids.length || gone.scout !== 't,u,w,set') errs.push('PAGEERR removed panels still present: ' + JSON.stringify(gone));
 // SMC Big view: read-only (awx_sm byte-identical across the switch and every visible tab), race wall draws the third line
 await page.evaluate(() => { openPanel('smc'); PS.tab.smc = 'acct'; setTabs(); renderPanel(); }); await page.waitForTimeout(500);
 const bigRes = await page.evaluate(async () => {

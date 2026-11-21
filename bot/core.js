@@ -5,15 +5,18 @@ const API = 'https://fapi.asterdex.com';
 const WSS = 'wss://fstream.asterdex.com/stream';
 const MAX_UNI = 180;               // symbols polled for OI + flow
 const AGENTS = [
-  {id:'scout', key:'1', name:'GainerLoser', role:'Movers, Patterns & Unlocks', color:'#4dd2ff', blurb:'Top gainers & losers, pattern tags, all-day trend tracking, token unlock calendar'},
-  {id:'ivy',   key:'2', name:'OpenInterest', role:'Open Interest Watch',     color:'#b48cff', blurb:'Sudden OI spikes and drops, and what they mean with price'},
-  {id:'flo',   key:'3', name:'Flow',     role:'Money Flow & Positioning',    color:'#2ee59d', blurb:'Net taker flow, buy/sell pressure, funding crowding, whales, liquidations'},
-  {id:'trader', key:'4', name:'Trader',  role:'Paper Trading Desk',          color:'#ffd166', blurb:'Trades reversal and momentum signals on a $1,000 paper account'},
+  {id:'scout', key:'1', name:'GainerLoser', role:'Movers, Patterns & Unlocks', color:'#4dd2ff', blurb:'All-day tracking of the top movers, pattern tags, token unlock calendar, watchlist'},
   {id:'smc',   key:'6', name:'SMC Trader', role:'Smart Money Paper Desk',  color:'#ff8ad8', blurb:'Trades liquidity sweeps, structure shifts and FVG / order-block pullbacks on the top-5 movers; its own $1,000 paper account'},
   {id:'bt',    key:'7', name:'Backtester', role:'SMC Year Backtest · BTC / ETH', color:'#9ad0ff', blurb:'Re-runs the SMC strategy over the past year on BTC and ETH every night: rule ablation and patterns. Report only, never changes live rules'},
   {id:'rev',   key:'5', name:'Reviewer', role:'Trade Review & Rules',        color:'#c5f05a', blurb:'Grades every trade and tunes the Trader\'s rules'},
 ];
-const AG = Object.fromEntries(AGENTS.map(a => [a.id, a]));
+// no desk or panel since Nov 20 (Fred, option A); kept only to label their alerts and the coin check's cards
+const FEED_AGENTS = [
+  {id:'ivy',   name:'OpenInterest', role:'Open Interest Watch',      color:'#b48cff'},
+  {id:'flo',   name:'Flow',         role:'Money Flow & Positioning', color:'#2ee59d'},
+  {id:'trader', name:'Trader',      role:'Paper Trading Desk',       color:'#ffd166'},
+];
+const AG = Object.fromEntries([...AGENTS, ...FEED_AGENTS].map(a => [a.id, a]));
 const DEF = {minVol:100000, smallCapOnly:true, includeStocks:false, whaleUsd:10000, oiAlertPct:8, oiWindow:15, flowAlertUsd:40000, sound:false, watch:['ASTERUSDT'], unl:[], trkMinVol:300000, trkMinMove:8};
 const UP = '#2ee59d', DN = '#ff5c7a', DIM = '#7c89a8', WARN = '#ffc94d', TXT = '#dbe4fb';
 
@@ -53,7 +56,7 @@ function saveCfg() { LS.set('awx_cfg', CFG); }
 /* ================= STATE ================= */
 const S = {
   meta: new Map(), tk: new Map(), fund: new Map(), oi: new Map(), kl: new Map(), M: new Map(),
-  whales: [], liqs: [], alerts: [], eligible: [], gainers: [], losers: [], universe: [], prio: new Set(),
+  alerts: [], eligible: [], gainers: [], losers: [], universe: [], prio: new Set(),
   focus: null, focusPinned: false, wsOk: false, wsLast: 0, wsMark: 0, restOk: null, apiErr: null, reqs: 0,
   started: now(), bootLog: [], top5: new Set(), lastReq: 0,
   h1: new Map(), fint: new Map(), trk: {}, tagC: new Map(), trC: new Map(), ticker: '',
@@ -189,7 +192,6 @@ function recomputeUniverse() {
   for (const s of [...el].sort((a, b) => S.tk.get(b).qv - S.tk.get(a).qv)) { if (uni.size >= MAX_UNI) break; uni.add(s); }
   S.universe = [...uni];
   if (!S.focus && S.gainers.length) S.focus = CFG.watch.find(x => S.meta.has(x) && S.gainers.includes(x)) || S.gainers[0];
-  syncAggSubs();
 }
 
 /* ================= SCHEDULER (rate-limited, ~4 req/s max) ================= */
@@ -235,11 +237,11 @@ async function run(j) {
 function dispatch() { if (inflight < 3) { const j = pickJob(); if (j) run(j); } }
 
 /* ================= WEBSOCKET ================= */
-let ws = null, wsSubs = new Set(), wsId = 1, wsBack = 1000;
+let ws = null, wsBack = 1000;
 function connectWS() {
-  try { ws = new WebSocket(WSS + '?streams=!ticker@arr/!markPrice@arr@1s/!forceOrder@arr'); }
+  try { ws = new WebSocket(WSS + '?streams=!ticker@arr/!markPrice@arr@1s'); }
   catch (e) { setTimeout(connectWS, 5000); return; }
-  ws.onopen = () => { S.wsOk = true; wsBack = 1000; wsSubs.clear(); syncAggSubs(); boot('✓ live stream connected (tickers, funding, liquidations)'); };
+  ws.onopen = () => { S.wsOk = true; wsBack = 1000; boot('✓ live stream connected (tickers, funding)'); };
   ws.onmessage = e => {
     let j; try { j = JSON.parse(e.data); } catch (_) { return; }
     if (!j.stream) return; const d = j.data; S.wsLast = now();
@@ -248,32 +250,9 @@ function connectWS() {
       S.wsMark = now();
       for (const p of d) { if (!S.meta.has(p.s)) continue; const f = S.fund.get(p.s) || {}; f.mark = +p.p; f.r = +p.r; f.next = +p.T; S.fund.set(p.s, f); }
     }
-    else if (j.stream === '!forceOrder@arr') { for (const x of (Array.isArray(d) ? d : [d])) if (x && x.o) onLiq(x.o); }
-    else if (j.stream.endsWith('@aggTrade')) onAgg(d);
   };
-  ws.onclose = () => { S.wsOk = false; wsSubs.clear(); setTimeout(connectWS, wsBack); wsBack = Math.min(wsBack * 2, 30000); };
+  ws.onclose = () => { S.wsOk = false; setTimeout(connectWS, wsBack); wsBack = Math.min(wsBack * 2, 30000); };
   ws.onerror = () => { try { ws.close(); } catch (_) {} };
-}
-function syncAggSubs() {
-  if (!ws || ws.readyState !== 1) return;
-  const want = new Set([...new Set([...(S.focus ? [S.focus] : []), ...S.prio])].slice(0, 40).map(s => s.toLowerCase() + '@aggTrade'));
-  const add = [...want].filter(x => !wsSubs.has(x)), rem = [...wsSubs].filter(x => !want.has(x));
-  try {
-    if (rem.length) { ws.send(JSON.stringify({method: 'UNSUBSCRIBE', params: rem, id: wsId++})); rem.forEach(x => wsSubs.delete(x)); }
-    if (add.length) { ws.send(JSON.stringify({method: 'SUBSCRIBE', params: add, id: wsId++})); add.forEach(x => wsSubs.add(x)); }
-  } catch (_) {}
-}
-function onAgg(d) {
-  const usd = +d.p * +d.q; if (!(usd >= CFG.whaleUsd)) return;
-  const side = d.m ? 'SELL' : 'BUY';           // m = buyer is maker → aggressive seller
-  S.whales.unshift({t: +d.T || now(), s: d.s, side, usd, px: +d.p}); if (S.whales.length > 200) S.whales.pop();
-  if (usd >= CFG.whaleUsd * 2) raise('flo', d.s, 'whale' + side, `${base(d.s)} whale market ${side === 'BUY' ? 'buy' : 'sell'} ${fmtUsd(usd)} @ ${fmtPx(+d.p)}`, side === 'BUY' ? 1 : -1, 180e3);
-}
-function onLiq(o) {
-  const px = +o.ap || +o.p, q = +o.z || +o.q, usd = px * q; if (!fin(usd) || !S.meta.has(o.s)) return;
-  const longLiq = o.S === 'SELL';                 // a forced SELL closes a long
-  S.liqs.unshift({t: +o.T || now(), s: o.s, side: longLiq ? 'LONG' : 'SHORT', usd, px}); if (S.liqs.length > 200) S.liqs.pop();
-  if (usd >= 5000) raise('flo', o.s, 'liq', `${base(o.s)} ${longLiq ? 'longs' : 'shorts'} liquidated: ${fmtUsd(usd)} @ ${fmtPx(px)}`, longLiq ? -1 : 1, 120e3);
 }
 
 /* ================= METRICS ================= */
@@ -359,7 +338,7 @@ function computeAll() {
 function setFocus(s, pinned) {
   if (!S.meta.has(s)) return false;
   S.focus = s; if (pinned) S.focusPinned = true;
-  S.prio.add(s); nextRun.set('oi:' + s, 0); nextRun.set('kl:' + s, 0); syncAggSubs();
+  S.prio.add(s); nextRun.set('oi:' + s, 0); nextRun.set('kl:' + s, 0);
   return true;
 }
 

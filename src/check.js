@@ -85,12 +85,10 @@ function agentReports(s) {
       const mins = Math.max(1, Math.round((tr.to - tr.from) / 60e3));
       take += tr.big.length ? `${tr.big.length} trade${tr.big.length > 1 ? 's' : ''} ≥ ${fmtUsd(CFG.whaleUsd)} in the last ${tr.n} trades (~${mins} min); biggest ${fmtUsd(tr.maxUsd)}.` : `No trade ≥ ${fmtUsd(CFG.whaleUsd)} in the last ${tr.n} trades (~${mins} min); biggest was ${fmtUsd(tr.maxUsd)}.`;
     }
-    const liqs = S.liqs.filter(l => l.s === s), wh = S.whales.filter(w => w.s === s);
-    if (liqs.length) take += ` ${liqs.length} liquidation${liqs.length > 1 ? 's' : ''} seen this session (${fmtUsd(liqs.reduce((a, l) => a + l.usd, 0))}).`;
     const recentBS = tr && !tr.err && tr.sell > 0 ? tr.buy / tr.sell : null;
     if (fin(m.fund)) take += m.fund >= 0.0005 ? ` Funding ${fmtFund(m.fund)}: longs are paying heavily, so the long side is crowded.` : m.fund <= -0.0005 ? ` Funding ${fmtFund(m.fund)}: shorts are paying, a crowded short and fuel for a squeeze.` : ` Funding ${fmtFund(m.fund)}: no crowding.`;
     if (fin(m.ratio1h)) take += m.ratio1h >= 1.3 ? ` Market buyers ${m.ratio1h.toFixed(2)}× sellers over 1h.` : m.ratio1h <= 0.77 ? ` Market sellers ${(1 / m.ratio1h).toFixed(2)}× buyers over 1h.` : '';
-    R.flo = {tag: crowdTag(m), rows: [['Net 15m', fmtUsd(m.net15, 1), cls(m.net15)], ['Net 1h', fin(m.net1h) ? fmtUsd(m.net1h, 1) : pend, cls(m.net1h)], ['Net 4h', fmtUsd(m.net4h, 1), cls(m.net4h)], ['Net 24h', fmtUsd(m.net24, 1), cls(m.net24)], ['Last 1000 trades B/S', recentBS != null ? fmtRatio(recentBS) : tr && tr.err ? 'error' : pend, cls((recentBS || 1) - 1)], ['Whale prints (live)', String(wh.length)], ['Taker B/S 1h / 4h', `${fmtRatio(m.ratio1h)} / ${fmtRatio(m.ratio4h)}`, cls((m.ratio1h || 1) - 1)], ['Funding', fmtFund(m.fund), fin(m.fund) && Math.abs(m.fund) >= 0.0005 ? 'warn' : ''], ['Next funding', fin(m.next) && m.next > now() ? 'in ' + ago(2 * now() - m.next) : '—']],
+    R.flo = {tag: crowdTag(m), rows: [['Net 15m', fmtUsd(m.net15, 1), cls(m.net15)], ['Net 1h', fin(m.net1h) ? fmtUsd(m.net1h, 1) : pend, cls(m.net1h)], ['Net 4h', fmtUsd(m.net4h, 1), cls(m.net4h)], ['Net 24h', fmtUsd(m.net24, 1), cls(m.net24)], ['Last 1000 trades B/S', recentBS != null ? fmtRatio(recentBS) : tr && tr.err ? 'error' : pend, cls((recentBS || 1) - 1)], ['Taker B/S 1h / 4h', `${fmtRatio(m.ratio1h)} / ${fmtRatio(m.ratio4h)}`, cls((m.ratio1h || 1) - 1)], ['Funding', fmtFund(m.fund), fin(m.fund) && Math.abs(m.fund) >= 0.0005 ? 'warn' : ''], ['Next funding', fin(m.next) && m.next > now() ? 'in ' + ago(2 * now() - m.next) : '—']],
       take, tone: tone(m.net1h), big: tr && !tr.err ? tr.big.slice(0, 6) : []};
   }
   // ---- Reversal read (the Trader's own score) + would the Trader take it?
@@ -124,9 +122,8 @@ function agentReports(s) {
 function shortTake(id, r) { return r.take.split(/(?<=\.)\s/)[0].slice(0, 140); }
 function speakAll(s) {
   if (CHK.sym !== s) return;
-  const {R} = agentReports(s); let d = 0;
-  for (const id of ['scout', 'ivy', 'flo']) { const txt = `${base(s)}: ${shortTake(id, R[id])}`; setTimeout(() => sayFor(id, txt), d); d += 700; }
-  setTimeout(() => sayFor('trader', `${base(s)}: ${(R.mom.mo.state.code === 2 ? R.mom.take : R.read.take).slice(0, 140)}`), d);
+  const {R} = agentReports(s);
+  sayFor('scout', `${base(s)}: ${shortTake('scout', R.scout)}`); // the other agents have no desk since Nov 20
   CHK.spoke = s;
 }
 function checkStatic() {
@@ -148,7 +145,7 @@ function checkHTML() {
   const s = CHK.sym;
   if (!s) return '<div class="empty">Type any Aster coin above (e.g. <b>IDOL</b>, <b>ASTER</b>, <b>BTC</b>) and press Enter. Every agent checks it: the reversal read the Trader uses, token unlocks, movers rank, open interest, money flow and positioning.</div>';
   const {m, R} = agentReports(s);
-  const card = (id, inner) => { const a = AG[id]; return `<div class="card2" style="border-top:3px solid ${a.color}"><h3 style="color:${a.color};display:flex;justify-content:space-between"><span>${a.name.toUpperCase()} · ${a.role.toUpperCase()}</span><span class="kbd">${a.key}</span></h3>${inner}</div>`; };
+  const card = (id, inner) => { const a = AG[id]; return `<div class="card2" style="border-top:3px solid ${a.color}"><h3 style="color:${a.color};display:flex;justify-content:space-between"><span>${a.name.toUpperCase()} · ${a.role.toUpperCase()}</span>${a.key ? `<span class="kbd">${a.key}</span>` : ''}</h3>${inner}</div>`; };
   const rows = r => `<table class="t" style="font-size:12.5px;margin-bottom:8px"><tbody>${r.rows.map(([k, v, c]) => `<tr><td class="dim" style="font-family:var(--sans)">${k}</td><td class="${c || ''}">${v}</td></tr>`).join('')}</tbody></table>`;
   const takeBox = r => `<div class="verdict" style="border-left:3px solid ${r.tone};margin-top:0">${esc(r.take)}</div>`;
   const ck = arr => arr.map(r => `<div class="chk"><span class="i" style="color:${r.ok === true ? UP : r.ok === false ? DN : DIM}">${r.ok === true ? '✓' : r.ok === false ? '✗' : '·'}</span><span>${r.label}</span><span class="d">${esc(r.d)}</span></div>`).join('');
