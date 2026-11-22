@@ -4,6 +4,16 @@ TABS.bt = [['sum', 'Summary & rules'], ['pat', 'Patterns'], ['tr', 'Trades'], ['
 /* Strategy notes (Nov 15, Fred: "the Backtester writes down the strategies and the key points, then backtests them").
    Results of the one-off studies run from Claude Code (tools/*.mjs). Aggregates only, never trade data. Newest first. */
 const BT_NOTES = [
+  {d: '2026-11-21', t: 'GMS PMR v1.4: 1h pattern → 15m causal OB/FVG → 5m entry (BTC/ETH)', st: 'testing',
+   idea: 'Fred\'s playbook: trade only after a CONFIRMED 1h pattern breakout (flag, triangle, double top/bottom, head & shoulders), from a fresh 15m OB/FVG caused by the breakout impulse, entering on the first 5m retest with an MSS, a displacement candle and a new 5m FVG; net R:R ≥ 2 after costs.',
+   pts: ['365 days BTCUSDT + ETHUSDT to 2026-11-21, fills and exits on 1m bars, fees + spread + slippage + funding. 520 patterns confirmed; most die on the way: no fresh causal 15m POI 227, no retest within 2 h 131, no 5m MSS in 45 min 70, invalidated 70, R:R < 2 17.',
+         'As written: 2 trades in a year, both stopped (−2.7R). Far too few to say anything.',
+         'Loosened for a sensitivity check only (retest 4 h, MSS 90 min, POI ≤ 1 ATR from the boundary, measured-move target): 11 trades, 0 wins, −14.0R. With net R:R ≥ 1.5 as well: 14 trades, 2 wins, −12.8R. Most stopped before +1R.',
+         'For comparison, the live SMC BTC/ETH rules in the year backtest: +22.2R n88.',
+         'Other coins (Nov 21, same rules): SMC Big\'s top 10 by volume, 365 d: 2,487 patterns → 15 trades, 2 wins, −11.3R (both halves negative). 29 liquid small caps (desk universe, ≥ $300K, not "Top"), 180 d, small-cap costs (slippage 0.10%): 4,101 patterns → 8 trades, 1 win, −5.2R. Coin lists are today\'s, so the older months carry some survivorship bias.',
+         'Loosened (same 4 changes as above): big caps 51 trades −28.9R (both halves negative); small caps 61 trades +3.9R (+0.06R each; halves −0.5R / +4.3R, max DD 14.8R). Flat at best, and the loosening was picked after seeing the data.',
+         'Every order was re-run on data cut at its decision time and came out identical (no look-ahead); 30 golden tests pass (tests/pmr-golden.mjs).',
+         'Research module only (bot/pmr.mjs, tools/pmr-backtest.mjs): not on any account. Fred decides.']},
   {d: '2026-11-15', t: 'Fade strong gainers only after a big last hour (timing study)', st: 'adopted',
    idea: 'Fred\'s idea: the Trader\'s losing momentum longs came late (coin tracked for many hours, a big move in the last hour), so use those two as the trigger to trade the other way.',
    pts: ['Move in the last hour is the one that holds. Short a "strong momentum ↑" gainer when it rose ≥ 2.5% in the last hour: backtest 30 d small caps +0.20R n103 (halves +0.20 / +0.20; ≥ 5%: +0.27R n54), live reversed +0.49R n33. Under 2.5%: backtest −0.04R n60, live +0.04R n32.',
