@@ -10,7 +10,7 @@
 // Every setup is also audited in SMC terms (sweep, liquidity, break, FVG / OB quality, premium/discount, higher timeframe,
 // entry depth) into a quality score; weak setups are skipped.
 const SM_DEF = {v: 1, start: 1000, cash: 1000, pos: {}, log: [], eqs: [], day: null, cool: {}, on: true, paused: null, created: 0, lastScan: null,
-  cfg: {riskPct: 1, maxPos: 3, maxLev: 10, minScore: 4, dailyLossPct: 3, feePct: 0.04, slipPct: 0.10, holdH: 12, minVol: 300000, maxStopPct: 15, minRR: 2, maxRR: 5, tp1R: 1.5, stopBuf: 0.3, unlGuard: 1, useScreens: 0, tf15: 1, tf1h: 1, holdH1h: 36, minQ: 55, learn: 1, poiRule: 1, ltfConfirm: 1, roomCheck: 1, cont: 1, pathCheck: 1, pdLiq: 1, invExit: 1, minStopPct: 1.5, minDepth: 15, zoneLearn: 0, regimeGate: 1, obPick: 0, gmsA: 0, gmsB: 0, gmsC: 0, gmsD: 0, fib: 0}};
+  cfg: {riskPct: 1, maxPos: 3, maxLev: 10, minScore: 4, dailyLossPct: 3, feePct: 0.04, slipPct: 0.10, holdH: 12, minVol: 300000, maxStopPct: 15, minRR: 2, maxRR: 5, tp1R: 1.5, stopBuf: 0.3, unlGuard: 1, useScreens: 0, tf15: 1, tf1h: 1, holdH1h: 36, minQ: 55, learn: 1, poiRule: 1, ltfConfirm: 1, roomCheck: 1, cont: 1, pathCheck: 1, pdLiq: 1, invExit: 1, minStopPct: 1.5, minDepth: 15, zoneLearn: 0, regimeGate: 1, obPick: 0, gmsA: 0, gmsB: 0, gmsC: 0, gmsD: 0, fib: 0, closedOnly: 0, retestExp: 0, ltf5m: 0}};
 // Nov 8: the SMC Trader trades on its own SMC judgement, without the Reviewer's screens (one-time switch-off for saved accounts)
 function smMigrate(p) { if (p.cfg.ownJudge !== 1) { p.cfg.useScreens = 0; p.cfg.ownJudge = 1; } if (p.cfg.lev10 !== 1) { p.cfg.maxLev = 10; p.cfg.lev10 = 1; } // Nov 11 (Fred): 10× leverage cap
   if (p.cfg.resume1113 !== 1) { if (p.cfg.pause1113 === 1) p.on = true; p.cfg.resume1113 = 1; } // Nov 13 (Fred): self-review done, resume SMC trading (zone tuning stays locked)
@@ -34,7 +34,7 @@ function smSave() { LS.set('awx_' + smKey(), SM); }
 function smReset() { const cfg = SM.cfg, k = smKey(); SM = JSON.parse(JSON.stringify(SM_DEF)); SM.cfg = cfg; SM.created = now(); if (k === 'sb') SB = SM; if (k === 'se') SE = SM; smSave(); }   // big: reset inside smWith(SB / SE) must save to awx_sb / awx_se
 S.smC = new Map();
 // SMC Big (Nov 13, Fred): the same strategy and Reviewer rules on the top-10 volume perps, its own $1,000 account. Only the percent numbers tuned for small caps change.
-const SB_OV = {minStopPct: 0.5, slipPct: 0.02, stopBufMul: 0.25, tightPct: 0.4, useScreens: 0, invExit: 0, obPick: 0, gmsC: 1, gmsB: 0, gmsD: 0, fib: 0};   // fib 0 (Nov 19): SMC Big off; big caps 21 d fib1 +7.5R n35 vs +5.2R n44 but half 1 worse, BTC/ETH 365 d +14.7R n58 vs +24.2R n89   // gmsC 1 (Fred, Nov 15 "試住C先"): GMS supply/demand zones for SMC Big only; BTC/ETH 365 d +28.0R n91 vs +13.8R n66 (half 2 +5.4 vs +6.5), big caps 21 d +6.6R n37 both; small caps keep 0 (−14.6R n71 vs −9.0R n55)   // obPick 0 (Nov 15): big caps keep the FVG pick; good-OB pick tested worse there (14d −6.6R n23 vs +7.3R n25; BTC/ETH year +7.7R n38 vs +13.8R n66)   // invExit 0 (Fred, Nov 14): big caps hold through a failed entry gap; 7d backtest +0.75R n15 vs +0.48R n16 (5 trades differ, 3 better)   // useScreens 0: screenGate writes Reviewer counters, and the Reviewer never learns from SB
+const SB_OV = {minStopPct: 0.5, slipPct: 0.02, stopBufMul: 0.25, tightPct: 0.4, useScreens: 0, invExit: 0, obPick: 0, gmsC: 1, gmsB: 0, gmsD: 0, fib: 0, closedOnly: 0, retestExp: 0, ltf5m: 0};   // GMS PMR v1.4 test switches (Nov 22), report only: 0 on every account   // fib 0 (Nov 19): SMC Big off; big caps 21 d fib1 +7.5R n35 vs +5.2R n44 but half 1 worse, BTC/ETH 365 d +14.7R n58 vs +24.2R n89   // gmsC 1 (Fred, Nov 15 "試住C先"): GMS supply/demand zones for SMC Big only; BTC/ETH 365 d +28.0R n91 vs +13.8R n66 (half 2 +5.4 vs +6.5), big caps 21 d +6.6R n37 both; small caps keep 0 (−14.6R n71 vs −9.0R n55)   // obPick 0 (Nov 15): big caps keep the FVG pick; good-OB pick tested worse there (14d −6.6R n23 vs +7.3R n25; BTC/ETH year +7.7R n38 vs +13.8R n66)   // invExit 0 (Fred, Nov 14): big caps hold through a failed entry gap; 7d backtest +0.75R n15 vs +0.48R n16 (5 trades differ, 3 better)   // useScreens 0: screenGate writes Reviewer counters, and the Reviewer never learns from SB
 const SB_DEF = Object.assign(JSON.parse(JSON.stringify(SM_DEF)), {on: true, cfg: {}});
 let SB = Object.assign(JSON.parse(JSON.stringify(SB_DEF)), LS.get('awx_sb', null) || {});
 if (!SB.created) SB.created = now();
@@ -195,7 +195,7 @@ const SMZ_DEF = {fvg: 100, pos: 1, fresh: 0, pd: 0, ovl: 0, big: 0, minZs: 0, wO
 const smR6 = v => fin(v) ? +v.toFixed(6) : null;
 function smZones(B, st, dir) {
   const n = B.length, bull = dir === 'L', j = st.j, k = st.k, Z = [];
-  for (let i = Math.min(k + 1, n - 2); i >= j + 1; i--)
+  for (let i = Math.min(k + 1, smNc(B) - 2); i >= j + 1; i--)   // closedOnly: the gap's 3rd candle must have closed
     if (bull ? B[i - 1][2] < B[i + 1][3] : B[i - 1][3] > B[i + 1][2]) Z.push(bull ? {kind: 'FVG', lo: B[i - 1][2], hi: B[i + 1][3], i} : {kind: 'FVG', lo: B[i + 1][2], hi: B[i - 1][3], i});
   let o = st.type === 'cont' ? j : -1;   // continuation: the base candle; reversal: the last opposite candle before the shift
   if (o < 0) for (let i = k - 1; i >= j; i--) { const down = B[i][4] < B[i][1]; if (bull ? down : !down) { o = i; break; } }
@@ -304,6 +304,18 @@ function smZoneSet(r, Z) {
   r.zone.fibHit = smFibHit(r.fib, r.zone);
   if ((SM.cfg.fib === 1 && !r.zone.fibHit) || (SM.cfg.fib === 2 && !smFibOte(r.fib, r.zone))) { r.zone = null; delete r.zc; delete r.nGaps; }   // fib 1 / 2 gate: no zone
 }
+/* GMS PMR v1.4 test switches (Nov 22, Fred; concepts only; TEST SWITCHES, 0 on every account, report only: tools/smc-gms14-test.mjs).
+   closedOnly: the entry FVG's 3rd candle, the shift / break close and the 1h setups' 15m confirmation must be CLOSED bars (the desk's
+   last bar is usually still forming; the backtester has none right at a 15m boundary, so closedness is read from the clock).
+   retestExp: a zone expires when price has not come back to it within 120 min of the shift / break bar's close.
+   ltf5m: see smL5Find. */
+const smNow = () => (SM_OVR && SM_OVR.t) || now();
+const smNc = B => SM.cfg.closedOnly && B.length > 1 && 2 * B[B.length - 1][0] - B[B.length - 2][0] > smNow() ? B.length - 1 : B.length;   // bars closed by now
+function smExpired(B, r) {
+  if (!SM.cfg.retestExp || !(r.k > 0)) return false;
+  const lim = 2 * B[r.k][0] - B[r.k - 1][0] + 120 * 60e3;   // the shift bar's close + 120 min
+  return r.touch >= 0 ? B[r.touch][0] >= lim : smNow() > lim;
+}
 function smSetup(B, P, dir, live) {
   const n = B.length, bull = dir === 'L';
   for (let j = n - 1; j >= Math.max(n - 32, 3); j--) {
@@ -316,7 +328,7 @@ function smSetup(B, P, dir, live) {
     const opp = (bull ? P.H : P.L).filter(p => p.i < j && p.i + 2 <= j);
     if (!opp.length) continue;
     const lvl = opp[opp.length - 1];
-    let k = -1; for (let m = j + 1; m < (gB ? Math.min(n - 1, j + 13) : n); m++) if (bull ? B[m][4] > lvl.px + bf : B[m][4] < lvl.px - bf) { k = m; break; }   // gmsB: a closed bar, within 12 bars
+    let k = -1; for (let m = j + 1; m < (gB ? Math.min(n - 1, j + 13) : smNc(B)); m++) if (bull ? B[m][4] > lvl.px + bf : B[m][4] < lvl.px - bf) { k = m; break; }   // gmsB: a closed bar, within 12 bars
     if (gB && k < 0 && n - 1 - j > 12) return {dir, j, k, swept, lvl, ext: B[j][bull ? 3 : 2], stage: 'none', zone: null, taps: 0};   // the shift never came in time
     const end = k < 0 ? n - 1 : k;
     let ext = bull ? Infinity : -Infinity; for (let m = j; m <= end; m++) ext = bull ? Math.min(ext, B[m][3]) : Math.max(ext, B[m][2]);
@@ -333,6 +345,7 @@ function smSetup(B, P, dir, live) {
       if (bull ? B[m][4] < r.zone.lo : B[m][4] > r.zone.hi) { r.stage = 'invalid'; return r; }
       if (bull ? B[m][3] <= r.zone.hi : B[m][2] >= r.zone.lo) { if (r.touch < 0) r.touch = m; if (m < n - 1 && (bull ? B[m][3] <= r.zone.hi - dep * zh : B[m][2] >= r.zone.lo + dep * zh)) r.taps++; }
     }
+    if (smExpired(B, r)) { r.stage = 'invalid'; r.expired = 1; return r; }
     const inZone = bull ? live <= r.zone.hi * 1.002 && live >= r.zone.lo : live >= r.zone.lo * 0.998 && live <= r.zone.hi;
     r.stage = inZone && !r.taps ? 'inzone' : r.taps ? 'spent' : 'mss';
     return r;
@@ -350,7 +363,7 @@ function smContSetup(B, P, dir, live) {
     if (!sw.length) continue;
     const lvl = sw[sw.length - 1];
     const bfC = SM.cfg.gmsB ? 0.05 * (smATR(B, k) || 0) : 0;
-    if (SM.cfg.gmsB && k >= n - 1) continue;   // gmsB: the break must be a closed bar
+    if ((SM.cfg.gmsB && k >= n - 1) || k >= smNc(B)) continue;   // gmsB / closedOnly: the break must be a closed bar
     if (!(bull ? B[k][4] > lvl.px + bfC && B[k - 1][4] <= lvl.px : B[k][4] < lvl.px - bfC && B[k - 1][4] >= lvl.px)) continue;
     if (smBiasB(B.slice(0, k)) !== want) continue;                           // the trend was already this way: a continuation, not a change of character
     let i = -1; for (let m = k - 1; m >= Math.max(1, k - 8); m--) if (bull ? B[m][4] < B[m][1] : B[m][4] > B[m][1]) { i = m; break; }
@@ -368,6 +381,7 @@ function smContSetup(B, P, dir, live) {
       if (bull ? B[m][4] < r.zone.lo : B[m][4] > r.zone.hi) { r.stage = 'invalid'; return r; }
       if (bull ? B[m][3] <= r.zone.hi : B[m][2] >= r.zone.lo) { if (r.touch < 0) r.touch = m; if (m < n - 1 && (bull ? B[m][3] <= r.zone.hi - dep * zh : B[m][2] >= r.zone.lo + dep * zh)) r.taps++; }
     }
+    if (smExpired(B, r)) { r.stage = 'invalid'; r.expired = 1; return r; }
     const inZone = bull ? live <= r.zone.hi * 1.002 && live >= r.zone.lo : live >= r.zone.lo * 0.998 && live <= r.zone.hi;
     r.stage = inZone && !r.taps ? 'inzone' : r.taps ? 'spent' : 'mss';
     return r;
@@ -510,7 +524,7 @@ function smConfirm15(s, r) {
   if (bull ? K[ex][3] < z.lo * 0.998 && K.slice(ex).some(b => b[4] < z.lo) : K[ex][2] > z.hi * 1.002 && K.slice(ex).some(b => b[4] > z.hi)) return {ok: false, why: '15m closed through the zone'};
   const P = smPivots(K, 1), piv = (bull ? P.H : P.L).filter(p => p.i < ex && p.i >= i0 - 8);
   const ref = piv.length ? piv[piv.length - 1].px : (bull ? Math.max(...K.slice(Math.max(0, i0 - 3), i0 + 1).map(b => b[2])) : Math.min(...K.slice(Math.max(0, i0 - 3), i0 + 1).map(b => b[3])));
-  const m = K.findIndex((b, j) => j > ex && (bull ? b[4] > ref : b[4] < ref));
+  const nc = smNc(K), m = K.findIndex((b, j) => j > ex && j < nc && (bull ? b[4] > ref : b[4] < ref));   // closedOnly: a closed 15m bar
   return m > 0 ? {ok: true, ref, at: K[m][0], low: bull ? K[ex][3] : K[ex][2]} : {ok: false, ref, why: `waiting for a 15m close ${bull ? 'above' : 'below'} ${fmtPx(ref)}`};
 }
 // the best setup across the two entry timeframes (in the zone first, then the higher-quality one)
@@ -696,6 +710,65 @@ function smTryEnter(c) {
   raise('smc', s, 'open' + now(), `${smTag()} PAPER ${side === 'L' ? 'LONG' : 'SHORT'} ${base(s)} @ ${fmtPx(fill)} · stop ${fmtPx(stop)} (${(dist * 100).toFixed(1)}%) · target ${fmtPx(r.target)} (${rr.toFixed(1)}R) · ${r.tf || '15m'} ${r.zone.kind} entry, ${r.score}/6, quality ${r.q ? r.q.grade : '?'}`, side === 'L' ? 1 : -1, 0, true);
   smSave(); return true;
 }
+/* SM.cfg.ltf5m (GMS PMR v1.4 concepts): a 15m setup that would enter on its first touch of the zone waits for a 5m confirmation instead.
+   Within 45 min (9 bars) of the first 5m touch: a 5m close ≥ 0.05 ATR(5m) beyond the last confirmed 5m swing (pivots 3 / 3), then the first
+   new 5m FVG of that leg (C1 at or after the retest extreme, ≥ 0.1 ATR wide, C2 a displacement: body ≥ 1.2 ATR, ≥ 60% of range) whose C3
+   closed by the shift + 15 min. Limit at that FVG's midpoint, live from C3's close, cancelled after 60 min unfilled or when a 15m candle
+   closes through the zone's far edge. Stop beyond the more conservative of the retest extreme and the zone's far edge by 0.15 ATR(5m),
+   then the min stop %; target = the setup's liquidity target; needs net RR ≥ minRR after fees + slippage both ways (the doc's cost gate,
+   only under this switch). 5m bars come from S.k5, which only tools/smc-gms14-test.mjs fills: live, ltf5m 1 would never trade.
+   K: closed 5m bars; returns null (keep waiting), {fail} or {ent, ext, atr, tAct}. */
+S.k5 = new Map(); S.l5 = new Map(); S.l5u = new Set();   // shortcut: pending 5m checks live in memory only (lost on reload), fine for a test switch
+function smL5Find(K, z, dir, tT, t) {
+  const bull = dir === 'L', M5 = 300e3, i0 = K ? K.findIndex(b => b[0] >= tT && (bull ? b[3] <= z.hi : b[2] >= z.lo)) : -1;
+  if (i0 < 0) return t > tT + 60 * 60e3 ? {fail: 'no 5m touch of the zone'} : null;
+  const P = smPivots(K, 3); let m = -1, ex = i0;
+  for (let i = i0 + 1; i < Math.min(K.length, i0 + 10); i++) {
+    if (bull ? K[i][3] < K[ex][3] : K[i][2] > K[ex][2]) ex = i;
+    const sw = (bull ? P.H : P.L).filter(p => p.i + 3 < i).pop(), a = smATR(K, i) || 0;
+    if (sw && (bull ? K[i][4] > sw.px + 0.05 * a : K[i][4] < sw.px - 0.05 * a)) { m = i; break; }
+  }
+  if (m < 0) return t >= K[i0][0] + M5 + 45 * 60e3 ? {fail: 'no 5m structure shift within 45 min of the touch'} : null;
+  for (let c = ex + 1; c <= Math.min(m + 2, K.length - 2); c++) {
+    const a = smATR(K, c) || 1e-9, lo = bull ? K[c - 1][2] : K[c + 1][2], hi = bull ? K[c + 1][3] : K[c - 1][3];
+    if (hi - lo >= 0.1 * a && smDispG(K[c], a, bull)) {
+      let e = bull ? Infinity : -Infinity; for (let i = i0; i <= c + 1; i++) e = bull ? Math.min(e, K[i][3]) : Math.max(e, K[i][2]);
+      return {ent: (lo + hi) / 2, lo, hi, ext: e, atr: smATR(K, m) || a, tAct: K[c + 1][0] + M5};
+    }
+  }
+  return t >= K[m][0] + M5 + 15 * 60e3 ? {fail: 'no new 5m FVG on the shift'} : null;
+}
+function smL5Start(c) {
+  const B = smBars(c.s, '15m'), r = c.r, z = r.zone, tch = r.setup && r.setup.touch;
+  S.l5u.add(`${smKey()}|${c.s}|${r.dir}|${z.lo}|${z.hi}`);
+  S.l5.set(smKey() + '|' + c.s, {s: c.s, r, dir: r.dir, z, tT: tch >= 0 ? B[tch][0] : B[B.length - 1][0], st: 'wait'});
+}
+function smL5Tick(t) {
+  const M5 = 300e3;
+  for (const [key, P] of [...S.l5]) {
+    if (!key.startsWith(smKey() + '|')) continue;
+    const s = P.s, bull = P.dir === 'L', z = P.z, K = ((S.k5.get(s) || {}).bars || []).filter(b => b[0] + M5 <= t), drop = why => { S.l5.delete(key); P.why = why; };
+    if (SM.pos[s]) { drop('already in a position'); continue; }
+    if ((smBars(s, '15m') || []).some(b => b[0] >= P.tT && b[0] + 900e3 <= t && (bull ? b[4] < z.lo : b[4] > z.hi))) { drop('a 15m candle closed through the zone'); continue; }
+    if (P.st === 'wait') {
+      const f = smL5Find(K, z, P.dir, P.tT, t); if (!f) continue; if (f.fail) { drop(f.fail); continue; }
+      const ms = (SM.cfg.minStopPct || 0) / 100, raw = bull ? Math.min(f.ext, z.lo) - 0.15 * f.atr : Math.max(f.ext, z.hi) + 0.15 * f.atr;
+      const stop = ms > 0 && Math.abs(f.ent - raw) / f.ent < ms ? f.ent * (bull ? 1 - ms : 1 + ms) : raw, tg = P.r.target, cost = f.ent * 2 * (SM.cfg.feePct + SM.cfg.slipPct) / 100;
+      const net = fin(tg) ? ((bull ? tg - f.ent : f.ent - tg) - cost) / (Math.abs(f.ent - stop) + cost) : -1;
+      if (!(net >= SM.cfg.minRR)) { drop(`net RR ${net.toFixed(2)} after costs < ${SM.cfg.minRR}`); continue; }
+      if (Math.abs(f.ent - stop) / f.ent > SM.cfg.maxStopPct / 100) { drop('stop too far'); continue; }
+      Object.assign(P, {st: 'order', ent: f.ent, stop, tAct: f.tAct, tExp: f.tAct + 60 * 60e3, chk: f.tAct, net});
+    }
+    let hit = null;
+    for (const b of K) if (b[0] >= P.chk && b[0] < P.tExp) { P.chk = b[0] + M5; if (bull ? b[3] <= P.ent : b[2] >= P.ent) { hit = b; break; } }
+    if (!hit) { if (t >= P.tExp) drop('5m limit not filled in 60 min'); continue; }
+    S.l5.delete(key);
+    if (Object.keys(SM.pos).length >= SM.cfg.maxPos) { P.why = `max ${SM.cfg.maxPos} positions open`; continue; }
+    if (!smTryEnter({s, r: Object.assign({}, P.r, {stop: P.stop}), tk: {last: P.ent}})) continue;
+    SM.pos[s].l5 = {ent: P.ent, net: +P.net.toFixed(2)};
+    if (bull ? hit[3] <= SM.pos[s].stop : hit[2] >= SM.pos[s].stop) { PX_OVR = {[s]: SM.pos[s].stop}; smClose(s, 1, 'stop loss hit (in the 5m fill bar)'); PX_OVR = null; }   // same bar: stop first
+  }
+}
 // manage positions; with `only` the cloud bot replays one coin's candles (stop / partial / target / time checks only)
 function smManage(t, only) {
   for (const s of only ? [only] : Object.keys(SM.pos)) {
@@ -739,6 +812,7 @@ function smTick() {
   const t = now(), today = new Date(t).toDateString();
   if (!SM.day || SM.day.d !== today) { SM.day = {d: today, eq0: smEquity()}; SM.paused = null; }
   smManage(t);
+  if (SM.cfg.ltf5m) smL5Tick(t);
   const eq = smEquity();
   if (!SM.paused && SM.cfg.dailyLossPct > 0 && eq < SM.day.eq0 * (1 - SM.cfg.dailyLossPct / 100)) {   // 0 = no daily limit (Fred, Nov 16)
  SM.paused = 'daily loss limit'; raise('smc', 'ACCOUNT', 'pause', `${smName()}: daily loss limit hit (${fmtMoney(eq - SM.day.eq0, 1)}). No new trades until tomorrow.`, -1, 0, true); }
@@ -750,6 +824,7 @@ function smTick() {
     const u = unlCtx(s), fk = !!(r.rok && r.rok.play === 'fakeout');   // a fakeout trades against the last break by definition: skip the bias checks
     if (SM.pos[s]) c.skip = 'already in a position';
     else if (SM.cool[s] && t - SM.cool[s] < 2 * 3600e3) c.skip = 'cooling down after a recent trade';
+    else if (SM.cfg.ltf5m && r.tf === '15m' && (S.l5.has(smKey() + '|' + s) || S.l5u.has(`${smKey()}|${s}|${r.dir}|${r.zone.lo}|${r.zone.hi}`))) c.skip = 'ltf5m: this zone already had its 5m check';
     else if (SM.cfg.regimeGate !== 0 && (!r.rok || !r.rok.ok)) c.skip = `${r.htf} regime ${(r.regime && r.regime.reg) || 'unclear'}: ${r.rok ? r.rok.why : 'regime unclear'}`;
     else if (r.against && !fk) c.skip = `${r.htf} structure is ${r.bias === 'bear' ? 'falling' : 'rising'}: no ${r.dir === 'L' ? 'longs' : 'shorts'} on the ${r.tf} against it`;
     else if (smRules().needHTF && !fk && !(SM.cfg.gmsA && r.rok && r.rok.ok) && !(r.bias && (r.dir === 'L' ? r.bias === 'bull' : r.bias === 'bear'))) c.skip = `${r.htf} structure must agree (Reviewer's SMC rule); it's ${r.bias ? (r.bias === 'bull' ? 'rising' : 'falling') : 'unclear'}`;
@@ -781,7 +856,8 @@ function smTick() {
     for (const c of cands) {
       if (c.skip) continue;
       if (Object.keys(SM.pos).length >= SM.cfg.maxPos) { c.skip = `max ${SM.cfg.maxPos} positions open`; continue; }
-      if (smTryEnter(c)) c.took = true;
+      if (SM.cfg.ltf5m && c.r.tf === '15m') { smL5Start(c); c.skip = 'ltf5m: waiting for the 5m confirmation'; }
+      else if (smTryEnter(c)) c.took = true;
     }
   }
   SM.lastScan = {t, cands: cands.map(c => ({b: c.b, side: c.side, score: c.r.score, rr: c.r.rr, zone: c.r.zone.kind, type: (c.r.setup || {}).type || 'rev', tf: c.r.tf, q: c.r.q ? c.r.q.grade : null, htf: c.r.bias || null, reg: c.r.regime ? c.r.regime.reg : null, grd: c.r.grd || null, took: !!c.took, skip: c.skip || (SM.on ? '' : 'trading is off')}))};

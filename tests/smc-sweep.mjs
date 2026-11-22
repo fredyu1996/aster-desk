@@ -59,3 +59,26 @@ assert.strictEqual(X('PT.on'), false); console.log('PASS: Trader stopped (stop11
 // Nov 20 (nounl1120): unlock guard off on every account
 assert.deepStrictEqual(JSON.parse(X(`JSON.stringify({sm: SM.cfg.unlGuard, sb: smWith(SB, () => SM.cfg.unlGuard), se: smWith(SE, () => SM.cfg.unlGuard), pt: PT.cfg.unlGuard})`)), {sm: 0, sb: 0, se: 0, pt: 0});
 console.log('PASS: unlock guard off (nounl1120)');
+// Nov 22 (GMS PMR v1.4 test switches): closedOnly / retestExp / ltf5m are 0 on every account and in SM_DEF / SB_OV
+assert.deepStrictEqual(JSON.parse(X(`JSON.stringify(['closedOnly', 'retestExp', 'ltf5m'].map(k => [SM_DEF.cfg[k], SB_OV[k], SM.cfg[k], smWith(SB, () => SM.cfg[k]), smWith(SE, () => SM.cfg[k])]))`)), [[0, 0, 0, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0]]);
+console.log('PASS: GMS v1.4 switches default 0 (SM, SB, SE)');
+const g14 = JSON.parse(X(`JSON.stringify((() => { const T0 = now(), Q = 900e3, o = {}, cfg = k => (SM.cfg.closedOnly = k & 1, SM.cfg.retestExp = k >> 1 & 1);
+  // closedOnly: 10 15m bars, the last one still forming; the only gap's 3rd candle is that forming bar
+  const B = []; for (let i = 0; i < 8; i++) B.push([T0 - (10 - i) * Q + 600e3, 100, 100.5, 99.5, 100.2, 1]);
+  B.push([T0 - 2 * Q + 600e3, 100.2, 102, 100.1, 101.9, 1], [T0 - Q + 600e3, 101.9, 102.5, 101, 102.3, 1]);
+  SM.cfg.gmsD = 0; const st = {j: 3, k: 7, ext: 99.5, type: 'rev'}, fv = () => smZones(B, st, 'L').filter(z => z.kind === 'FVG').map(z => z.i);
+  cfg(0); o.nc0 = smNc(B); o.fvg0 = fv(); cfg(1); o.nc1 = smNc(B); o.fvg1 = fv(); o.ncDone = smNc(B.slice(0, 9).concat([[T0 - Q, 1, 1, 1, 1, 1]]));
+  // retestExp: shift bar k = 5 closes at B2[5][0] + 15m; the zone must be touched by a bar opening before that + 120 min
+  const B2 = []; for (let i = 0; i < 30; i++) B2.push([T0 - (30 - i) * Q, 1, 1, 1, 1, 1]);
+  cfg(2); o.exp = [smExpired(B2, {k: 5, touch: 13}), smExpired(B2, {k: 5, touch: 14}), smExpired(B2, {k: 5, touch: -1})]; cfg(0); o.exp0 = smExpired(B2, {k: 5, touch: -1});
+  // ltf5m: touch of zone 99-100 at bar 21, swing high 101.8 at bar 17, displacement bar 24 leaves the FVG 100.0-100.5, shift closes at bar 25
+  const M = 300e3, t5 = i => T0 - 40 * M + i * M, K = [];
+  for (let i = 0; i < 15; i++) { const p = 103 - i * 0.13; K.push([t5(i), p, p + 0.2, p - 0.33, p - 0.13, 1]); }
+  [[101.0, 101.3, 100.8, 101.2], [101.2, 101.5, 101.0, 101.4], [101.4, 101.8, 101.2, 101.3], [101.3, 101.4, 100.9, 101.0], [101.0, 101.1, 100.5, 100.6], [100.6, 100.7, 100.1, 100.2],
+   [100.2, 100.3, 99.6, 99.8], [99.8, 99.9, 99.3, 99.5], [99.5, 100.0, 99.4, 99.9], [99.9, 101.9, 99.8, 101.8], [101.8, 102.2, 100.5, 102.1]].forEach((b, i) => K.push([t5(15 + i), ...b, 1]));
+  const z = {lo: 99, hi: 100}, f = smL5Find(K, z, 'L', t5(20), t5(26));
+  o.l5 = f && {ent: +f.ent.toFixed(6), ext: f.ext, tAct: f.tAct === t5(26)};
+  o.l5wait = smL5Find(K.slice(0, 25), z, 'L', t5(20), t5(25)); o.l5fail = smL5Find(K.slice(0, 25), z, 'L', t5(20), t5(37)).fail;
+  return o; })())`));
+assert.deepStrictEqual(g14, {nc0: 10, fvg0: [8], nc1: 9, fvg1: [], ncDone: 10, exp: [false, true, true], exp0: false, l5: {ent: 100.25, ext: 99.3, tAct: true}, l5wait: null, l5fail: 'no 5m structure shift within 45 min of the touch'});
+console.log('PASS: closedOnly / retestExp / ltf5m core logic', JSON.stringify(g14));
