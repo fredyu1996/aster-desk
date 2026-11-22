@@ -79,6 +79,14 @@ This note covers what was built, the interpretation choices where the playbook l
   - Filled: 2.
 - In the loosened variants most trades stopped before +1R. Stops are tight (0.25–0.7%), so costs make each stop about −1.2R.
 - For comparison, the live SMC BTC/ETH rules (SMC Big settings) in the same window's year backtest: +22.2R n88.
+
+### Other coins (Nov 21, same rules)
+| Universe | Window | Patterns | As written | Loosened (all four) |
+|---|---|---|---|---|
+| SMC Big top 10 by volume (BTC, ETH, SOL, ASTER, HYPE, XRP, DOGE, ZEC, BNB, IDOL) | 365 d | 2,487 | 15 trades, 2 wins, −11.3R (halves −7.3 / −3.9) | 51 trades, −28.9R (halves −19.9 / −9.0) |
+| 29 small caps (desk universe: not stock, not "Top", ≥ $300K, not top 10), slippage 0.10%, spread 0.02% | 180 d | 4,101 | 8 trades, 1 win, −5.2R | 61 trades, +3.9R (+0.06R; halves −0.5 / +4.3, max DD 14.8R) |
+- Coin lists are today's (survivorship bias in the older months).
+- Every order on every coin passed the cut-data replay (0 differences).
 - **Reading:** the samples are too small to claim anything either way, and nothing here suggests an edge. Not used live; Fred decides.
 
 ## Run

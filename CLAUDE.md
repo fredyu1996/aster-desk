@@ -249,7 +249,8 @@ Since the fade went live, the Trader's reversal shorts did −0.06R n48 (−2.9R
 - **Nov 20 (unlock calendar stopped):** Fred "停埋個 Unlock calendar" (chose "stop everything"). Migration `nounl1120`: `unlGuard = 0` on `SM.cfg` (SMC Big and BTC/ETH inherit it) and `PT.cfg`; Unlock calendar tab removed from GainerLoser; `unlock-check` skill deleted. Fred pauses the claude.ai "Aster unlock calendar research" task himself. `unlocks.json`, `unlock.js` and `unlocks-publish.yml` stay (inert: nothing pushes `unlock-calendar/*` any more). `unlGuard 1` turns the guard back on, but only with a fresh calendar.
 - **Nov 21 (GMS PMR v1.4, research only):** Fred asked to implement his playbook "1H pattern → 15m OB/FVG → 5m entry" with immutable timestamps, no look-ahead, rejection reasons, golden tests, and a backtest before any live use. Built as a separate module, **not on any account**: `bot/pmr.mjs` (deterministic state machine, `View` throws `LookAhead`), `tests/pmr-golden.mjs` (30 tests, in `npm test`), `tools/pmr-backtest.mjs` (1m fills, fees + spread + slippage + funding, replays every order on cut data). Details and interpretation choices: `docs/pmr-v1.4.md`; Backtester → Strategy notes.
   - 365 d BTC + ETH: 520 patterns, **2 trades** as written (−2.7R). Loosened (retest 4 h, MSS 90 min, POI ≤ 1 ATR, measured-move target): 11 trades, 0 wins, −14.0R; plus net R:R ≥ 1.5: 14 trades, 2 wins, −12.8R. Live SMC BTC/ETH rules, same window: +22.2R n88.
-  - Look-ahead audit: 54 replays, 20 orders, 0 differences. Waiting for Fred: keep as research, or try it elsewhere (e.g. small caps); no live change without his yes.
+  - Look-ahead audit: 54 replays, 20 orders, 0 differences.
+  - Fred "go 2" (try other coins): SMC Big top 10, 365 d: 15 trades −11.3R; 29 small caps, 180 d: 8 trades −5.2R. Loosened: big 51 trades −28.9R, small 61 trades +3.9R (halves −0.5 / +4.3). No version holds in both halves; no live change. Next: Fred decides whether to change the playbook itself (option 3) or leave PMR as research.
 - **Nov 14 (year backtester):** option A: BTC / ETH only, SMC Big settings, 365 days, one account. Patterns are searched on the **raw** run (Reviewer rules off), so they are not just the rules' own leftovers (Fred). Report only. Spec/plan: `docs/superpowers/`.
 
 ## Open items
@@ -261,7 +262,7 @@ Since the fade went live, the Trader's reversal shorts did −0.06R n48 (−2.9R
   5. **Delete leftover test branches:** `claude/push-test-1794748419` and `push-test-1794748419` on the desk repo. Fred deletes them (scheduled sessions can't).
   6. **SMC checks:** SMC Trader B+D (8 of ~20 trades) and SMC Big C (13 of ~20) are not due yet.
   7. **Fib check (since Nov 19):** SMC Trader `fib 1`, review at ~20 trades (see Decisions, Nov 19).
-  8. **PMR v1.4 (Nov 21):** research module only, 2 trades / year on BTC+ETH as written; Fred decides what next (see Decisions).
+  8. **PMR v1.4 (Nov 21):** research module only; as written it barely trades and loses on BTC/ETH, big caps and small caps (see Decisions). Fred decides what next.
 - **Tests:** `tests/desk-smoke.mjs` now also checks the review chart: 5 timeframe chips, wheel zoom, switch to 1h, OB auto-box, 3 swing points, and the Reviewer reading LH/LL against a long plus an opposing OB as `room`.
   - Two older checks fail on and off, on code before Nov 16 too: "SB review changed SMC learning or awx_sm" and "Backtester changed live state".
   - Treat any other failure as real.

@@ -86,7 +86,7 @@ const poiSkips = {}; for (const R of all) for (const l of R.log) if (/^SKIP_|REJ
 const sum = {
   t: Date.now(), from: FROM, to: END, split: SPLIT, days: DAYS, coins: COINS, params: P,
   patterns: all.length, busy: res.reduce((a, r) => a + r.busy.length, 0), byPattern: patt, funnel, skips: poiSkips,
-  waits: Object.assign({}, ...res.map(r => r.waits)),
+  waits: res.reduce((o, r) => { for (const k in r.waits) o[k] = (o[k] || 0) + r.waits[k]; return o; }, {}),
   all: st(trades), a: st(trades.filter(x => x.fill_at < SPLIT)), b: st(trades.filter(x => x.fill_at >= SPLIT)),
   coin: by(trades, x => x.s), type: by(trades, x => x.type), dir: by(trades, x => x.dir), group: by(trades, x => x.group), grade: by(trades, x => x.grade),
   exit: by(trades, x => x.exit.why), tgt: by(trades, x => x.tgtWhy), poi: by(trades, x => x.poi),

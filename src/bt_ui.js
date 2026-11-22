@@ -10,6 +10,8 @@ const BT_NOTES = [
          'As written: 2 trades in a year, both stopped (−2.7R). Far too few to say anything.',
          'Loosened for a sensitivity check only (retest 4 h, MSS 90 min, POI ≤ 1 ATR from the boundary, measured-move target): 11 trades, 0 wins, −14.0R. With net R:R ≥ 1.5 as well: 14 trades, 2 wins, −12.8R. Most stopped before +1R.',
          'For comparison, the live SMC BTC/ETH rules in the year backtest: +22.2R n88.',
+         'Other coins (Nov 21, same rules): SMC Big\'s top 10 by volume, 365 d: 2,487 patterns → 15 trades, 2 wins, −11.3R (both halves negative). 29 liquid small caps (desk universe, ≥ $300K, not "Top"), 180 d, small-cap costs (slippage 0.10%): 4,101 patterns → 8 trades, 1 win, −5.2R. Coin lists are today\'s, so the older months carry some survivorship bias.',
+         'Loosened (same 4 changes as above): big caps 51 trades −28.9R (both halves negative); small caps 61 trades +3.9R (+0.06R each; halves −0.5R / +4.3R, max DD 14.8R). Flat at best, and the loosening was picked after seeing the data.',
          'Every order was re-run on data cut at its decision time and came out identical (no look-ahead); 30 golden tests pass (tests/pmr-golden.mjs).',
          'Research module only (bot/pmr.mjs, tools/pmr-backtest.mjs): not on any account. Fred decides.']},
   {d: '2026-11-15', t: 'Fade strong gainers only after a big last hour (timing study)', st: 'adopted',
