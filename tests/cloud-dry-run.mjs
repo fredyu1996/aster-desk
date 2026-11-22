@@ -24,17 +24,21 @@ const run = () => {
 };
 run();
 const st = JSON.parse(fs.readFileSync(OUT, 'utf8'));
-const missing = ['pt', 'sm', 'sb', 'se'].filter(k => !st[k]);
+const missing = ['pt', 'sm', 'sb', 'se', 'sp'].filter(k => !st[k]);
 if (missing.length) fail('state missing ' + missing.join(', '));
 if (!(st.sb.on === true && st.sb.start === 1000 && st.sb.cfg.minStopPct === 0.5)) fail('sb state wrong: ' + JSON.stringify({ on: st.sb.on, start: st.sb.start, minStopPct: st.sb.cfg && st.sb.cfg.minStopPct }));
 if (typeof st.cloud.sbEq !== 'number') fail('cloud.sbEq is not a number');
 if (!(st.se.on === true && st.se.start === 1000 && JSON.stringify(st.se.cfg) === JSON.stringify(st.sb.cfg))) fail('se state wrong: ' + JSON.stringify({ on: st.se.on, start: st.se.start }));
 if (typeof st.cloud.seEq !== 'number') fail('cloud.seEq is not a number');
+if (!(st.sp.on === true && st.sp.start === 1000 && st.sp.cfg.pat1h === 2 && st.sp.cfg.closedOnly === 1 && st.sp.cfg.ltf5m === 0 && st.sp.sp1122 === 1)) fail('sp state wrong: ' + JSON.stringify({ on: st.sp.on, start: st.sp.start, pat1h: st.sp.cfg && st.sp.cfg.pat1h }));
+if (typeof st.cloud.spEq !== 'number') fail('cloud.spEq is not a number');
+if (!(st.sp.uni && st.sp.uni.c.length > 0 && st.sp.uni.c.length <= 20)) fail('sp coin list missing: ' + JSON.stringify(st.sp.uni));
 const smKeys = ['start', 'cash', 'pos', 'log', 'on', 'cfg'];
 if (!smKeys.every(k => k in st.sm) || st.sm.start !== 1000 || st.sm.cfg.minStopPct !== 1.5) fail('sm shape changed: ' + Object.keys(st.sm).join(','));
 fs.copyFileSync(OUT, IN); run();   // second run fed the first run's state back in
 const st2 = JSON.parse(fs.readFileSync(OUT, 'utf8'));
 if (!st.sb.created || st2.sb.created !== st.sb.created) fail('sb.created not kept across runs');
 if (!st.se.created || st2.se.created !== st.se.created) fail('se.created not kept across runs');
+if (!st.sp.created || st2.sp.created !== st.sp.created) fail('sp.created not kept across runs');
 console.log(`PASS: cloud cycle ran locally, state ${Math.round(fs.statSync(OUT).size / 1024)} KB with keys ${Object.keys(st).join(', ')}`);
 fs.rmSync(dir, { recursive: true, force: true });

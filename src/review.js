@@ -9,9 +9,9 @@ const fmtR = r => fin(r) ? (r >= 0 ? '+' : '') + r.toFixed(2) + 'R' : '—';
 // Fred's own reviews of closed trades: {key: {g, ag, alt[], x[], note, excl, t, by}}. Kept on branch "notes" of the data
 // repo (file manual-reviews.json) so any computer, viewer or not, can add one; the cloud reads it each run.
 let RVM = LS.get('awx_mine', {}) || {};
-// 'sb' = SMC Big trades, 'se' = SMC BTC/ETH trades: reviewable by Fred, but NEVER fed to learning (every learner reads mineOf() of SM/PT trades only, and RVM counts use rvmLearn)
-const mineKey = x => (x.strat === 'smc' ? (typeof SB !== 'undefined' && SB.log.includes(x) ? 'sb' : typeof SE !== 'undefined' && SE.log.includes(x) ? 'se' : 'sm') : 'pt') + '|' + x.s + '|' + x.t1;
-const rvmLearn = () => Object.entries(RVM).filter(([k]) => !k.startsWith('sb|') && !k.startsWith('se|')).map(e => e[1]);
+// 'sb' = SMC Big trades, 'se' = SMC BTC/ETH trades, 'sp' = SMC Pattern trades: reviewable by Fred, but NEVER fed to learning (every learner reads mineOf() of SM/PT trades only, and RVM counts use rvmLearn)
+const mineKey = x => (x.strat === 'smc' ? (typeof SB !== 'undefined' && SB.log.includes(x) ? 'sb' : typeof SE !== 'undefined' && SE.log.includes(x) ? 'se' : typeof SP !== 'undefined' && SP.log.includes(x) ? 'sp' : 'sm') : 'pt') + '|' + x.s + '|' + x.t1;
+const rvmLearn = () => Object.entries(RVM).filter(([k]) => !k.startsWith('sb|') && !k.startsWith('se|') && !k.startsWith('sp|')).map(e => e[1]);
 const mineOf = x => RVM[mineKey(x)] || null;
 // trades closed by hand, or that Fred marked "leave out", are not used for grading statistics, rules or criteria
 const rvManual = x => /closed by you/.test(x.exitWhy || '') || !!(RVM[mineKey(x)] && RVM[mineKey(x)].excl);

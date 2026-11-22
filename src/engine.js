@@ -118,6 +118,10 @@ async function loadH1(s) {
   const a = await api('/fapi/v1/klines?symbol=' + s + '&interval=1h&limit=72');
   S.h1.set(s, {t: now(), bars: a.map(b => [+b[0], +b[1], +b[2], +b[3], +b[4], +b[7], +b[10]])});
 }
+async function loadK5(s) {   // 5m klines, only for coins of an account with ltf5m on (smK5Coins)
+  const a = await api('/fapi/v1/klines?symbol=' + s + '&interval=5m&limit=150');
+  S.k5.set(s, {t: now(), bars: a.map(b => [+b[0], +b[1], +b[2], +b[3], +b[4], +b[7], +b[10]])});
+}
 function h1set() { return new Set([...S.gainers.slice(0, 10), ...S.losers.slice(0, 10), ...Object.keys(S.trk || {}).filter(x => S.meta.has(x)), ...(S.focus ? [S.focus] : [])]); }
 
 /* ================= OI HISTORY ================= */
@@ -205,14 +209,18 @@ function pickJob() {
   if (t >= G.tickers) return {k: 'tickers'};
   if (t >= G.funding) return {k: 'funding'};
   let best = null, bl = -1;
-  for (const s of new Set([...S.universe, ...(typeof smBigCoins === 'function' ? [...smBigCoins(), ...seCoins()] : [])])) for (const k of ['oi', 'kl']) { // SB / SE coins get klines (and OI) without joining the OI/Flow boards
+  for (const s of new Set([...S.universe, ...(typeof smBigCoins === 'function' ? [...smBigCoins(), ...seCoins(), ...spCoins()] : [])])) for (const k of ['oi', 'kl']) { // SB / SE / SP coins get klines (and OI) without joining the OI/Flow boards
     const key = k + ':' + s; let late = t - (nextRun.get(key) || 0); if (late < 0) continue;
     if (S.prio.has(s)) late += 6e5; if (s === S.focus) late += 6e6;
     if (late > bl) { bl = late; best = {k, s, key}; }
   }
-  for (const s of new Set([...h1set(), ...(typeof smBigCoins === 'function' ? [...smBigCoins(), ...seCoins()] : [])])) {
+  for (const s of new Set([...h1set(), ...(typeof smBigCoins === 'function' ? [...smBigCoins(), ...seCoins(), ...spCoins()] : [])])) {
     const key = 'h1:' + s; let late = t - (nextRun.get(key) || 0); if (late < 0) continue; late += S.h1.has(s) ? 3e5 : 7e5;
     if (late > bl) { bl = late; best = {k: 'h1', s, key}; }
+  }
+  for (const s of typeof smK5Coins === 'function' ? smK5Coins() : []) {   // empty unless an account has ltf5m on
+    const key = 'k5:' + s; let late = t - (nextRun.get(key) || 0); if (late < 0) continue; late += 3e5;
+    if (late > bl) { bl = late; best = {k: 'k5', s, key}; }
   }
   return best;
 }
@@ -223,6 +231,7 @@ async function run(j) {
     else if (j.k === 'tickers') { G.tickers = t + (S.wsOk ? 60e3 : 15e3); await loadTickers(); }
     else if (j.k === 'funding') { G.funding = t + (now() - S.wsMark < 10e3 ? 180e3 : 30e3); await loadFunding(); }
     else if (j.k === 'h1') { nextRun.set(j.key, t + 5 * 60e3); await loadH1(j.s); }
+    else if (j.k === 'k5') { nextRun.set(j.key, t + 5 * 60e3); await loadK5(j.s); }
     else { nextRun.set(j.key, t + IV[j.k][S.prio.has(j.s) ? 0 : 1]); if (j.k === 'oi') await loadOI(j.s); else await loadKl(j.s); }
     S.apiErr = null; S.restOk = true;
   } catch (e) {

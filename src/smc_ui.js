@@ -1,24 +1,24 @@
 /* ================= SMC TRADER: screens + panel + comparison ================= */
 TABS.smc = [['acct', 'Account'], ['set', 'Setups now'], ['log', 'Trade log'], ['coach', 'Reviewer\'s coaching'], ['cmp', 'Compare with Trader'], ['rules', 'Rules & settings']];
-const SMCOL = '#ff8ad8', SBCOL = '#6ee7ff', SECOL = '#b69cff';
+const SMCOL = '#ff8ad8', SBCOL = '#6ee7ff', SECOL = '#b69cff', SPCOL = '#7dffa0';
 let SMV = 'sm';   // SMC panel view: 'sm' small caps | 'sb' big caps | 'se' BTC/ETH (not persisted; sb / se modes are read-only)
 const smvAcct = () => SMV === 'sb' ? SB : SMV === 'se' ? SE : SM;
 function smStats() { return acctStats(SM, smEquity()); }
 // both equity curves as % from each account's $1,000 start, on one time axis
 function drawCmp(c, x, y, w, h, fs = 12, big = false) {
-  const A = big ? [] : PT.eqs.concat([[now(), ptEquity()]]), B = SM.eqs.concat([[now(), smEquity()]]), C = big ? SB.eqs.concat([[now(), smWith(SB, smEquity)]]) : [], E = big ? SE.eqs.concat([[now(), smWith(SE, smEquity)]]) : [];
-  const pa = A.map(([t, v]) => [t, (v / PT.start - 1) * 100]), pb = B.map(([t, v]) => [t, (v / SM.start - 1) * 100]), pc = C.map(([t, v]) => [t, (v / SB.start - 1) * 100]), pe = E.map(([t, v]) => [t, (v / SE.start - 1) * 100]);
+  const A = big ? [] : PT.eqs.concat([[now(), ptEquity()]]), B = SM.eqs.concat([[now(), smEquity()]]), C = big ? SB.eqs.concat([[now(), smWith(SB, smEquity)]]) : [], E = big ? SE.eqs.concat([[now(), smWith(SE, smEquity)]]) : [], F = big ? SP.eqs.concat([[now(), smWith(SP, smEquity)]]) : [];
+  const pa = A.map(([t, v]) => [t, (v / PT.start - 1) * 100]), pb = B.map(([t, v]) => [t, (v / SM.start - 1) * 100]), pc = C.map(([t, v]) => [t, (v / SB.start - 1) * 100]), pe = E.map(([t, v]) => [t, (v / SE.start - 1) * 100]), pf = F.map(([t, v]) => [t, (v / SP.start - 1) * 100]);
   c.save(); c.translate(x, y);
-  const all = pa.concat(pb, pc, pe);
-  if (A.length < 2 && B.length < 2 && C.length < 2 && E.length < 2) { c.fillStyle = DIM; c.font = `500 ${fs + 2}px ${FS}`; c.textAlign = 'center'; c.fillText('both curves start with the first trades', w / 2, h / 2); c.restore(); c.textAlign = 'left'; return; }
+  const all = pa.concat(pb, pc, pe, pf);
+  if (A.length < 2 && B.length < 2 && C.length < 2 && E.length < 2 && F.length < 2) { c.fillStyle = DIM; c.font = `500 ${fs + 2}px ${FS}`; c.textAlign = 'center'; c.fillText('both curves start with the first trades', w / 2, h / 2); c.restore(); c.textAlign = 'left'; return; }
   let lo = Math.min(0, ...all.map(p => p[1])), hi = Math.max(0, ...all.map(p => p[1])); const sp = (hi - lo) || 1; lo -= sp * 0.12; hi += sp * 0.12;
   const t0 = Math.min(...all.map(p => p[0])), t1 = Math.max(...all.map(p => p[0])), pad = Math.max(60, fs * 5.6);
   const X = t => 6 + (t - t0) / ((t1 - t0) || 1) * (w - pad - 10), Y = v => 8 + (hi - v) / (hi - lo) * (h - 24);
   c.strokeStyle = 'rgba(124,137,168,.35)'; c.setLineDash([3, 4]); c.beginPath(); c.moveTo(6, Y(0)); c.lineTo(w - pad, Y(0)); c.stroke(); c.setLineDash([]);
-  for (const [pts, col] of [[pa, '#ffd166'], [pb, SMCOL], [pc, SBCOL], [pe, SECOL]]) { if (pts.length < 2) continue; c.strokeStyle = col; c.lineWidth = 2.2; c.beginPath(); pts.forEach((p, i) => (i ? c.lineTo(X(p[0]), Y(p[1])) : c.moveTo(X(p[0]), Y(p[1])))); c.stroke(); }
+  for (const [pts, col] of [[pa, '#ffd166'], [pb, SMCOL], [pc, SBCOL], [pe, SECOL], [pf, SPCOL]]) { if (pts.length < 2) continue; c.strokeStyle = col; c.lineWidth = 2.2; c.beginPath(); pts.forEach((p, i) => (i ? c.lineTo(X(p[0]), Y(p[1])) : c.moveTo(X(p[0]), Y(p[1])))); c.stroke(); }
   c.fillStyle = DIM; c.font = `500 ${fs}px ${FM}`; c.textBaseline = 'middle';
   c.fillText(fmtPct(hi, 1), w - pad + 4, 12); c.fillText(fmtPct(lo, 1), w - pad + 4, h - 14); c.fillText('0%', w - pad + 4, Y(0));
-  c.font = `700 ${fs}px ${FS}`; if (big) { c.fillStyle = SMCOL; c.fillText('— SMC Trader', 10, 12); c.fillStyle = SBCOL; c.fillText('— SMC Big', 10 + fs * 8, 12); c.fillStyle = SECOL; c.fillText('— SMC BTC/ETH', 10 + fs * 15, 12); } else { c.fillStyle = '#ffd166'; c.fillText('— Trader', 10, 12); c.fillStyle = SMCOL; c.fillText('— SMC Trader', 10 + fs * 6.5, 12); }
+  c.font = `700 ${fs}px ${FS}`; if (big) { c.fillStyle = SMCOL; c.fillText('— SMC Trader', 10, 12); c.fillStyle = SBCOL; c.fillText('— SMC Big', 10 + fs * 8, 12); c.fillStyle = SECOL; c.fillText('— SMC BTC/ETH', 10 + fs * 15, 12); c.fillStyle = SPCOL; c.fillText('— SMC Pattern', 10 + fs * 24, 12); } else { c.fillStyle = '#ffd166'; c.fillText('— Trader', 10, 12); c.fillStyle = SMCOL; c.fillText('— SMC Trader', 10 + fs * 6.5, 12); }
   c.restore(); c.textAlign = 'left';
 }
 function drawSmcScreens(d) {
@@ -264,18 +264,18 @@ function drawSmWall() {
   T.tex.needsUpdate = true;
 }
 
-/* ---- north wall, left of the movers board: the return race of the three SMC accounts (the Trader left it Nov 20; stopped since Nov 19) ---- */
+/* ---- north wall, left of the movers board: the return race of the four SMC accounts (SMC Pattern since Nov 22; the Trader left it Nov 20; stopped since Nov 19) ---- */
 function drawRace() {
   if (typeof RACE === 'undefined') return;
   const T = RACE, c = T.ctx, W = T.W, H = T.H;
-  const L = [[SM, smStats(), smEquity(), 'SMC TRADER', SMCOL], [SB, acctStats(SB, smWith(SB, smEquity)), smWith(SB, smEquity), 'SMC BIG', SBCOL], [SE, acctStats(SE, smWith(SE, smEquity)), smWith(SE, smEquity), 'SMC BTC/ETH', SECOL]];
+  const L = [[SM, smStats(), smEquity(), 'SMC TRADER', SMCOL], [SB, acctStats(SB, smWith(SB, smEquity)), smWith(SB, smEquity), 'SMC BIG', SBCOL], [SE, acctStats(SE, smWith(SE, smEquity)), smWith(SE, smEquity), 'SMC BTC/ETH', SECOL], [SP, acctStats(SP, smWith(SP, smEquity)), smWith(SP, smEquity), 'SMC PATTERN', SPCOL]];
   T.names = L.map(x => x[3]);   // read by tests/desk-smoke.mjs
   c.fillStyle = '#04070f'; c.fillRect(0, 0, W, H);
   c.fillStyle = '#0a1226'; c.fillRect(0, 0, W, 62);
   c.textBaseline = 'middle'; c.font = `800 34px ${FS}`; c.fillStyle = '#cfe0ff'; c.fillText('RETURN RACE', 24, 32);
   c.font = `600 22px ${FM}`; c.fillStyle = DIM; c.textAlign = 'right'; c.fillText(`paper · from $1,000 each   ${clock()}`, W - 24, 32); c.textAlign = 'left';
   // the three scores
-  const rets = L.map(x => x[1].ret), best = Math.max(...rets), lead = rets.filter(r => r === best).length === 1 ? rets.indexOf(best) : -1, gap = 16, w = (W - 48 - 2 * gap) / 3;
+  const rets = L.map(x => x[1].ret), best = Math.max(...rets), lead = rets.filter(r => r === best).length === 1 ? rets.indexOf(best) : -1, gap = 16, w = (W - 48 - (L.length - 1) * gap) / L.length;
   L.forEach(([A, s, eq, name, col], i) => {
     const x = 24 + i * (w + gap);
     c.fillStyle = 'rgba(255,255,255,.03)'; rr(c, x, 80, w, 196, 14); c.fill();
@@ -292,7 +292,7 @@ function drawRace() {
   drawCmp(c, 24, 296, W - 48, 250, 20, true);
   // the stats side by side
   const rows = [['Win rate', s => s.win == null ? '—' : s.win.toFixed(0) + '%'], ['Avg R per trade', s => fmtR(s.avgR)], ['Max drawdown', s => fmtPct(s.dd, 1)], ['Return ÷ drawdown', s => s.retDD == null ? '—' : s.retDD.toFixed(2)], ['Worst losing streak', s => s.streak + ''], ['Profit factor', s => s.pf == null ? '—' : s.pf === Infinity ? '∞' : s.pf.toFixed(2)]];
-  const y0 = 592, rh = 38, colX = i => W - 40 - (2 - i) * 330;
+  const y0 = 592, rh = 38, colX = i => W - 40 - (L.length - 1 - i) * 300;
   c.font = `700 18px ${FS}`; c.textAlign = 'right'; L.forEach(([, , , name, col], i) => { c.fillStyle = col; c.fillText(name, colX(i), y0 - 10); }); c.textAlign = 'left';
   rows.forEach(([k, f], j) => {
     const y = y0 + 24 + j * rh; if (j % 2 === 0) { c.fillStyle = 'rgba(255,255,255,.025)'; c.fillRect(24, y - 25, W - 48, rh); }

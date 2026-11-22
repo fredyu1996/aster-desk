@@ -276,7 +276,7 @@ function ptTick() {
   if (!last || t - last[0] >= 5 * 60e3) { PT.eqs.push([t, +ptEquity().toFixed(2)]); if (PT.eqs.length > 3000) PT.eqs.shift(); }
   ptSave();
   if (typeof rvTick === 'function') rvTick();
-  if (typeof smTick === 'function') { smTick(); try { smWith(SB, smTick); } catch (e) { console.warn('SMC Big tick', e.message); } try { smWith(SE, smTick); } catch (e) { console.warn('SMC BTC/ETH tick', e.message); } } // SMC paper traders: small caps (SM), then big caps (SB), then BTC/ETH (SE), own accounts; an SB / SE fault must not stop the others
+  if (typeof smTick === 'function') { smTick(); try { smWith(SB, smTick); } catch (e) { console.warn('SMC Big tick', e.message); } try { smWith(SE, smTick); } catch (e) { console.warn('SMC BTC/ETH tick', e.message); } try { smWith(SP, smTick); } catch (e) { console.warn('SMC Pattern tick', e.message); } } // SMC paper traders: small caps (SM), then big caps (SB), then BTC/ETH (SE), own accounts; an SB / SE fault must not stop the others
 }
 function ptStats() {
   const L = PT.log, wins = L.filter(x => x.pnl > 0), eq = ptEquity();

@@ -206,7 +206,7 @@ if (!(ch.ob && ch.pts === 3)) errs.push('PAGEERR review chart drawing (OB / swin
 if (!(ch.reads && ch.room)) errs.push('PAGEERR Reviewer does not read drawn structure / opposing zone');
 await page.evaluate(() => { PT.log.shift(); closePanel(); });
 await page.screenshot({path: fileURLToPath(new URL('../desk-smoke.png', import.meta.url))});
-// Nov 20: the race wall shows the three SMC accounts only (no Trader); the east wall shows SMC Big + SMC BTC/ETH open positions
+// Nov 20: the race wall shows the SMC accounts only (no Trader; SMC Pattern joined Nov 22); the east wall shows SMC Big + SMC BTC/ETH open positions
 const wl = await page.evaluate(() => {
   const out = {errs: []}, pos = s => { const e = ptPx(s) || 1, st = e * 1.02; return {side: 'S', b: base(s), qty: 10 / e, qty0: 10 / e, entry: e, stop: st, stop0: st, target: e * 0.95, rr: 2.5, t: now() - 3600e3, risk: 0.2, realized: 0, fees: 0, funding: 0, tf: '15m', why: 'smoke-test position', zoneKind: 'FVG', zone: {lo: e * 1.001, hi: e * 1.008, kind: 'FVG'}}; };
   try {
@@ -218,7 +218,7 @@ const wl = await page.evaluate(() => {
 });
 console.log('walls:', JSON.stringify(wl));
 if (wl.errs.length) errs.push('PAGEERR walls: ' + wl.errs.join('; '));
-if ((wl.race || []).join() !== 'SMC TRADER,SMC BIG,SMC BTC/ETH' || (wl.race || []).some(n => /^TRADER$/.test(n))) errs.push('PAGEERR race wall must list the 3 SMC accounts and no Trader: ' + JSON.stringify(wl.race));
+if ((wl.race || []).join() !== 'SMC TRADER,SMC BIG,SMC BTC/ETH,SMC PATTERN' || (wl.race || []).some(n => /^TRADER$/.test(n))) errs.push('PAGEERR race wall must list the 4 SMC accounts (SMC Pattern since Nov 22) and no Trader: ' + JSON.stringify(wl.race));
 if (!(wl.open && wl.open.length === 2 && wl.open[0].title === 'SMC BIG · OPEN POSITIONS' && wl.open[1].title === 'SMC BTC/ETH · OPEN POSITIONS' && wl.open.every(x => x.shown >= 1))) errs.push('PAGEERR east wall must draw an SMC Big and an SMC BTC/ETH position: ' + JSON.stringify(wl.open));
 if (process.env.WALL_SHOTS) {   // optional: canvas dumps + in-room shots aimed at each wall
   const fs = await import('node:fs'), dir = process.env.WALL_SHOTS, save = (f, u) => fs.writeFileSync(dir + '/' + f, Buffer.from(u.split(',')[1], 'base64'));

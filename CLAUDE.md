@@ -25,6 +25,7 @@ Fred's walkable 3D trading workstation for small-cap perps on Aster DEX, with ru
 | Shared paper accounts | private repo `fredyu1996/aster-desk-data`, branch `state`, file `aster-desk-state.json`. Always a single parentless commit, force-updated. Holds `pt, rv, sm, trk, cfg, oi, cloud, lock` |
 | SMC Big account | key `sb` in the same state file; browser copy in localStorage `awx_sb` |
 | SMC BTC/ETH account | key `se` in the same state file; browser copy in localStorage `awx_se` |
+| SMC Pattern (v1.4) account | key `sp` in the same state file; browser copy in localStorage `awx_sp` |
 | Fred's own trade reviews | same private repo, branch `notes`: `manual-reviews.json` + `img/*.jpg` (normal commits; read → merge → write, retry on conflict) |
 | Notes | `docs/`. The claude.ai project "Trading workstation" has the same docs; this repo is now the copy to keep current |
 
@@ -251,6 +252,9 @@ Since the fade went live, the Trader's reversal shorts did −0.06R n48 (−2.9R
   - 365 d BTC + ETH: 520 patterns, **2 trades** as written (−2.7R). Loosened (retest 4 h, MSS 90 min, POI ≤ 1 ATR, measured-move target): 11 trades, 0 wins, −14.0R; plus net R:R ≥ 1.5: 14 trades, 2 wins, −12.8R. Live SMC BTC/ETH rules, same window: +22.2R n88.
   - Look-ahead audit: 54 replays, 20 orders, 0 differences.
   - Fred "go 2" (try other coins): SMC Big top 10, 365 d: 15 trades −11.3R; 29 small caps, 180 d: 8 trades −5.2R. Loosened: big 51 trades −28.9R, small 61 trades +3.9R (halves −0.5 / +4.3). No version holds in both halves; no live change. Next: Fred decides whether to change the playbook itself (option 3) or leave PMR as research.
+- **Nov 22 (GMS v1.4 switches + SMC Pattern account):**
+  - Switches (report only): `closedOnly` / `retestExp` / `ltf5m` (`tools/smc-gms14-test.mjs`, `tools/out/gms14-results.md`) and `pat1h` 1 = 1h pattern filter / 2 = pattern trigger (`src/smc_pat.js`, `tools/smc-pat-test.mjs`, `tools/out/pat1h-results.md`): **all 0 on SM / SB / SE**. Leads only: `closedOnly` on BTC/ETH 365 d +22.7R n85 vs +22.2R n88 (both halves better, small margin); `pat1h 1` on BTC/ETH +23.2R n39 vs +19.7R n87 (half 2 worse). Small and big caps: nothing holds. `ltf5m` barely trades.
+  - Fred "整多個trading agent 係v1.4既strategy 同埋睇1h 形態去做trade, 根據gainer loser 榜黎簡": new paper account `SP` "SMC Pattern (v1.4)" ($1,000, on from deploy, flag `sp1122`). `SP.cfg` = `SM.cfg` + `SP_OV` (`pat1h 2`, `closedOnly 1`, `gmsB/D 1`, `fib 0`, `ltf5m 0`); same stop / target / size / time-stop code. Coins: every hour the top 10 gainers + top 10 losers by 24 h % (`spPick`) among the board's coins with ≥ `CFG.trkMinVol` ($300K); direction from the pattern; held coins stay managed. `ltf5m 1` on any account now fetches live 5m klines for that account's coins only (`smK5Coins`, ≤ 20). Race wall + cloud cycle (`sp`, `cloud.spEq/spOpen`); no panel tab or review wall (Reviewer never learns from it, `sp|` keys). Backtest 21 d (`tools/smc-sp-test.mjs`, `tools/out/sp-results.md`): 2 trades +2.4R with ltf5m 0, 0 with ltf5m 1: too few to judge. Test: `tests/smc-sp.mjs`.
 - **Nov 14 (year backtester):** option A: BTC / ETH only, SMC Big settings, 365 days, one account. Patterns are searched on the **raw** run (Reviewer rules off), so they are not just the rules' own leftovers (Fred). Report only. Spec/plan: `docs/superpowers/`.
 
 ## Open items

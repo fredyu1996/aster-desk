@@ -4,7 +4,7 @@
   "description": "Aster Desk: 3D paper-trading workstation for Aster DEX small caps. Build with: python3 build.py",
   "scripts": {
     "build": "python3 build.py",
-    "test": "node tests/smc-sweep.mjs && node tests/smc-btceth.mjs && node tests/cloud-dry-run.mjs && node tests/pmr-golden.mjs && node tests/smc-pat.mjs",
+    "test": "node tests/smc-sweep.mjs && node tests/smc-btceth.mjs && node tests/smc-sp.mjs && node tests/cloud-dry-run.mjs && node tests/pmr-golden.mjs && node tests/smc-pat.mjs",
     "smoke": "node tests/desk-smoke.mjs"
   },
   "dependencies": {

@@ -28,7 +28,7 @@ async function syHead() { const r = await gh('/git/ref/heads/' + SY_BRANCH, {ok4
 async function syRead(head) { const txt = await gh('/contents/' + encodeURIComponent(SY.path) + '?ref=' + head, {raw: true}); return JSON.parse(txt); }
 function syBundle() {
   const cfg = Object.assign({}, CFG); delete cfg.sound; delete cfg.notify; // per-computer
-  return Object.assign({}, SYS.extra, {v: 1, t: now(), lock: SYS.handBack ? {dev: 'cloud', name: 'Cloud', t: now()} : {dev: SY.dev, name: SY.name, t: now()}, pt: PT, rv: RV, sm: SM, sb: SB, se: SE, trk: S.trk, cfg});
+  return Object.assign({}, SYS.extra, {v: 1, t: now(), lock: SYS.handBack ? {dev: 'cloud', name: 'Cloud', t: now()} : {dev: SY.dev, name: SY.name, t: now()}, pt: PT, rv: RV, sm: SM, sb: SB, se: SE, sp: SP, trk: S.trk, cfg});
 }
 function syApply(b) {
   if (!b) return;
@@ -37,6 +37,7 @@ function syApply(b) {
   if (b.sm) { SM = Object.assign(JSON.parse(JSON.stringify(SM_DEF)), b.sm); SM.cfg = Object.assign({}, SM_DEF.cfg, b.sm.cfg || {}); if (typeof smMigrate === 'function') smMigrate(SM); smSave(); }
   if (b.sb) { SB = Object.assign(JSON.parse(JSON.stringify(SB_DEF)), b.sb); if (typeof sbMigrate === 'function') sbMigrate(SB); smWith(SB, smSave); }
   if (b.se) { SE = Object.assign(JSON.parse(JSON.stringify(SE_DEF)), b.se); if (typeof seMigrate === 'function') seMigrate(SE); smWith(SE, smSave); }
+  if (b.sp) { SP = Object.assign(JSON.parse(JSON.stringify(SP_DEF)), b.sp); if (typeof spMigrate === 'function') spMigrate(SP); smWith(SP, smSave); }
   if (b.trk) { S.trk = b.trk; trkSave(); }
   if (b.cfg) { const keep = {sound: CFG.sound, notify: CFG.notify}; Object.assign(CFG, b.cfg, keep); saveCfg(); }
   SYS.remoteT = b.t || 0; SYS.lock = b.lock || null;

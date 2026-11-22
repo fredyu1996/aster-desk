@@ -58,7 +58,7 @@ async function writeState(b, head, msg) {
 /* ---------- load the desk's own trading code into a sandbox ---------- */
 function loadCore(b) {
   const store = new Map();
-  for (const [k, v] of [['awx_pt', b && b.pt], ['awx_rv', b && b.rv], ['awx_sm', b && b.sm], ['awx_sb', b && b.sb], ['awx_se', b && b.se], ['awx_trk', b && b.trk], ['awx_cfg', b && b.cfg], ['awx_mine', MINE]]) if (v) store.set(k, JSON.stringify(v));
+  for (const [k, v] of [['awx_pt', b && b.pt], ['awx_rv', b && b.rv], ['awx_sm', b && b.sm], ['awx_sb', b && b.sb], ['awx_se', b && b.se], ['awx_sp', b && b.sp], ['awx_trk', b && b.trk], ['awx_cfg', b && b.cfg], ['awx_mine', MINE]]) if (v) store.set(k, JSON.stringify(v));
   const el = {addEventListener() {}, style: {setProperty() {}}, classList: {add() {}, remove() {}}, textContent: '', innerHTML: ''};
   const ctx = vm.createContext({console, fetch, URL, TextEncoder, TextDecoder, Date, Math, JSON, Promise, setTimeout, clearTimeout,
     setInterval: () => 0, navigator: {userAgent: 'node'},
@@ -88,9 +88,10 @@ async function main() {
   X('for (const [s, a] of Object.entries(__OI)) S.oi.set(s, a);');
 
   await X('(async () => { await loadExInfo(); await loadTickers(); await loadFunding(); })()');
-  const coins = X('[...new Set([...h1set(), ...smBigCoins(), ...seCoins(), ...Object.keys(PT.pos), ...CFG.watch.filter(x => S.meta.has(x))])]');
+  const coins = X('[...new Set([...h1set(), ...smBigCoins(), ...seCoins(), ...spCoins(), ...Object.keys(PT.pos), ...CFG.watch.filter(x => S.meta.has(x))])]');
   log(`markets ${X('S.meta.size')}, eligible ${X('S.eligible.length')}, loading ${coins.length} coins`);
-  ctx.__one = async s => { await X('loadOI')(s); await X('loadKl')(s); await X('loadH1')(s); };
+  const k5 = new Set(X('smK5Coins()'));   // empty unless an account has ltf5m on
+  ctx.__one = async s => { await X('loadOI')(s); await X('loadKl')(s); await X('loadH1')(s); if (k5.has(s)) await X('loadK5')(s); };
   await pool(coins, 4, s => ctx.__one(s));
 
   // replay 1-minute candles since the last save for each open position, for both paper traders
@@ -99,7 +100,8 @@ async function main() {
   for (const acct of [{pos: 'PT.pos', mng: 'ptManage', tp1: "q.tp1 ? null : q.entry + dir * (q.tp1R || 1.5) * d", tgt: "q.entry + dir * (q.tpR || 3) * d"},
                       {pos: 'SM.pos', mng: 'smManage', tp1: "q.tp1 ? null : q.entry + dir * SM.cfg.tp1R * d", tgt: "q.target"},
                       {pos: 'SB.pos', mng: '((t, o) => smWith(SB, () => smManage(t, o)))', tp1: "q.tp1 ? null : q.entry + dir * SB.cfg.tp1R * d", tgt: "q.target"},
-                      {pos: 'SE.pos', mng: '((t, o) => smWith(SE, () => smManage(t, o)))', tp1: "q.tp1 ? null : q.entry + dir * SE.cfg.tp1R * d", tgt: "q.target"}]) {
+                      {pos: 'SE.pos', mng: '((t, o) => smWith(SE, () => smManage(t, o)))', tp1: "q.tp1 ? null : q.entry + dir * SE.cfg.tp1R * d", tgt: "q.target"},
+                      {pos: 'SP.pos', mng: '((t, o) => smWith(SP, () => smManage(t, o)))', tp1: "q.tp1 ? null : q.entry + dir * SP.cfg.tp1R * d", tgt: "q.target"}]) {
     for (const s of X(`Object.keys(${acct.pos})`)) {
       try { // an SMC Big / SMC BTC/ETH fault must not stop the Trader / SMC cycle
       const p = X(`${acct.pos}[${JSON.stringify(s)}]`), from = Math.max(p.t, since);
@@ -127,7 +129,7 @@ async function main() {
         }
         PX_OVR = null; CLOCK_OVR = 0; return n;
       })()`);
-      } catch (e) { if (acct.pos !== 'SB.pos' && acct.pos !== 'SE.pos') throw e; X('PX_OVR = null; CLOCK_OVR = 0'); log(`${acct.pos === 'SB.pos' ? 'SMC Big' : 'SMC BTC/ETH'} replay ${s} failed: ${e.message}`); }
+      } catch (e) { if (acct.pos === 'PT.pos' || acct.pos === 'SM.pos') throw e; X('PX_OVR = null; CLOCK_OVR = 0'); log(`${{'SB.pos': 'SMC Big', 'SE.pos': 'SMC BTC/ETH', 'SP.pos': 'SMC Pattern'}[acct.pos]} replay ${s} failed: ${e.message}`); }
     }
   }
 
@@ -147,12 +149,12 @@ async function main() {
   const cfg = Object.assign({}, X('CFG'));
   const sbSafe = (c, nm = 'SMC Big') => { try { return X(c); } catch (e) { log(nm + ': ' + e.message); return null; } };
   const out = {v: 1, t: Date.now(), lock: {dev: 'cloud', name: 'Cloud', t: Date.now()},
-    pt: X('PT'), rv: X('RV'), sm: X('SM'), sb: X('SB'), se: X('SE'), trk: X('S.trk'), cfg, oi: oiOut,
-    cloud: {t: Date.now(), runs: (prevCloud.runs || 0) + 1, dur: (Date.now() - T0) / 1000, eq: X('ptEquity()'), smEq: X('smEquity()'), smOpen: X('Object.keys(SM.pos).length'), sbEq: sbSafe('smWith(SB, smEquity)'), sbOpen: sbSafe('Object.keys(SB.pos).length'), seEq: sbSafe('smWith(SE, smEquity)', 'SMC BTC/ETH'), seOpen: sbSafe('Object.keys(SE.pos).length', 'SMC BTC/ETH'), replayed, open: X('Object.keys(PT.pos).length'),
+    pt: X('PT'), rv: X('RV'), sm: X('SM'), sb: X('SB'), se: X('SE'), sp: X('SP'), trk: X('S.trk'), cfg, oi: oiOut,
+    cloud: {t: Date.now(), runs: (prevCloud.runs || 0) + 1, dur: (Date.now() - T0) / 1000, eq: X('ptEquity()'), smEq: X('smEquity()'), smOpen: X('Object.keys(SM.pos).length'), sbEq: sbSafe('smWith(SB, smEquity)'), sbOpen: sbSafe('Object.keys(SB.pos).length'), seEq: sbSafe('smWith(SE, smEquity)', 'SMC BTC/ETH'), seOpen: sbSafe('Object.keys(SE.pos).length', 'SMC BTC/ETH'), spEq: sbSafe('smWith(SP, smEquity)', 'SMC Pattern'), spOpen: sbSafe('Object.keys(SP.pos).length', 'SMC Pattern'), replayed, open: X('Object.keys(PT.pos).length'),
       alerts: [...fresh, ...(prevCloud.alerts || [])].slice(0, 60), err: ''}};
   const fm = v => v == null ? 'n/a' : X('fmtMoney')(v);
-  const sha = await writeState(out, head, `cloud · Trader ${X('fmtMoney(ptEquity())')} · SMC ${X('fmtMoney(smEquity())')} · SMC Big ${fm(out.cloud.sbEq)} · SMC BTC/ETH ${fm(out.cloud.seEq)}`);
-  log(sha ? `saved: Trader ${X('fmtMoney(ptEquity())')} (${out.cloud.open} open), SMC ${X('fmtMoney(smEquity())')} (${out.cloud.smOpen} open), SMC Big ${fm(out.cloud.sbEq)} (${out.cloud.sbOpen ?? 'n/a'} open), SMC BTC/ETH ${fm(out.cloud.seEq)} (${out.cloud.seOpen ?? 'n/a'} open), ${fresh.length} new events, ${replayed} candles replayed, ${out.cloud.dur.toFixed(1)} s`
+  const sha = await writeState(out, head, `cloud · Trader ${X('fmtMoney(ptEquity())')} · SMC ${X('fmtMoney(smEquity())')} · SMC Big ${fm(out.cloud.sbEq)} · SMC BTC/ETH ${fm(out.cloud.seEq)} · SMC Pattern ${fm(out.cloud.spEq)}`);
+  log(sha ? `saved: Trader ${X('fmtMoney(ptEquity())')} (${out.cloud.open} open), SMC ${X('fmtMoney(smEquity())')} (${out.cloud.smOpen} open), SMC Big ${fm(out.cloud.sbEq)} (${out.cloud.sbOpen ?? 'n/a'} open), SMC BTC/ETH ${fm(out.cloud.seEq)} (${out.cloud.seOpen ?? 'n/a'} open), SMC Pattern ${fm(out.cloud.spEq)} (${out.cloud.spOpen ?? 'n/a'} open), ${fresh.length} new events, ${replayed} candles replayed, ${out.cloud.dur.toFixed(1)} s`
           : 'a browser took over trading during this run; nothing saved');
 }
 

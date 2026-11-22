@@ -29,9 +29,9 @@ let SM = (() => {
   if (!p.created) p.created = now();
   return smMigrate(p);
 })();
-function smKey() { return SM === SB ? 'sb' : SM === SE ? 'se' : 'sm'; }   // which SMC account SM is right now (smWith swaps in SB or SE)
+function smKey() { return SM === SB ? 'sb' : SM === SE ? 'se' : SM === SP ? 'sp' : 'sm'; }   // which SMC account SM is right now (smWith swaps in SB, SE or SP)
 function smSave() { LS.set('awx_' + smKey(), SM); }
-function smReset() { const cfg = SM.cfg, k = smKey(); SM = JSON.parse(JSON.stringify(SM_DEF)); SM.cfg = cfg; SM.created = now(); if (k === 'sb') SB = SM; if (k === 'se') SE = SM; smSave(); }   // big: reset inside smWith(SB / SE) must save to awx_sb / awx_se
+function smReset() { const cfg = SM.cfg, k = smKey(); SM = JSON.parse(JSON.stringify(SM_DEF)); SM.cfg = cfg; SM.created = now(); if (k === 'sb') SB = SM; if (k === 'se') SE = SM; if (k === 'sp') SP = SM; smSave(); }   // big: reset inside smWith(SB / SE) must save to awx_sb / awx_se
 S.smC = new Map();
 // SMC Big (Nov 13, Fred): the same strategy and Reviewer rules on the top-10 volume perps, its own $1,000 account. Only the percent numbers tuned for small caps change.
 const SB_OV = {minStopPct: 0.5, slipPct: 0.02, stopBufMul: 0.25, tightPct: 0.4, useScreens: 0, invExit: 0, obPick: 0, gmsC: 1, gmsB: 0, gmsD: 0, fib: 0, closedOnly: 0, retestExp: 0, ltf5m: 0, pat1h: 0};   // GMS PMR v1.4 test switches (Nov 22), report only: 0 on every account   // fib 0 (Nov 19): SMC Big off; big caps 21 d fib1 +7.5R n35 vs +5.2R n44 but half 1 worse, BTC/ETH 365 d +14.7R n58 vs +24.2R n89   // gmsC 1 (Fred, Nov 15 "試住C先"): GMS supply/demand zones for SMC Big only; BTC/ETH 365 d +28.0R n91 vs +13.8R n66 (half 2 +5.4 vs +6.5), big caps 21 d +6.6R n37 both; small caps keep 0 (−14.6R n71 vs −9.0R n55)   // obPick 0 (Nov 15): big caps keep the FVG pick; good-OB pick tested worse there (14d −6.6R n23 vs +7.3R n25; BTC/ETH year +7.7R n38 vs +13.8R n66)   // invExit 0 (Fred, Nov 14): big caps hold through a failed entry gap; 7d backtest +0.75R n15 vs +0.48R n16 (5 trades differ, 3 better)   // useScreens 0: screenGate writes Reviewer counters, and the Reviewer never learns from SB
@@ -52,13 +52,23 @@ function seMigrate(p) { return p; }   // SE's one-time flags go here, on the acc
 seMigrate(SE);
 SE.cfg = Object.assign({}, SM.cfg, SB_OV);   // no override table of its own: exactly SB's settings
 S.smCE = new Map();   // SE's per-coin reads (BTC/ETH are also in SB's list)
+// SMC Pattern (v1.4) (Nov 22, Fred "整多個trading agent 係v1.4既strategy 同埋睇1h 形態去做trade, 根據gainer loser 榜黎簡"): the SMC Trader's settings
+// plus SP_OV (1h chart pattern as the trigger, closed bars only, GMS B + D, no fib gate) on the hour's top 10 gainers + top 10 losers; its own $1,000 account
+const SP_OV = {pat1h: 2, closedOnly: 1, gmsB: 1, gmsD: 1, fib: 0, ltf5m: 0, useScreens: 0};   // ltf5m 1 here = 5m entry confirmation, with a live 5m feed for SP's coins (smK5Coins)
+const SP_DEF = SB_DEF;   // only ever deep-copied
+let SP = Object.assign(JSON.parse(JSON.stringify(SP_DEF)), LS.get('awx_sp', null) || {});
+if (!SP.created) SP.created = now();
+function spMigrate(p) { if (p.sp1122 !== 1) { p.on = true; p.sp1122 = 1; } return p; }   // Nov 22: new account, on from the first deploy (one-time flag on the account, like sbMigrate)
+spMigrate(SP);
+SP.cfg = Object.assign({}, SM.cfg, SP_OV);
+S.smCP = new Map();   // SP's per-coin reads (its coins can also be in S.trk)
 // run fn as SB or SE: SM and S.smC point at that account (cfg = live copy of SM.cfg + SB_OV) and are swapped back even on a throw
 function smWith(acct, fn) {
-  const k = acct === SB ? 'sb' : acct === SE ? 'se' : '';
+  const k = acct === SB ? 'sb' : acct === SE ? 'se' : acct === SP ? 'sp' : '';
   if (!k) return fn();
-  acct.cfg = Object.assign({}, SM.cfg, SB_OV);
-  const sm = SM, smc = S.smC; SM = acct; S.smC = k === 'sb' ? S.smCB : S.smCE;
-  try { return fn(); } finally { if (k === 'sb') { SB = SM; S.smCB = S.smC; } else { SE = SM; S.smCE = S.smC; } SM = sm; S.smC = smc; }   // SB / SE = SM keeps an smReset() made inside
+  acct.cfg = Object.assign({}, SM.cfg, k === 'sp' ? SP_OV : SB_OV);
+  const C = {sb: 'smCB', se: 'smCE', sp: 'smCP'}[k], sm = SM, smc = S.smC; SM = acct; S.smC = S[C];
+  try { return fn(); } finally { if (k === 'sb') SB = SM; else if (k === 'se') SE = SM; else SP = SM; S[C] = S.smC; SM = sm; S.smC = smc; }   // SB / SE / SP = SM keeps an smReset() made inside
 }
 // top n USDT perps by 24h quote volume, stocks out unless CFG.includeStocks, minus the small-cap tracker's coins
 function smBigList(n = 10) {
@@ -66,9 +76,23 @@ function smBigList(n = 10) {
 }
 function smBigCoins() { return [...new Set([...smBigList(), ...Object.keys(SB.pos)])]; }   // held SB coins stay managed after they leave the list
 function seCoins() { return [...new Set([...SE_COINS.filter(s => S.meta.has(s)), ...Object.keys(SE.pos)])]; }   // held SE coins stay managed
-function smCoins() { const k = smKey(); return k === 'sb' ? smBigCoins() : k === 'se' ? seCoins() : Object.keys(S.trk); }
-function smName() { return {sb: 'SMC Big', se: 'SMC BTC/ETH', sm: 'SMC Trader'}[smKey()]; }
-function smTag() { return {sb: 'SMC BIG', se: 'SMC BTC/ETH', sm: 'SMC'}[smKey()]; }   // alert prefix
+// SP: top n gainers + top n losers by 24h % among T = [{s, pct, qv}] with qv >= floor (direction comes from the pattern, not the list)
+function spPick(T, floor, n = 10) {
+  const L = T.filter(x => x.qv >= floor && fin(x.pct)).sort((a, b) => b.pct - a.pct), up = L.slice(0, n);
+  return [...up, ...L.slice(up.length).reverse().slice(0, n)].map(x => x.s);
+}
+// recomputed once an hour from the board's coins (S.eligible: CFG.minVol, small caps, no stocks) over the tracker's floor CFG.trkMinVol ($300K)
+function spList() {
+  const h = Math.floor(now() / 3600e3);
+  if ((!SP.uni || SP.uni.h !== h) && S.eligible.length) SP.uni = {h, c: spPick(S.eligible.map(s => Object.assign({s}, S.tk.get(s))), CFG.trkMinVol || 0)};
+  return SP.uni ? SP.uni.c.filter(s => S.meta.has(s)) : [];
+}
+function spCoins() { return [...new Set([...spList(), ...Object.keys(SP.pos)])]; }   // held SP coins stay managed after they leave the list
+// coins of the accounts with ltf5m on: the only ones that get live 5m klines (shortcut: capped at 20 coins, raise it if an account needs more)
+function smK5Coins() { return [...new Set([...(SM.cfg.ltf5m ? Object.keys(S.trk) : []), ...(SB.cfg.ltf5m ? smBigCoins() : []), ...(SE.cfg.ltf5m ? seCoins() : []), ...(SP.cfg.ltf5m ? spCoins() : [])])].slice(0, 20); }
+function smCoins() { const k = smKey(); return k === 'sb' ? smBigCoins() : k === 'se' ? seCoins() : k === 'sp' ? spCoins() : Object.keys(S.trk); }
+function smName() { return {sb: 'SMC Big', se: 'SMC BTC/ETH', sp: 'SMC Pattern (v1.4)', sm: 'SMC Trader'}[smKey()]; }
+function smTag() { return {sb: 'SMC BIG', se: 'SMC BTC/ETH', sp: 'SMC SP', sm: 'SMC'}[smKey()]; }   // alert prefix
 
 /* ---- chart reading ---- */
 // swing highs/lows (fractals): higher/lower than `L` bars on each side
@@ -717,7 +741,7 @@ function smTryEnter(c) {
    closed by the shift + 15 min. Limit at that FVG's midpoint, live from C3's close, cancelled after 60 min unfilled or when a 15m candle
    closes through the zone's far edge. Stop beyond the more conservative of the retest extreme and the zone's far edge by 0.15 ATR(5m),
    then the min stop %; target = the setup's liquidity target; needs net RR ≥ minRR after fees + slippage both ways (the doc's cost gate,
-   only under this switch). 5m bars come from S.k5, which only tools/smc-gms14-test.mjs fills: live, ltf5m 1 would never trade.
+   only under this switch). 5m bars come from S.k5: tools/smc-gms14-test.mjs fills it in the backtest, live it is fed (loadK5) for smK5Coins() only.
    K: closed 5m bars; returns null (keep waiting), {fail} or {ent, ext, atr, tAct}. */
 S.k5 = new Map(); S.l5 = new Map(); S.l5u = new Set();   // shortcut: pending 5m checks live in memory only (lost on reload), fine for a test switch
 function smL5Find(K, z, dir, tT, t) {
