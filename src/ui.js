@@ -232,7 +232,7 @@ function renderPanel() {
   if (id === 'scout' && tab === 'w' && typeof critAgentCard === 'function') { try { h = critAgentCard(id) + h; } catch (e) { console.warn('criteria card', e.message); } }
   if ((id === 'rev' || id === 'smc') && syViewer()) h = syBanner() + h;
   body.innerHTML = h; body.scrollTop = sc;
-  if (id === 'smc') { const sm = $('#pTtl small'); if (sm) sm.textContent = SMV === 'sb' ? 'Smart Money Paper Desk — the same SMC strategy on the top-10 volume perps; its own $1,000 paper account' : SMV === 'se' ? 'Smart Money Paper Desk — SMC Big settings on BTC and ETH only (the year backtest coins); its own $1,000 paper account' : AG.smc.role + ' — ' + AG.smc.blurb; }
+  if (id === 'smc') { const sm = $('#pTtl small'); if (sm) sm.textContent = SMV === 'sb' ? 'Smart Money Paper Desk — the same SMC strategy on the top-10 volume perps; its own $1,000 paper account' : SMV === 'sp' ? 'Smart Money Paper Desk — v1.4 settings with the 1h pattern trigger on the hourly top gainers and losers; its own $1,000 paper account' : SMV === 'se' ? 'Smart Money Paper Desk — SMC Big settings on BTC and ETH only (the year backtest coins); its own $1,000 paper account' : AG.smc.role + ' — ' + AG.smc.blurb; }
   if (id === 'scout' && tab === 'set') bindSettings();
   body.querySelectorAll('canvas[data-spark]').forEach(drawSpark);
   body.querySelectorAll('canvas[data-smc]').forEach(cv => smWith(id === 'smc' ? smvAcct() : SM, () => drawSmcChart(cv)));

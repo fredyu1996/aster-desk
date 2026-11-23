@@ -65,22 +65,22 @@ function drawPosChart(c, s, p, x, y, w, h, o = {}) {
 function drawAcctPos(c, title, col, x0, w, H) {
   const eq = smEquity(), pnl = eq - SM.start, P = Object.entries(SM.pos).sort((a, b) => a[1].t - b[1].t), pTxt = `${fmtMoney(pnl, 1)} (${fmtPct(pnl / SM.start * 100, 2)})`;
   c.fillStyle = '#0d1328'; c.fillRect(x0, 0, w, 84); c.fillStyle = col; c.fillRect(x0, 82, w, 3);
-  c.textBaseline = 'middle'; c.font = `800 40px ${FS}`; c.fillStyle = col; c.fillText(title, x0 + 30, 42);
-  c.textAlign = 'right'; c.font = `600 22px ${FM}`; c.fillStyle = DIM; c.fillText(`${P.length}/${SM.cfg.maxPos} open · ${SM.log.length} closed · ${SM.on ? 'ON' : 'OFF'}`, x0 + w - 30, 24);
-  c.font = `700 28px ${FM}`; c.fillStyle = tone(pnl); c.fillText(pTxt, x0 + w - 30, 58); const pw = c.measureText(pTxt).width;
-  c.fillStyle = TXT; c.fillText(`Equity ${fmtMoney(eq)}`, x0 + w - 60 - pw, 58);
+  c.textBaseline = 'middle'; const nar = w < 1200; c.font = `800 ${nar ? 28 : 40}px ${FS}`; c.fillStyle = col; c.fillText(title, x0 + 20, 42);
+  c.textAlign = 'right'; c.font = `600 ${nar ? 18 : 22}px ${FM}`; c.fillStyle = DIM; c.fillText(`${P.length}/${SM.cfg.maxPos} open · ${SM.log.length} closed · ${SM.on ? 'ON' : 'OFF'}`, x0 + w - 20, 24);
+  c.font = `700 ${nar ? 22 : 28}px ${FM}`; c.fillStyle = tone(pnl); c.fillText(pTxt, x0 + w - 20, 58); const pw = c.measureText(pTxt).width;
+  c.fillStyle = TXT; c.fillText(`Equity ${fmtMoney(eq)}`, x0 + w - 40 - pw, 58);
   c.textAlign = 'left'; c.textBaseline = 'alphabetic';
-  const top = 100, bh = H - top - 16, shown = P.slice(0, 2), n = shown.length, posH = n ? bh - 130 : 0;
+  const top = 100, bh = H - top - 16, shown = P.slice(0, nar ? 1 : 2), n = shown.length, posH = n ? bh - 130 : 0;
   if (!n) {
     c.font = `800 44px ${FS}`; c.fillStyle = TXT; c.fillText('Flat — no open positions', x0 + 30, top + 50);
     c.font = `500 24px ${FS}`; c.fillStyle = DIM; wrapText(c, `Waiting for a sweep → structure shift → pullback into the FVG or order block, quality ${smRules().minQ}/100 or better.`, x0 + 30, top + 92, w - 60, 28, 1);
   }
-  const colW = w / (n || 1), infoW = n === 1 ? 560 : 330;
+  const colW = w / (n || 1), infoW = nar ? 330 : n === 1 ? 560 : 330;
   shown.forEach(([s, p], i) => {
     const x = x0 + i * colW, px = ptPx(s), u = px ? smUpnl(p, px) + p.realized : null, r = px ? smR(p, px) : null, L = p.side === 'L', tf = p.tf || '15m', ix = x + 26;
     if (i) { c.fillStyle = col; c.globalAlpha = 0.25; c.fillRect(x, top, 2, posH); c.globalAlpha = 1; }
     c.font = `800 44px ${FS}`; c.fillStyle = TXT; c.fillText(p.b, ix, top + 44);
-    const nw = c.measureText(p.b).width; c.font = `800 22px ${FS}`; c.fillStyle = L ? UP : DN; c.fillText(`${L ? 'LONG' : 'SHORT'} · ${tf} ${p.zoneKind || ''}`, ix + nw + 14, top + 42);
+    const nw = c.measureText(p.b).width; c.font = `800 ${nar ? 18 : 22}px ${FS}`; c.fillStyle = L ? UP : DN; c.fillText(`${L ? 'LONG' : 'SHORT'} · ${tf}${nar ? '' : ' ' + (p.zoneKind || '')}`, ix + nw + (nar ? 8 : 14), top + 42);
     c.font = `800 36px ${FM}`; c.fillStyle = tone(u); c.fillText(fmtMoney(u, 1), ix, top + 92);
     c.font = `700 26px ${FM}`; c.fillText(r == null ? '—' : `${r >= 0 ? '+' : ''}${r.toFixed(2)}R`, ix, top + 128);
     const rows = [['Entry', fmtPx(p.entry)], ['Now', fmtPx(px)], [p.trail ? 'Trail stop' : p.be ? 'Stop (BE)' : 'Stop', fmtPx(p.stop)], ['Target', fmtPx(p.target)], ['Held', ago(p.t)]];
@@ -90,16 +90,16 @@ function drawAcctPos(c, title, col, x0, w, H) {
     const B = smBars(s, tf), rrT = Math.abs(p.target - p.entry) / (Math.abs(p.entry - p.stop0) || 1);
     drawPosChart(c, s, p, x + infoW, top + 6, colW - infoW - 20, posH - 12, {bars: B && B.length ? B : null, target: p.target, tLab: `${rrT.toFixed(1)}R`, zone: p.zone, foot: `${tf} · zone shaded`});
   });
-  if (P.length > 2) { c.font = `700 22px ${FS}`; c.fillStyle = WARN; c.textAlign = 'right'; c.fillText(`+${P.length - 2} more open — see the SMC desk`, x0 + w - 30, top + posH + 4); c.textAlign = 'left'; }
+  if (P.length > shown.length) { c.font = `700 22px ${FS}`; c.fillStyle = WARN; c.textAlign = 'right'; c.fillText(`+${P.length - shown.length} more open — see the SMC desk`, x0 + w - 30, top + posH + 4); c.textAlign = 'left'; }
   drawEq(c, x0 + 30, top + (n ? posH + 10 : 120), w - 60, n ? bh - posH - 10 : bh - 120, n ? 18 : 22);
   return {title, shown: n, open: P.length};
 }
 function drawWall() {
   if (typeof WALL === 'undefined') return;
-  const T = WALL, c = T.ctx, W = T.W, H = T.H, half = W / 2;
+  const T = WALL, c = T.ctx, W = T.W, H = T.H, th = W / 3;
   c.fillStyle = '#04070f'; c.fillRect(0, 0, W, H);
-  // T.drawn is read by tests/desk-smoke.mjs; colours = SBCOL / SECOL, literal because smc_ui.js loads after ui.js's first drawWall() call
-  T.drawn = [smWith(SB, () => drawAcctPos(c, 'SMC BIG · OPEN POSITIONS', '#6ee7ff', 0, half, H)), smWith(SE, () => drawAcctPos(c, 'SMC BTC/ETH · OPEN POSITIONS', '#b69cff', half, half, H))];
-  c.fillStyle = 'rgba(207,224,255,.35)'; c.fillRect(half - 1, 0, 3, H);
+  // T.drawn is read by tests/desk-smoke.mjs; colours = SBCOL / SECOL / SPCOL, literal because smc_ui.js loads after ui.js's first drawWall() call
+  T.drawn = [smWith(SB, () => drawAcctPos(c, 'SMC BIG · OPEN POSITIONS', '#6ee7ff', 0, th, H)), smWith(SE, () => drawAcctPos(c, 'SMC BTC/ETH · OPEN POSITIONS', '#b69cff', th, th, H)), smWith(SP, () => drawAcctPos(c, 'SMC PATTERN · OPEN POSITIONS', '#7dffa0', th * 2, th, H))];
+  c.fillStyle = 'rgba(207,224,255,.35)'; c.fillRect(th - 1, 0, 3, H); c.fillRect(th * 2 - 1, 0, 3, H);
   T.tex.needsUpdate = true;
 }

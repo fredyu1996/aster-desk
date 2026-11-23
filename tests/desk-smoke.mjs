@@ -120,6 +120,24 @@ if (!seRes.label) errs.push('PAGEERR btc/eth-mode panel does not say SMC BTC/ETH
 if (!seRes.toggleOk) errs.push('PAGEERR btc/eth-mode toggle must flip awx_se.on');
 if (!seRes.same) errs.push('PAGEERR awx_sm / awx_sb changed in the BTC/ETH view');
 if (seRes.hits < 30) errs.push('PAGEERR race wall has no SMC BTC/ETH line/legend (' + seRes.hits + ' px)');
+// SMC Pattern tab: shows SP's own account (not SE's), read-only tabs, no write to awx_sm / awx_se
+const spRes = await page.evaluate(() => {
+  openPanel('smc'); PS.tab.smc = 'acct'; setTabs(); renderPanel();
+  const before = [localStorage.getItem('awx_sm'), localStorage.getItem('awx_se')], spPos = SP.pos, sePos = SE.pos;
+  const btn = document.querySelector('[data-smv="sp"]'); if (!btn) return {btn: false};
+  SP.pos = {ETHUSDT: {side: 'S', b: 'ETH', qty: 1, qty0: 1, entry: 100, stop: 102, stop0: 102, target: 95, rr: 2.5, t: now() - 3600e3, risk: 0.2, realized: 0, fees: 0, funding: 0, tf: '1h', why: 'sp-tab-marker', zoneKind: 'FVG', zone: {lo: 100, hi: 101, kind: 'FVG'}}}; SE.pos = {};
+  btn.click(); const tabs = [...document.querySelectorAll('#pTabs [data-tab]')].map(e => e.dataset.tab), body = document.querySelector('#pbody').textContent;
+  const out = {btn: true, tabs, label: /SMC Pattern \(v1\.4\)/.test(body), own: /ETH/.test(body) && /sp-tab-marker/.test(body), ttl: /1h pattern trigger/.test(document.querySelector('#pTtl small').textContent), same: JSON.stringify(before) === JSON.stringify([localStorage.getItem('awx_sm'), localStorage.getItem('awx_se')])};
+  SP.pos = spPos; SE.pos = sePos; document.querySelector('[data-smv="sm"]').click(); return out;
+});
+console.log('pattern mode:', JSON.stringify(spRes));
+if (!spRes.btn) errs.push('PAGEERR SMC panel has no SMC Pattern tab');
+else {
+  if (spRes.tabs.join() !== 'acct,set,log') errs.push('PAGEERR pattern-mode tabs are ' + spRes.tabs.join());
+  if (!spRes.label || !spRes.ttl) errs.push('PAGEERR pattern-mode panel does not say SMC Pattern');
+  if (!spRes.own) errs.push('PAGEERR SMC Pattern tab does not show SP own positions');
+  if (!spRes.same) errs.push('PAGEERR awx_sm / awx_se changed in the Pattern view');
+}
 // SMC Big review path: an SB trade in the Big caps log -> Review chip -> chart + form -> save writes an sb| review; the review wall lists it; no learning change
 const sbRev = await page.evaluate(async () => {
   const out = {errs: []}, smBefore = localStorage.getItem('awx_sm'), adjBefore = JSON.stringify([RV.smAdj, RV.smWhy, smRules()]);
@@ -210,7 +228,7 @@ await page.screenshot({path: fileURLToPath(new URL('../desk-smoke.png', import.m
 const wl = await page.evaluate(() => {
   const out = {errs: []}, pos = s => { const e = ptPx(s) || 1, st = e * 1.02; return {side: 'S', b: base(s), qty: 10 / e, qty0: 10 / e, entry: e, stop: st, stop0: st, target: e * 0.95, rr: 2.5, t: now() - 3600e3, risk: 0.2, realized: 0, fees: 0, funding: 0, tf: '15m', why: 'smoke-test position', zoneKind: 'FVG', zone: {lo: e * 1.001, hi: e * 1.008, kind: 'FVG'}}; };
   try {
-    SB.pos.ASTERUSDT = pos('ASTERUSDT'); SE.pos.BTCUSDT = pos('BTCUSDT');
+    SB.pos.ASTERUSDT = pos('ASTERUSDT'); SE.pos.BTCUSDT = pos('BTCUSDT'); SP.pos.ETHUSDT = pos('ETHUSDT');
     drawRace(); out.race = RACE.names;
     drawWall(); out.open = WALL.drawn;
   } catch (e) { out.errs.push(e.message + ' ' + (e.stack || '').split(String.fromCharCode(10))[1]); }
@@ -219,7 +237,7 @@ const wl = await page.evaluate(() => {
 console.log('walls:', JSON.stringify(wl));
 if (wl.errs.length) errs.push('PAGEERR walls: ' + wl.errs.join('; '));
 if ((wl.race || []).join() !== 'SMC TRADER,SMC BIG,SMC BTC/ETH,SMC PATTERN' || (wl.race || []).some(n => /^TRADER$/.test(n))) errs.push('PAGEERR race wall must list the 4 SMC accounts (SMC Pattern since Nov 22) and no Trader: ' + JSON.stringify(wl.race));
-if (!(wl.open && wl.open.length === 2 && wl.open[0].title === 'SMC BIG · OPEN POSITIONS' && wl.open[1].title === 'SMC BTC/ETH · OPEN POSITIONS' && wl.open.every(x => x.shown >= 1))) errs.push('PAGEERR east wall must draw an SMC Big and an SMC BTC/ETH position: ' + JSON.stringify(wl.open));
+if (!(wl.open && wl.open.length === 3 && wl.open[0].title === 'SMC BIG · OPEN POSITIONS' && wl.open[1].title === 'SMC BTC/ETH · OPEN POSITIONS' && wl.open[2].title === 'SMC PATTERN · OPEN POSITIONS' && wl.open.every(x => x.shown >= 1))) errs.push('PAGEERR east wall must draw an SMC Big, an SMC BTC/ETH and an SMC Pattern position: ' + JSON.stringify(wl.open));
 if (process.env.WALL_SHOTS) {   // optional: canvas dumps + in-room shots aimed at each wall
   const fs = await import('node:fs'), dir = process.env.WALL_SHOTS, save = (f, u) => fs.writeFileSync(dir + '/' + f, Buffer.from(u.split(',')[1], 'base64'));
   const cv = await page.evaluate(() => ({race: RACE.cv.toDataURL('image/png'), wall: WALL.cv.toDataURL('image/png')}));
@@ -227,8 +245,8 @@ if (process.env.WALL_SHOTS) {   // optional: canvas dumps + in-room shots aimed 
   await page.evaluate(() => { P.x = RACE_X; P.z = -RZ + 4.6; P.yaw = 0; P.pitch = 0.05; }); await page.waitForTimeout(1500); await page.screenshot({path: dir + '/race-wall-3d.png'});
   await page.evaluate(() => { P.x = RX - 8.5; P.z = WALL_Z; P.yaw = -Math.PI / 2; P.pitch = 0.05; }); await page.waitForTimeout(1500); await page.screenshot({path: dir + '/east-wall-3d.png'});
 }
-const flat = await page.evaluate(() => { delete SB.pos.ASTERUSDT; delete SE.pos.BTCUSDT; try { drawWall(); return WALL.drawn.map(x => x.shown).join(); } catch (e) { return 'ERR ' + e.message; } });
-if (flat !== '0,0') errs.push('PAGEERR east wall flat state: ' + flat);
+const flat = await page.evaluate(() => { delete SB.pos.ASTERUSDT; delete SE.pos.BTCUSDT; delete SP.pos.ETHUSDT; try { drawWall(); return WALL.drawn.map(x => x.shown).join(); } catch (e) { return 'ERR ' + e.message; } });
+if (flat !== '0,0,0') errs.push('PAGEERR east wall flat state: ' + flat);
 if (process.env.WALL_SHOTS) { const fs = await import('node:fs'); fs.writeFileSync(process.env.WALL_SHOTS + '/east-canvas-flat.png', Buffer.from((await page.evaluate(() => WALL.cv.toDataURL('image/png'))).split(',')[1], 'base64')); }
 const bad = errs.filter(e => /PAGEERR/.test(e));
 await browser.close();
