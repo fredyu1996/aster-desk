@@ -49,7 +49,7 @@ function atrPct(B, len, t) {
   return s / 14 / B[n - 1][4] * 100;
 }
 // entry features of one SM.log trade (Row.f); hour band and weekday in UTC whatever the process TZ
-export function feats(x, D, btcReg) {
+export function feats(x, D, btcReg, tmOf = () => null) {
   const t = x.t0, d = new Date(t), C = D[x.s] || {}, hr = d.getUTCHours(), stopPct = Math.abs(x.entry - x.stop0) / x.entry * 100;
   const tk = C.h1 ? tkAt(C.h1, Math.floor(t / H) * H) : null;
   return {coin: x.s, side: x.side, type: x.type || 'rev', tf: x.tf, zone: x.zoneKind === 'FVG' ? 'FVG' : 'OB',
@@ -58,7 +58,7 @@ export function feats(x, D, btcReg) {
     hour: band(hr, [8, 13, 21], ['Asia', 'London', 'NY', 'late']), wd: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getUTCDay()],
     atr: x.tf === '1h' ? atrPct(C.h1, H, t) : atrPct(C.m15, M15, t), mv: tk ? Math.abs(tk.pct) : null,
     rrBand: !fin(x.rr) ? '?' : x.rr < 2.5 ? '<2.5' : x.rr <= 3.5 ? '2.5–3.5' : '>3.5',
-    stopBand: !fin(stopPct) ? '?' : band(stopPct, [1, 2], ['<1%', '1–2%', '≥2%']), btc: btcReg(t) || '?'};
+    stopBand: !fin(stopPct) ? '?' : band(stopPct, [1, 2], ['<1%', '1–2%', '≥2%']), btc: btcReg(t) || '?', tm: (tmOf(x) || {}).tag || '?'};
 }
 
 // which ABL switches change the SB account's effective rules tonight, and the rules snapshot (one core)
@@ -98,10 +98,16 @@ export async function yearRun(st, exInfo, {days, deadline}) {
   // BTC's 1h regime at t, from its last 71 closed 1h bars (the same read the strategy makes)
   const {ctx, X} = await mkCore(null, exInfo), bh = D.BTCUSDT && D.BTCUSDT.h1;
   const btcReg = t => { if (!bh) return null; const n = nClosed(bh, H, t); ctx.__B = bh.slice(Math.max(0, n - 71), n); return X('(smRegime(__B) || {}).reg || null'); };
-  const rows = (r, v) => { const R = r.trades.map(x => Object.assign(row(x, v), {f: feats(x, D, btcReg)})); terciles(R, 'atr', 'atrT'); terciles(R, 'mv', 'mvT'); return R; };
+  // Time Machine odds at entry (src/tm.js, record only) from the coin's 5m candles before t0; 2,000 paths per trade
+  const tmOf = x => { const C = D[x.s]; if (!C || !C.m5 || !fin(x.target) || !fin(x.stop0)) return null;
+    ctx.__P = {t: x.t0, side: x.side, entry: x.entry, stop: x.stop0, target: x.target}; ctx.__K = C.m5; return X('tmRun(__P, __K, {n: 2000})'); };
+  const rows = (r, v) => { const R = r.trades.map(x => Object.assign(row(x, v), {f: feats(x, D, btcReg, tmOf)})); terciles(R, 'atr', 'atrT'); terciles(R, 'mv', 'mvT'); return R; };
+  // avg R by Time Machine tag, both halves (report only)
+  const tmSplit = R => Object.fromEntries(['favour', 'even', 'against', '?'].map(k => { const g = R.filter(r => r.f.tm === k), avg = A => A.length ? +(A.reduce((a, r) => a + r.R, 0) / A.length).toFixed(3) : null;
+    const a = g.filter(r => r.t0 < tSplit), b = g.filter(r => r.t0 >= tSplit); return [k, {n: g.length, avgR: avg(g), nA: a.length, avgA: avg(a), nB: b.length, avgB: avg(b)}]; }));
   const baseRows = rows(base, 'base'), rawRows = rows(raw, 'raw');
   const sum = {t: Date.now(), from: W0, to: END, split: tSplit, days, coins: YEAR_COINS, runS: Math.round((Date.now() - T0) / 1e3), snap: plan.snap,
-    base: {...sumRun(baseRows, tSplit), open: base.open}, raw: {...sumRun(rawRows, tSplit), open: raw.open},
+    base: {...sumRun(baseRows, tSplit), open: base.open}, raw: {...sumRun(rawRows, tSplit), open: raw.open}, tm: {base: tmSplit(baseRows), raw: tmSplit(rawRows)},
     note: 'Backtest — report only, never changes live rules. SMC Big settings on BTC / ETH, one $1,000 account, 5m steps; same fills, fees and slippage as the 7-day backtest.',
     fundingNote: 'Funding is not charged (no funding history in the backtest).'};
   return fitSize({v: 1, sum, abl: ablation(baseRows, runs, tSplit), skipped, pat: findPatterns(rawRows, tSplit),

@@ -1,7 +1,7 @@
 // Year backtest report maths. REPORT ONLY and pure: no imports, no network, never changes live rules.
 // Spec: docs/superpowers/specs/2026-11-14-smc-year-backtester-design.md
 export const MIN_N = 20, MIN_DR = 0.3, MIN_N_CHECK = 8, NOT_HELD_CAP = 10, ABL_DR = 0.2, SIZE_MAX = 900e3;
-export const FEATS = ['coin', 'side', 'type', 'tf', 'zone', 'qBand', 'grade', 'regime', 'hour', 'wd', 'atrT', 'mvT', 'rrBand', 'stopBand', 'btc'];
+export const FEATS = ['coin', 'side', 'type', 'tf', 'zone', 'qBand', 'grade', 'regime', 'hour', 'wd', 'atrT', 'mvT', 'rrBand', 'stopBand', 'btc', 'tm'];
 const rd = (x, d) => Math.round(x * 10 ** d) / 10 ** d;
 
 export function stats(rows) {

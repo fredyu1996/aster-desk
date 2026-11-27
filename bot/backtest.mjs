@@ -79,7 +79,7 @@ export async function mkCore(deskCfg, exInfo) {
   vm.runInContext(fs.readFileSync(DIR + 'core.js', 'utf8'), ctx, {filename: 'core.js'});
   const X = c => vm.runInContext(c, ctx);
   ctx.__EX = exInfo;
-  await X(`syncAggSubs = () => {}; api = async p => /exchangeInfo/.test(p) ? __EX : []; loadExInfo();`);   // S.meta (top / stock flags) as the desk reads it
+  await X(`syncAggSubs = () => {}; api = async p => /exchangeInfo/.test(p) ? __EX : []; loadExInfo(); TM.off = true;`);   // TM.off: no live Time Machine fetches in a backtest   // S.meta (top / stock flags) as the desk reads it
   return {ctx, X};
 }
 // count of bars (sorted by open time) closed by T
