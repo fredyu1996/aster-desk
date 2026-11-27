@@ -139,6 +139,8 @@ async function main() {
   // the Trader reads any pending review straight away (the browser waits 20 s so you can watch it happen)
   const cycle = () => X('if (RV.pending) { const r = RV.reviews.find(x => x.id === RV.pending); if (r) r.t -= 60e3; } ptTick();');
   cycle(); if (X('!!RV.pending')) cycle();
+  // Time Machine reads for positions opened this run (src/tm.js, record only): fetch their 60 days of 5m bars before saving
+  try { const n = await X('tmFlush()'); if (n) log(`time machine: ${n} position${n > 1 ? 's' : ''}`); } catch (e) { log('time machine:', e.message); }
 
   // trades that closed 24h+ ago: follow up what price did next and replay them on 15m / 1h / 4h charts
   const followed = await X('rvFollowTick')(6); if (followed) log(`followed up ${followed} closed trade${followed > 1 ? 's' : ''} (24h after exit)`);
