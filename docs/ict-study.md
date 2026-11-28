@@ -20,27 +20,34 @@ Fred's patch `aster-ict-study.patch` was written for another codebase (`core/ict
   - Exit at the stop, at the target, or by time at 12:00 NY.
 - **Days skipped:** news days (CPI / jobs / FOMC) and short days.
 
-## Port to Aster (`tools/ict-backtest.mjs`, `tools/ict-calendar.mjs`)
+## Port to the crypto desk (`tools/ict-backtest.mjs`, `tools/ict-calendar.mjs`)
 - **Calendar:** NYSE sessions Nov 20 2025 → Nov 25 2026, early closes, and the CPI / jobs / FOMC dates. Checked on nyse.com, bls.gov (including the shutdown moves) and federalreserve.gov; sources are listed in the file.
 - **Per symbol:**
   - Tick size from exchangeInfo; P&L per 1 unit.
   - minRange = 0.05% of the median price (the patch's MNQ 10 points ≈ 0.05%).
-  - feeRate = 0.04% + half spread: 0.01% on crypto, 0.02% on stock perps.
-  - Stop / time slippage: 0.02% on crypto, 0.05% on stock perps.
+  - feeRate = 0.04% + half spread; adverse slippage ticks on stop / time exits (`ICT_SPREAD` / `ICT_SLIP`).
 - **Data:** Aster trades 24/7, so there are no venue closures. Every day had complete 1m data (0 `INCOMPLETE`).
-- **Symbols:** BTC, ETH, and the two stock perps with a year of history (NVDA, TSLA). Aster has no NQ / QQQ perp.
+- **Coins (the crypto desk):**
+  - SMC Big's top 10 by 24 h volume: BTC, ETH, SOL, XRP, HYPE, DOGE, EVAA, ASTER, PORTAL, ZEC. 365 days, big-cap costs (spread 0.01%, slippage 0.02%).
+  - 29 small caps from the desk universe (not stock, not "Top", ≥ $300K, not top 10, listed ≥ 30 d). 180 days (May 26 → Nov 25 2026), small-cap costs (spread 0.02%, slippage 0.10%).
+  - Lists are today's, so the older months carry some survivorship bias.
+- **Times:** the model's New York times are kept: the 09:30 US open, entries 10:00–11:00. US holidays and news days are skipped as in the patch.
 
-## Results (255 sessions; halves split Jul 24 2026)
-| Symbol | Trades | Result | Main reasons days were skipped |
+## Results (halves split at 2/3 of each window)
+| Coins | Coin-days | Trades | Result |
 |---|---|---|---|
-| BTCUSDT | 1 | −1R | target touched before the signal 112, MSS too late 53, news 32, no sweep 28 |
-| ETHUSDT | 1 | −1R | target before signal 123, MSS too late 45, no sweep 32, news 32 |
-| NVDAUSDT | 0 | — | no sweep 85, target before signal 81, news 32, no target 20 |
-| TSLAUSDT | 1 | −1R | target before signal 106, no sweep 66, news 32, MSS too late 22 |
+| Top 10, 365 d | 2,550 | 10 (BTC 1, ETH 1, SOL 1, HYPE 2, DOGE 2, ZEC 3) | 1 win (+3.7R target), 8 stops, 1 time exit; −4.4R (halves +1.6 / −6.0) |
+| 29 small caps, 180 d | 3,741 | 2 (NEAR, UNI) | both stopped, −2.0R |
 
-- **Total: 3 trades in a year on 4 symbols, all stopped, −3R.**
-- Keeping news days changes nothing (the same 3 trades).
-- As written, the setup almost never completes on Aster. On ~40% of days the opposite side of the opening range is reached before a sweep + MSS + FVG appears.
+- **Total on the crypto desk: 12 trades, 1 win, −6.4R.**
+- **Why so few.** Coin-days by reason (top 10 / small caps):
+  - target reached before the signal: 39% / 30%;
+  - no sweep of the opening range: 15% / 23%;
+  - MSS too late (> 10 min after the sweep): 15% / 5%;
+  - news day: 13% / 12%;
+  - no target: 4% / 14%;
+  - missing minutes (`INCOMPLETE`): 3% / 5%.
+- An earlier run that also took in two stock perps (NVDA 0 trades, TSLA 1 trade, −1R) told the same story; those coins are not part of this desk.
 
 ## Combining with the SMC strategies (`tools/ict-smc-study.mjs`, report only)
 Inputs:
@@ -66,6 +73,7 @@ They are split by New York time, news days, and the ICT bias (BTC/ETH only). A s
 ```bash
 node --test tests/ict.mjs                         # the patch's 9 tests
 node tools/ict-backtest.mjs                       # 1m data cached in /tmp/ict-cache (~4 min per symbol the first time)
-ICT_NEWS=0 ICT_COINS=BTCUSDT node tools/ict-backtest.mjs
+ICT_COINS=BTCUSDT,ETHUSDT node tools/ict-backtest.mjs
+ICT_COINS=NEARUSDT,UNIUSDT ICT_FROM=2026-05-26 ICT_SLIP=0.1 ICT_SPREAD=0.02 node tools/ict-backtest.mjs   # small-cap costs
 node tools/ict-smc-study.mjs <smc-backtest-year.json> <aster-desk-state.json>   # needs the BTC/ETH 1m cache; never commit trade data
 ```

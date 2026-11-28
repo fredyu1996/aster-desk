@@ -4,10 +4,12 @@ TABS.bt = [['sum', 'Summary & rules'], ['pat', 'Patterns'], ['tr', 'Trades'], ['
 /* Strategy notes (Nov 15, Fred: "the Backtester writes down the strategies and the key points, then backtests them").
    Results of the one-off studies run from Claude Code (tools/*.mjs). Aggregates only, never trade data. Newest first. */
 const BT_NOTES = [
-  {d: '2026-11-27', t: 'ICT New York-morning reversal (Fred\'s patch) on Aster, and with SMC', st: 'rejected',
-   idea: '15m bias before 10:00 NY, then 10:00–11:00: sweep of the opening range, strong 1m MSS, 1m FVG entry, target the other side of the range or the prior session\'s untouched high / low, net R:R ≥ 2, out by noon. Skips CPI / jobs / FOMC days.',
-   pts: ['Ported unchanged (bot/ict.mjs; the patch\'s 9 tests pass). Aster 1m bars Nov 20 2025 → Nov 25 2026, 255 NYSE sessions, costs fee + spread + slippage per symbol.',
-         'BTC 1, ETH 1, NVDA 0, TSLA 1 trade in a year: 3 trades, all stopped, −3R. On ~40% of days the target is reached before the setup completes; no sweep / late MSS kill most of the rest. Keeping news days changes nothing.',
+  {d: '2026-11-27', t: 'ICT New York-morning reversal (Fred\'s patch) on the crypto desk, and with SMC', st: 'rejected',
+   idea: '15m bias before 10:00 NY, then 10:00–11:00 NY: sweep of the 09:30–10:00 range, strong 1m MSS, 1m FVG entry, target the other side of the range or the prior 09:30–16:00 session\'s untouched high / low, net R:R ≥ 2, out by noon NY. Skips CPI / jobs / FOMC days and US holidays.',
+   pts: ['Ported unchanged (bot/ict.mjs; the patch\'s 9 tests pass). Aster 1m bars; costs fee 0.04% + spread + slippage (big caps 0.01% / 0.02%, small caps 0.02% / 0.10%).',
+         'SMC Big\'s top 10, 365 d (2,550 coin-days): 10 trades, 1 win, −4.4R (halves +1.6 / −6.0R); BTC and ETH 1 trade each, both stopped.',
+         '29 small caps (desk universe), 180 d (3,741 coin-days): 2 trades, both stopped, −2.0R.',
+         'Why so few: the target is reached before the setup completes on 30–39% of days; no sweep 15–23%; MSS too late; news days 12–13%.',
          'With SMC (year backtest BTC/ETH base n121 + live SM / SB): the ICT day bias does not help (with the trade −0.06R n42 vs against +0.03R n26).',
          'Lead only: SMC entries in the NY morning 09:30–12:00 did worse in all 4 sets (base −0.50R n9, raw −0.08R n19, live SM −0.31R n7, live SB −0.57R n6; pooled −11.3R n23); too small to pass the halves test. Next step if Fred wants: a backtested "no SMC entries 09:30–12:00 NY" test switch.']},
   {d: '2026-11-21', t: 'GMS PMR v1.4: 1h pattern → 15m causal OB/FVG → 5m entry (BTC/ETH)', st: 'testing',

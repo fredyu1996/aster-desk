@@ -2,16 +2,16 @@
 // Per symbol: tick size from exchangeInfo, pointValue 1 (P&L per 1 unit), minRange = the patch's MNQ ratio (10 pts / ~20,000 = 0.05%)
 // of the median price, costs as proportional feeRate (fee 0.04% + half spread) plus adverse slippage ticks on stop / time exits.
 // Aster trades 24/7, so there are no venue closures; a missing minute makes that day INCOMPLETE (as the patch says).
-// Run: node tools/ict-backtest.mjs   env: ICT_COINS (BTCUSDT,ETHUSDT,NVDAUSDT,TSLAUSDT), ICT_FROM / ICT_TO (YYYY-MM-DD),
+// Run: node tools/ict-backtest.mjs   env: ICT_COINS (BTCUSDT,ETHUSDT; any Aster perp, comma-separated), ICT_FROM / ICT_TO (YYYY-MM-DD),
 //      ICT_NEWS 0 (do not skip news days), ICT_CACHE (/tmp/ict-cache), ICT_OUT (/tmp/ict-backtest.json)
 import fs from 'node:fs';
 import {aster, klines} from '../bot/backtest.mjs';
 import {backtestIct, MIN} from '../bot/ict.mjs';
 import {sessions} from './ict-calendar.mjs';
 
-const COINS = (process.env.ICT_COINS || 'BTCUSDT,ETHUSDT,NVDAUSDT,TSLAUSDT').split(','), FROM = process.env.ICT_FROM || '2025-11-20', TO = process.env.ICT_TO || '2026-11-25';
+const COINS = (process.env.ICT_COINS || 'BTCUSDT,ETHUSDT').split(','), FROM = process.env.ICT_FROM || '2025-11-20', TO = process.env.ICT_TO || '2026-11-25';
 const CACHE = process.env.ICT_CACHE || '/tmp/ict-cache', OUT = process.env.ICT_OUT || '/tmp/ict-backtest.json', NEWS = process.env.ICT_NEWS !== '0';
-const STOCK_SPREAD = 0.02, CRYPTO_SPREAD = 0.01, FEE = 0.04, SLIP = {stock: 0.05, crypto: 0.02};   // % per side
+const STOCK_SPREAD = 0.02, CRYPTO_SPREAD = +(process.env.ICT_SPREAD || 0.01), FEE = 0.04, SLIP = {stock: 0.05, crypto: +(process.env.ICT_SLIP || 0.02)};   // % per side; small caps: ICT_SLIP=0.1 ICT_SPREAD=0.02 (desk small-cap costs)
 fs.mkdirSync(CACHE, {recursive: true});
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 const cal = sessions(FROM, TO, {news: NEWS});
