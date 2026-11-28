@@ -1,6 +1,6 @@
 # nyAm test switch (Nov 28, 2026): no SMC entries Mon–Fri 09:30–12:00 New York
 
-Backtested as a test switch, then switched on for SMC Big + SMC BTC/ETH on Nov 28 (see Decision below).
+Backtested as a test switch; off on every account (see Decision below).
 - Tool: `tools/smc-nyam-test.mjs`.
 - Rules in force come from the state of 2026-11-28.
 - `nyAm 0` was checked against base trade for trade: identical in all 6 runs.
@@ -23,10 +23,16 @@ Backtested as a test switch, then switched on for SMC Big + SMC BTC/ETH on Nov 2
   - Small caps before: 3 trades, −1.1R.
   - Big caps before: 1 trade, −1.2R.
 - **Reading:** nyAm 1 is better in 5 of 6 sets and better in both halves in 4, including both out-of-sample BTC/ETH halves. The exception is small caps now, −0.6R, where the 3 NY-morning trades had made money. It removes 1–9% of trades. A modest effect, but consistent.
-- **Decision (Fred, Nov 28, "好呀"):** ON for SMC Big and SMC BTC/ETH (`SB_OV.nyAm = 1`). The SMC Trader and SMC Pattern stay off (`SM_DEF` 0; `SP_OV` has no `nyAm`).
-  - The SMC panel's status line shows the window on both accounts.
-  - Test: `tests/smc-nyam.mjs`.
-  - Re-check after ~20 live trades on each account.
+- **Decision (Fred, Nov 28):**
+  - It was switched on for SMC Big + SMC BTC/ETH, then off again about an hour later.
+  - Fred: "熄番，因為我想多啲單": he wants more trades, so the Reviewer and the Time Machine get more data on what works and what doesn't.
+  - The switch stays in the code, 0 on every account. Test: `tests/smc-nyam.mjs`.
+- **An exception for good setups only has no support yet.** In the NY morning, the best setups did worst:
+  - q ≥ 90: 5 trades, 0 wins, −5.5R;
+  - q 85–90: 7 trades, −2.6R;
+  - A / A+: 3 trades, all losses;
+  - outside the window, q 85–90 was +0.38R n55.
+  - Some trades are counted in two sets (BTC/ETH sit in both the year and the big-cap runs).
 - **Side finding:** the same SMC rules on BTC/ETH lost −29.0R n175 in the year before (Nov 2024 → Nov 2025; half 1 −27.4R). The +11.1R of the current year does not repeat there. Caveats:
   - the Reviewer rules were learned from 2026 trades;
   - Aster's books were thinner in 2024–25.

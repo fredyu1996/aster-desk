@@ -34,7 +34,7 @@ function smSave() { LS.set('awx_' + smKey(), SM); }
 function smReset() { const cfg = SM.cfg, k = smKey(); SM = JSON.parse(JSON.stringify(SM_DEF)); SM.cfg = cfg; SM.created = now(); if (k === 'sb') SB = SM; if (k === 'se') SE = SM; if (k === 'sp') SP = SM; smSave(); }   // big: reset inside smWith(SB / SE) must save to awx_sb / awx_se
 S.smC = new Map();
 // SMC Big (Nov 13, Fred): the same strategy and Reviewer rules on the top-10 volume perps, its own $1,000 account. Only the percent numbers tuned for small caps change.
-const SB_OV = {minStopPct: 0.5, slipPct: 0.02, stopBufMul: 0.25, tightPct: 0.4, useScreens: 0, invExit: 0, obPick: 0, gmsC: 1, gmsB: 0, gmsD: 0, fib: 0, closedOnly: 0, retestExp: 0, ltf5m: 0, pat1h: 0, nyAm: 1};   // nyAm 1 (Fred, Nov 28 "好呀"): SMC Big + SMC BTC/ETH skip new entries Mon–Fri 09:30–12:00 New York; the SMC Trader and SMC Pattern keep 0. Backtests: BTC/ETH 365 d +15.6R n112 vs +11.1R n121, prior year −22.9R n164 vs −29.0R n175, big caps 21 d +2.1R n58 vs −2.3R n64 (docs/nyam-results.md)   // GMS PMR v1.4 test switches (Nov 22), report only: 0 on every account   // fib 0 (Nov 19): SMC Big off; big caps 21 d fib1 +7.5R n35 vs +5.2R n44 but half 1 worse, BTC/ETH 365 d +14.7R n58 vs +24.2R n89   // gmsC 1 (Fred, Nov 15 "試住C先"): GMS supply/demand zones for SMC Big only; BTC/ETH 365 d +28.0R n91 vs +13.8R n66 (half 2 +5.4 vs +6.5), big caps 21 d +6.6R n37 both; small caps keep 0 (−14.6R n71 vs −9.0R n55)   // obPick 0 (Nov 15): big caps keep the FVG pick; good-OB pick tested worse there (14d −6.6R n23 vs +7.3R n25; BTC/ETH year +7.7R n38 vs +13.8R n66)   // invExit 0 (Fred, Nov 14): big caps hold through a failed entry gap; 7d backtest +0.75R n15 vs +0.48R n16 (5 trades differ, 3 better)   // useScreens 0: screenGate writes Reviewer counters, and the Reviewer never learns from SB
+const SB_OV = {minStopPct: 0.5, slipPct: 0.02, stopBufMul: 0.25, tightPct: 0.4, useScreens: 0, invExit: 0, obPick: 0, gmsC: 1, gmsB: 0, gmsD: 0, fib: 0, closedOnly: 0, retestExp: 0, ltf5m: 0, pat1h: 0, nyAm: 0};   // nyAm 0 (Fred, Nov 28): was 1 for ~1 h, switched back off: he wants more trades so the Reviewer and the Time Machine get more data (backtests: docs/nyam-results.md)
 const SB_DEF = Object.assign(JSON.parse(JSON.stringify(SM_DEF)), {on: true, cfg: {}});
 let SB = Object.assign(JSON.parse(JSON.stringify(SB_DEF)), LS.get('awx_sb', null) || {});
 if (!SB.created) SB.created = now();
@@ -717,7 +717,7 @@ function smClose(s, frac, why) {
   } else raise('smc', s, 'part' + now(), `${smTag()} PAPER ${p.b}: ${why} (${fmtMoney(pnl - fee, 1)} banked)`, 1, 0);
 }
 /* SM.cfg.nyAm (Nov 28, from the ICT study: SMC entries in the New York morning did worse in 4 of 4 sets, pooled −11.3R n23).
-   1 = no new entry Monday–Friday 09:30–12:00 America/New_York (DST-aware). On for SMC Big + SMC BTC/ETH via SB_OV (Fred, Nov 28); SM_DEF 0 for the SMC Trader and SMC Pattern.
+   1 = no new entry Monday–Friday 09:30–12:00 America/New_York (DST-aware). Off on every account (Fred, Nov 28: more trades for the Reviewer / Time Machine).
    Open positions are managed as usual. tools/smc-nyam-test.mjs backtests it. */
 const SM_NYF = new Intl.DateTimeFormat('en-US', {timeZone: 'America/New_York', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'});
 function smNyAm(t) {

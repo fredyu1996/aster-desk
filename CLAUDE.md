@@ -112,10 +112,9 @@ Since Nov 20 (option A) keys 2, 3 and 4 are gone: OpenInterest, Flow and the Tra
      - exit if a candle closes through the entry gap before the half is taken;
      - draw on liquidity not scored on continuation setups.
    - Since Nov 15: GMS B + D (`gmsB`/`gmsD` 1, migration `gmsBD1115`): a clean sweep and closed-bar shift with a displacement candle, and only displacement FVGs as the entry zone. SMC Big keeps both 0 (`SB_OV`).
-   - `nyAm` 0: it trades through the New York morning (SMC Big and SMC BTC/ETH don't, since Nov 28).
 7. **SMC Big** ($1,000 paper, account `SB`, on from the first deploy):
    - Same strategy and same Reviewer rules (`smRules` / `RV.smAdj`) as the SMC Trader, on the **top 10 Aster perps by 24 h quote volume** (stock perps out unless `CFG.includeStocks`; coins in the small-cap tracker skipped). Recomputed every cycle; held coins keep being managed.
-   - `SB.cfg` = live copy of `SM.cfg` + `SB_OV` (min stop 0.5%, slippage 0.02%, stop buffer ×0.25, tight 0.4%, screens off, `invExit` 0 = no exit when a candle closes through the entry gap, `nyAm` 1 = no new entries Mon–Fri 09:30–12:00 New York since Nov 28). Sizing as above.
+   - `SB.cfg` = live copy of `SM.cfg` + `SB_OV` (min stop 0.5%, slippage 0.02%, stop buffer ×0.25, tight 0.4%, screens off, `invExit` 0 = no exit when a candle closes through the entry gap). Sizing as above.
    - The Reviewer never learns from SB. Fred can review SB trades (review wall, "On the chart" SMC Big filter, Review chip on the Big caps trade log); they are keyed `sb|SYM|t1` and every learner skips them (`rvmLearn`). No south wall for it.
    - Desk: SMC panel (key 6) has a Small caps / Big caps switch with its own on/off toggle; the return race wall has its card, line and SMC BIG stats column; the east wall's left half shows its open positions.
    - The 7-day backtest also writes `smc-backtest-big.json` (report only; paused since Nov 14, last file stays readable).
@@ -264,7 +263,7 @@ Since the fade went live, the Trader's reversal shorts did −0.06R n48 (−2.9R
   - With SMC: the ICT day bias does not help SMC trades. Lead only: SMC entries 09:30–12:00 NY did worse in all 4 sets (pooled −11.3R n23), each set too small. Offered Fred a backtested test switch "no SMC entries 09:30–12:00 NY"; nothing changed.
 - **Nov 28 (nyAm test switch, report only):** Fred "yes go for it" (the NY-morning lead from the ICT study). `SM.cfg.nyAm` (`SM_DEF` 0, `SB_OV.nyAm` 0): 1 = no new SMC entry Mon–Fri 09:30–12:00 America/New_York (`smNyAm`, at the top of `smTryEnter`). Tool `tools/smc-nyam-test.mjs`, results `docs/nyam-results.md`, Backtester → Strategy notes.
   - nyAm 1 vs base: BTC/ETH 365 d +15.6R n112 vs +11.1R n121; big caps 21 d +2.1R n58 vs −2.3R n64; small caps 21 d −2.8R n17 vs −2.2R n20. Out of sample: BTC/ETH Nov 2024–Nov 2025 −22.9R n164 vs −29.0R n175; small caps 21 d to Nov 7 +5.8R n28 vs +4.6R n31; big caps 21 d to Nov 7 −2.6R n42 vs −3.7R n43. Better in 5 of 6, both halves in 4.
-  - **Fred, Nov 28 ("好呀"): ON for SMC Big + SMC BTC/ETH** (`SB_OV.nyAm = 1`, no migration needed since `SB.cfg` / `SE.cfg` are rebuilt from `SM.cfg` + `SB_OV`). SMC Trader and SMC Pattern stay 0. The SMC panel status line shows the window; test `tests/smc-nyam.mjs`; the nightly year backtest's base includes it from now on. Re-check after ~20 live trades on each.
+  - Fred, Nov 28: on for SMC Big + SMC BTC/ETH (`SB_OV.nyAm 1`), then **off again** about an hour later: "熄番，因為我想多啲單" (more trades so the Reviewer and the Time Machine get more data). `nyAm` 0 on every account; the code, the panel tag (shown only when 1) and `tests/smc-nyam.mjs` stay. An exception for good setups only has no support: in the NY morning q ≥ 85 did 12 trades, 2 wins, −8.1R.
   - Side finding: SMC BTC/ETH rules lost −29.0R n175 in the prior year (Nov 2024–Nov 2025), so the SE account's year-backtest case is weaker than the current year alone shows.
 - **Nov 14 (year backtester):** option A: BTC / ETH only, SMC Big settings, 365 days, one account. Patterns are searched on the **raw** run (Reviewer rules off), so they are not just the rules' own leftovers (Fred). Report only. Spec/plan: `docs/superpowers/`.
 
@@ -279,7 +278,7 @@ Since the fade went live, the Trader's reversal shorts did −0.06R n48 (−2.9R
   7. **Fib check (since Nov 19):** SMC Trader `fib 1`, review at ~20 trades (see Decisions, Nov 19).
   8. **PMR v1.4 (Nov 21):** research module only; as written it barely trades and loses on BTC/ETH, big caps and small caps (see Decisions). Fred decides what next.
   9. **ICT study (Nov 27):** 12 trades on the crypto desk's coins, −6.4R; NY-morning lead for SMC waits for Fred (see Decisions).
-  10. **nyAm (Nov 28):** ON for SMC Big + SMC BTC/ETH; re-check at ~20 live trades each. SMC BTC/ETH rules lost −29R in the prior-year backtest (Fred told).
+  10. **nyAm (Nov 28):** off on every account (Fred wants more trades). SMC BTC/ETH rules lost −29R in the prior-year backtest (Fred told).
 - **Tests:** `tests/desk-smoke.mjs` now also checks the review chart: 5 timeframe chips, wheel zoom, switch to 1h, OB auto-box, 3 swing points, and the Reviewer reading LH/LL against a long plus an opposing OB as `room`.
   - Two older checks fail on and off, on code before Nov 16 too: "SB review changed SMC learning or awx_sm" and "Backtester changed live state".
   - Treat any other failure as real.
