@@ -261,6 +261,9 @@ Since the fade went live, the Trader's reversal shorts did −0.06R n48 (−2.9R
 - **Nov 27 (ICT New York-morning study, report only):** Fred sent `aster-ict-study.patch` (written for the stock desk's codebase: `core/ict.mjs`, `test/ict.test.mjs`) and asked (1) backtest it, (2) can it be combined with our strategies. Ported unchanged to `bot/ict.mjs` (+ the 3 helpers it imported; `structuralBreaks` exported), its 9 tests in `tests/ict.mjs` (in `npm test`), driver `tools/ict-backtest.mjs` + sourced US calendar `tools/ict-calendar.mjs`, combination study `tools/ict-smc-study.mjs`. Notes: `docs/ict-study.md`, Backtester → Strategy notes.
   - Crypto desk (Fred: "crypto 果個 workstation, 唔係 stock"): SMC Big's top 10, 365 d: 10 trades, 1 win, −4.4R; 29 small caps, 180 d: 2 trades, −2.0R. **12 trades, −6.4R** (target reached before the setup on 30–39% of days). Not on any account.
   - With SMC: the ICT day bias does not help SMC trades. Lead only: SMC entries 09:30–12:00 NY did worse in all 4 sets (pooled −11.3R n23), each set too small. Offered Fred a backtested test switch "no SMC entries 09:30–12:00 NY"; nothing changed.
+- **Nov 28 (nyAm test switch, report only):** Fred "yes go for it" (the NY-morning lead from the ICT study). `SM.cfg.nyAm` (`SM_DEF` 0, `SB_OV.nyAm` 0): 1 = no new SMC entry Mon–Fri 09:30–12:00 America/New_York (`smNyAm`, at the top of `smTryEnter`). Tool `tools/smc-nyam-test.mjs`, results `tools/out/nyam-results.md`, Backtester → Strategy notes.
+  - nyAm 1 vs base: BTC/ETH 365 d +15.6R n112 vs +11.1R n121; big caps 21 d +2.1R n58 vs −2.3R n64; small caps 21 d −2.8R n17 vs −2.2R n20. Out of sample: BTC/ETH Nov 2024–Nov 2025 −22.9R n164 vs −29.0R n175; small caps 21 d to Nov 7 +5.8R n28 vs +4.6R n31; big caps 21 d to Nov 7 −2.6R n42 vs −3.7R n43. Better in 5 of 6, both halves in 4. **Off on every account until Fred says which.**
+  - Side finding: SMC BTC/ETH rules lost −29.0R n175 in the prior year (Nov 2024–Nov 2025), so the SE account's year-backtest case is weaker than the current year alone shows.
 - **Nov 14 (year backtester):** option A: BTC / ETH only, SMC Big settings, 365 days, one account. Patterns are searched on the **raw** run (Reviewer rules off), so they are not just the rules' own leftovers (Fred). Report only. Spec/plan: `docs/superpowers/`.
 
 ## Open items
@@ -274,6 +277,7 @@ Since the fade went live, the Trader's reversal shorts did −0.06R n48 (−2.9R
   7. **Fib check (since Nov 19):** SMC Trader `fib 1`, review at ~20 trades (see Decisions, Nov 19).
   8. **PMR v1.4 (Nov 21):** research module only; as written it barely trades and loses on BTC/ETH, big caps and small caps (see Decisions). Fred decides what next.
   9. **ICT study (Nov 27):** 12 trades on the crypto desk's coins, −6.4R; NY-morning lead for SMC waits for Fred (see Decisions).
+  10. **nyAm switch (Nov 28):** better in 5 of 6 backtests (see Decisions); waiting for Fred to say on which accounts, if any. Also tell him SMC BTC/ETH lost −29R in the prior year.
 - **Tests:** `tests/desk-smoke.mjs` now also checks the review chart: 5 timeframe chips, wheel zoom, switch to 1h, OB auto-box, 3 swing points, and the Reviewer reading LH/LL against a long plus an opposing OB as `room`.
   - Two older checks fail on and off, on code before Nov 16 too: "SB review changed SMC learning or awx_sm" and "Backtester changed live state".
   - Treat any other failure as real.

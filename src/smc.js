@@ -10,7 +10,7 @@
 // Every setup is also audited in SMC terms (sweep, liquidity, break, FVG / OB quality, premium/discount, higher timeframe,
 // entry depth) into a quality score; weak setups are skipped.
 const SM_DEF = {v: 1, start: 1000, cash: 1000, pos: {}, log: [], eqs: [], day: null, cool: {}, on: true, paused: null, created: 0, lastScan: null,
-  cfg: {riskPct: 1, maxPos: 3, maxLev: 10, minScore: 4, dailyLossPct: 3, feePct: 0.04, slipPct: 0.10, holdH: 12, minVol: 300000, maxStopPct: 15, minRR: 2, maxRR: 5, tp1R: 1.5, stopBuf: 0.3, unlGuard: 1, useScreens: 0, tf15: 1, tf1h: 1, holdH1h: 36, minQ: 55, learn: 1, poiRule: 1, ltfConfirm: 1, roomCheck: 1, cont: 1, pathCheck: 1, pdLiq: 1, invExit: 1, minStopPct: 1.5, minDepth: 15, zoneLearn: 0, regimeGate: 1, obPick: 0, gmsA: 0, gmsB: 0, gmsC: 0, gmsD: 0, fib: 0, closedOnly: 0, retestExp: 0, ltf5m: 0, pat1h: 0}};
+  cfg: {riskPct: 1, maxPos: 3, maxLev: 10, minScore: 4, dailyLossPct: 3, feePct: 0.04, slipPct: 0.10, holdH: 12, minVol: 300000, maxStopPct: 15, minRR: 2, maxRR: 5, tp1R: 1.5, stopBuf: 0.3, unlGuard: 1, useScreens: 0, tf15: 1, tf1h: 1, holdH1h: 36, minQ: 55, learn: 1, poiRule: 1, ltfConfirm: 1, roomCheck: 1, cont: 1, pathCheck: 1, pdLiq: 1, invExit: 1, minStopPct: 1.5, minDepth: 15, zoneLearn: 0, regimeGate: 1, obPick: 0, gmsA: 0, gmsB: 0, gmsC: 0, gmsD: 0, fib: 0, closedOnly: 0, retestExp: 0, ltf5m: 0, pat1h: 0, nyAm: 0}};
 // Nov 8: the SMC Trader trades on its own SMC judgement, without the Reviewer's screens (one-time switch-off for saved accounts)
 function smMigrate(p) { if (p.cfg.ownJudge !== 1) { p.cfg.useScreens = 0; p.cfg.ownJudge = 1; } if (p.cfg.lev10 !== 1) { p.cfg.maxLev = 10; p.cfg.lev10 = 1; } // Nov 11 (Fred): 10× leverage cap
   if (p.cfg.resume1113 !== 1) { if (p.cfg.pause1113 === 1) p.on = true; p.cfg.resume1113 = 1; } // Nov 13 (Fred): self-review done, resume SMC trading (zone tuning stays locked)
@@ -34,7 +34,7 @@ function smSave() { LS.set('awx_' + smKey(), SM); }
 function smReset() { const cfg = SM.cfg, k = smKey(); SM = JSON.parse(JSON.stringify(SM_DEF)); SM.cfg = cfg; SM.created = now(); if (k === 'sb') SB = SM; if (k === 'se') SE = SM; if (k === 'sp') SP = SM; smSave(); }   // big: reset inside smWith(SB / SE) must save to awx_sb / awx_se
 S.smC = new Map();
 // SMC Big (Nov 13, Fred): the same strategy and Reviewer rules on the top-10 volume perps, its own $1,000 account. Only the percent numbers tuned for small caps change.
-const SB_OV = {minStopPct: 0.5, slipPct: 0.02, stopBufMul: 0.25, tightPct: 0.4, useScreens: 0, invExit: 0, obPick: 0, gmsC: 1, gmsB: 0, gmsD: 0, fib: 0, closedOnly: 0, retestExp: 0, ltf5m: 0, pat1h: 0};   // GMS PMR v1.4 test switches (Nov 22), report only: 0 on every account   // fib 0 (Nov 19): SMC Big off; big caps 21 d fib1 +7.5R n35 vs +5.2R n44 but half 1 worse, BTC/ETH 365 d +14.7R n58 vs +24.2R n89   // gmsC 1 (Fred, Nov 15 "試住C先"): GMS supply/demand zones for SMC Big only; BTC/ETH 365 d +28.0R n91 vs +13.8R n66 (half 2 +5.4 vs +6.5), big caps 21 d +6.6R n37 both; small caps keep 0 (−14.6R n71 vs −9.0R n55)   // obPick 0 (Nov 15): big caps keep the FVG pick; good-OB pick tested worse there (14d −6.6R n23 vs +7.3R n25; BTC/ETH year +7.7R n38 vs +13.8R n66)   // invExit 0 (Fred, Nov 14): big caps hold through a failed entry gap; 7d backtest +0.75R n15 vs +0.48R n16 (5 trades differ, 3 better)   // useScreens 0: screenGate writes Reviewer counters, and the Reviewer never learns from SB
+const SB_OV = {minStopPct: 0.5, slipPct: 0.02, stopBufMul: 0.25, tightPct: 0.4, useScreens: 0, invExit: 0, obPick: 0, gmsC: 1, gmsB: 0, gmsD: 0, fib: 0, closedOnly: 0, retestExp: 0, ltf5m: 0, pat1h: 0, nyAm: 0};   // nyAm (Nov 28): test switch, 0 on every account   // GMS PMR v1.4 test switches (Nov 22), report only: 0 on every account   // fib 0 (Nov 19): SMC Big off; big caps 21 d fib1 +7.5R n35 vs +5.2R n44 but half 1 worse, BTC/ETH 365 d +14.7R n58 vs +24.2R n89   // gmsC 1 (Fred, Nov 15 "試住C先"): GMS supply/demand zones for SMC Big only; BTC/ETH 365 d +28.0R n91 vs +13.8R n66 (half 2 +5.4 vs +6.5), big caps 21 d +6.6R n37 both; small caps keep 0 (−14.6R n71 vs −9.0R n55)   // obPick 0 (Nov 15): big caps keep the FVG pick; good-OB pick tested worse there (14d −6.6R n23 vs +7.3R n25; BTC/ETH year +7.7R n38 vs +13.8R n66)   // invExit 0 (Fred, Nov 14): big caps hold through a failed entry gap; 7d backtest +0.75R n15 vs +0.48R n16 (5 trades differ, 3 better)   // useScreens 0: screenGate writes Reviewer counters, and the Reviewer never learns from SB
 const SB_DEF = Object.assign(JSON.parse(JSON.stringify(SM_DEF)), {on: true, cfg: {}});
 let SB = Object.assign(JSON.parse(JSON.stringify(SB_DEF)), LS.get('awx_sb', null) || {});
 if (!SB.created) SB.created = now();
@@ -716,8 +716,17 @@ function smClose(s, frac, why) {
     raise('smc', s, 'close' + now(), `${smTag()} PAPER ${p.side === 'L' ? 'long' : 'short'} ${p.b} closed ${fmtMoney(p.realized, 1)} (${R >= 0 ? '+' : ''}${R.toFixed(2)}R) — ${why}`, p.realized >= 0 ? 1 : -1, 0, true);
   } else raise('smc', s, 'part' + now(), `${smTag()} PAPER ${p.b}: ${why} (${fmtMoney(pnl - fee, 1)} banked)`, 1, 0);
 }
+/* SM.cfg.nyAm (Nov 28, from the ICT study: SMC entries in the New York morning did worse in 4 of 4 sets, pooled −11.3R n23).
+   TEST SWITCH, 0 on every account until Fred says yes: 1 = no new entry Monday–Friday 09:30–12:00 America/New_York (DST-aware).
+   Open positions are managed as usual. tools/smc-nyam-test.mjs backtests it. */
+const SM_NYF = new Intl.DateTimeFormat('en-US', {timeZone: 'America/New_York', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'});
+function smNyAm(t) {
+  const p = Object.fromEntries(SM_NYF.formatToParts(new Date(t)).map(x => [x.type, x.value])), m = +p.hour * 60 + +p.minute;
+  return p.weekday !== 'Sat' && p.weekday !== 'Sun' && m >= 570 && m < 720;
+}
 function smTryEnter(c) {
   const {s, r, tk} = c, side = r.dir, px = tk.last;
+  if (SM.cfg.nyAm && smNyAm(now())) { c.skip = 'New York morning 09:30-12:00 (nyAm test switch)'; return false; }
   const fill = smFill(px, side, true), stop = r.stop;
   if (side === 'L' ? stop >= fill : stop <= fill) { c.skip = 'price already beyond the stop'; return false; }
   const dist = Math.abs(fill - stop) / fill;
