@@ -1,6 +1,6 @@
 # nyAm test switch (Nov 28, 2026): no SMC entries Mon–Fri 09:30–12:00 New York
 
-Report only: `SM.cfg.nyAm` / `SB_OV.nyAm` stay 0 on every account.
+Backtested as a test switch, then switched on for SMC Big + SMC BTC/ETH on Nov 28 (see Decision below).
 - Tool: `tools/smc-nyam-test.mjs`.
 - Rules in force come from the state of 2026-11-28.
 - `nyAm 0` was checked against base trade for trade: identical in all 6 runs.
@@ -22,7 +22,11 @@ Report only: `SM.cfg.nyAm` / `SB_OV.nyAm` stay 0 on every account.
   - Small caps now: 3 trades, +0.6R.
   - Small caps before: 3 trades, −1.1R.
   - Big caps before: 1 trade, −1.2R.
-- **Reading:** nyAm 1 is better in 5 of 6 sets and better in both halves in 4, including both out-of-sample BTC/ETH halves. The exception is small caps now, −0.6R, where the 3 NY-morning trades had made money. It removes 1–9% of trades. A modest effect, but consistent. Fred decides; nothing is on.
+- **Reading:** nyAm 1 is better in 5 of 6 sets and better in both halves in 4, including both out-of-sample BTC/ETH halves. The exception is small caps now, −0.6R, where the 3 NY-morning trades had made money. It removes 1–9% of trades. A modest effect, but consistent.
+- **Decision (Fred, Nov 28, "好呀"):** ON for SMC Big and SMC BTC/ETH (`SB_OV.nyAm = 1`). The SMC Trader and SMC Pattern stay off (`SM_DEF` 0; `SP_OV` has no `nyAm`).
+  - The SMC panel's status line shows the window on both accounts.
+  - Test: `tests/smc-nyam.mjs`.
+  - Re-check after ~20 live trades on each account.
 - **Side finding:** the same SMC rules on BTC/ETH lost −29.0R n175 in the year before (Nov 2024 → Nov 2025; half 1 −27.4R). The +11.1R of the current year does not repeat there. Caveats:
   - the Reviewer rules were learned from 2026 trades;
   - Aster's books were thinner in 2024–25.
