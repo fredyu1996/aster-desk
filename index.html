@@ -6107,11 +6107,12 @@ TABS.bt = [['sum', 'Summary & rules'], ['pat', 'Patterns'], ['tr', 'Trades'], ['
 /* Strategy notes (Nov 15, Fred: "the Backtester writes down the strategies and the key points, then backtests them").
    Results of the one-off studies run from Claude Code (tools/*.mjs). Aggregates only, never trade data. Newest first. */
 const BT_NOTES = [
-  {d: '2026-11-28', t: 'No SMC entries in the New York morning (nyAm test switch)', st: 'testing',
+  {d: '2026-11-28', t: 'No SMC entries in the New York morning (nyAm)', st: 'adopted',
    idea: 'From the ICT study: SMC entries Mon–Fri 09:30–12:00 New York did worse in all 4 sets. Switch SM.cfg.nyAm / SB_OV.nyAm = 1 skips new entries in that window (open trades are managed as usual). 0 on every account.',
    pts: ['BTC/ETH 365 d to Nov 28: +11.1R n121 → +15.6R n112 (both halves better). Big caps 21 d: −2.3R n64 → +2.1R n58 (both halves). Small caps 21 d: −2.2R n20 → −2.8R n17 (half 1 worse).',
          'Out of sample (never looked at): BTC/ETH 365 d to Nov 20 2025: −29.0R n175 → −22.9R n164 (both halves better). Small caps 21 d to Nov 7: +4.6R n31 → +5.8R n28 (both halves). Big caps 21 d to Nov 7: −3.7R n43 → −2.6R n42.',
-         'Better in 5 of 6 sets, both halves in 4; removes 1–9% of trades. nyAm 0 = base trade for trade in all 6 runs. Fred decides.',
+         'Better in 5 of 6 sets, both halves in 4; removes 1–9% of trades. nyAm 0 = base trade for trade in all 6 runs.',
+         'Fred, Nov 28 ("好呀"): ON for SMC Big and SMC BTC/ETH (SB_OV.nyAm 1); the SMC Trader (small caps, the one set that got worse) and SMC Pattern stay off. Re-check after ~20 live trades each. The nightly year backtest\'s base now includes it.',
          'Side finding: the same SMC rules on BTC/ETH lost −29.0R n175 in Nov 2024 → Nov 2025, so the current year\'s +11.1R does not repeat there (rules learned on 2026 trades; thinner Aster books in 2024–25).']},
   {d: '2026-11-27', t: 'ICT New York-morning reversal (Fred\'s patch) on the crypto desk, and with SMC', st: 'rejected',
    idea: '15m bias before 10:00 NY, then 10:00–11:00 NY: sweep of the 09:30–10:00 range, strong 1m MSS, 1m FVG entry, target the other side of the range or the prior 09:30–16:00 session\'s untouched high / low, net R:R ≥ 2, out by noon NY. Skips CPI / jobs / FOMC days and US holidays.',
