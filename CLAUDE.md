@@ -56,6 +56,7 @@ npm install                      # once: three.js 0.149.0 (+ playwright for the 
 python3 build.py                 # src/ → index.html + bot/core.js
 node tests/smc-sweep.mjs         # SMC Trader logic in a Node vm: refuses a 15m short against a rising 1h, takes it when the 1h falls
 node tests/pmr-golden.mjs        # GMS PMR v1.4 research module (bot/pmr.mjs): 30 golden / state-machine tests, no network
+node --test tests/ict.mjs        # ICT NY-morning study (bot/ict.mjs): the patch's own 9 tests
 npx playwright install chromium  # once
 node tests/desk-smoke.mjs        # opens the desk against a fake Aster API, opens every panel/tab, fails on page errors
 # cloud cycle against a local file instead of the data repo (real Aster prices, no token needed):
@@ -257,6 +258,9 @@ Since the fade went live, the Trader's reversal shorts did −0.06R n48 (−2.9R
 - **Nov 22 (GMS v1.4 switches + SMC Pattern account):**
   - Switches (report only): `closedOnly` / `retestExp` / `ltf5m` (`tools/smc-gms14-test.mjs`, `tools/out/gms14-results.md`) and `pat1h` 1 = 1h pattern filter / 2 = pattern trigger (`src/smc_pat.js`, `tools/smc-pat-test.mjs`, `tools/out/pat1h-results.md`): **all 0 on SM / SB / SE**. Leads only: `closedOnly` on BTC/ETH 365 d +22.7R n85 vs +22.2R n88 (both halves better, small margin); `pat1h 1` on BTC/ETH +23.2R n39 vs +19.7R n87 (half 2 worse). Small and big caps: nothing holds. `ltf5m` barely trades.
   - Fred "整多個trading agent 係v1.4既strategy 同埋睇1h 形態去做trade, 根據gainer loser 榜黎簡": new paper account `SP` "SMC Pattern (v1.4)" ($1,000, on from deploy, flag `sp1122`). `SP.cfg` = `SM.cfg` + `SP_OV` (`pat1h 2`, `closedOnly 1`, `gmsB/D 1`, `fib 0`, `ltf5m 0`); same stop / target / size / time-stop code. Coins: every hour the top 10 gainers + top 10 losers by 24 h % (`spPick`) among the board's coins with ≥ `CFG.trkMinVol` ($300K); direction from the pattern; held coins stay managed. `ltf5m 1` on any account now fetches live 5m klines for that account's coins only (`smK5Coins`, ≤ 20). Race wall + cloud cycle (`sp`, `cloud.spEq/spOpen`); SMC panel (key 6) "Pattern" switch (read-only tabs acct / set / log) and the east wall's third section (Fred "加埋SMC panel tab同東牆持倉", commit 7131bb7); no review wall (Reviewer never learns from it, `sp|` keys). Backtest 21 d (`tools/smc-sp-test.mjs`, `tools/out/sp-results.md`): 2 trades +2.4R with ltf5m 0, 0 with ltf5m 1: too few to judge. Test: `tests/smc-sp.mjs`.
+- **Nov 27 (ICT New York-morning study, report only):** Fred sent `aster-ict-study.patch` (written for the stock desk's codebase: `core/ict.mjs`, `test/ict.test.mjs`) and asked (1) backtest it, (2) can it be combined with our strategies. Ported unchanged to `bot/ict.mjs` (+ the 3 helpers it imported; `structuralBreaks` exported), its 9 tests in `tests/ict.mjs` (in `npm test`), driver `tools/ict-backtest.mjs` + sourced US calendar `tools/ict-calendar.mjs`, combination study `tools/ict-smc-study.mjs`. Notes: `docs/ict-study.md`, Backtester → Strategy notes.
+  - Aster 1m, Nov 20 2025 → Nov 25 2026: BTC 1, ETH 1, NVDA 0, TSLA 1 trade = **3 trades, all stopped, −3R** (target reached before the setup on ~40% of days). Not on any account.
+  - With SMC: the ICT day bias does not help SMC trades. Lead only: SMC entries 09:30–12:00 NY did worse in all 4 sets (pooled −11.3R n23), each set too small. Offered Fred a backtested test switch "no SMC entries 09:30–12:00 NY"; nothing changed.
 - **Nov 14 (year backtester):** option A: BTC / ETH only, SMC Big settings, 365 days, one account. Patterns are searched on the **raw** run (Reviewer rules off), so they are not just the rules' own leftovers (Fred). Report only. Spec/plan: `docs/superpowers/`.
 
 ## Open items
@@ -269,6 +273,7 @@ Since the fade went live, the Trader's reversal shorts did −0.06R n48 (−2.9R
   6. **SMC checks:** SMC Trader B+D (8 of ~20 trades) and SMC Big C (13 of ~20) are not due yet.
   7. **Fib check (since Nov 19):** SMC Trader `fib 1`, review at ~20 trades (see Decisions, Nov 19).
   8. **PMR v1.4 (Nov 21):** research module only; as written it barely trades and loses on BTC/ETH, big caps and small caps (see Decisions). Fred decides what next.
+  9. **ICT study (Nov 27):** 3 trades / year on Aster; NY-morning lead for SMC waits for Fred (see Decisions).
 - **Tests:** `tests/desk-smoke.mjs` now also checks the review chart: 5 timeframe chips, wheel zoom, switch to 1h, OB auto-box, 3 swing points, and the Reviewer reading LH/LL against a long plus an opposing OB as `room`.
   - Two older checks fail on and off, on code before Nov 16 too: "SB review changed SMC learning or awx_sm" and "Backtester changed live state".
   - Treat any other failure as real.

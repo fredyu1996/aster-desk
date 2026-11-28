@@ -4,6 +4,12 @@ TABS.bt = [['sum', 'Summary & rules'], ['pat', 'Patterns'], ['tr', 'Trades'], ['
 /* Strategy notes (Nov 15, Fred: "the Backtester writes down the strategies and the key points, then backtests them").
    Results of the one-off studies run from Claude Code (tools/*.mjs). Aggregates only, never trade data. Newest first. */
 const BT_NOTES = [
+  {d: '2026-11-27', t: 'ICT New York-morning reversal (Fred\'s patch) on Aster, and with SMC', st: 'rejected',
+   idea: '15m bias before 10:00 NY, then 10:00–11:00: sweep of the opening range, strong 1m MSS, 1m FVG entry, target the other side of the range or the prior session\'s untouched high / low, net R:R ≥ 2, out by noon. Skips CPI / jobs / FOMC days.',
+   pts: ['Ported unchanged (bot/ict.mjs; the patch\'s 9 tests pass). Aster 1m bars Nov 20 2025 → Nov 25 2026, 255 NYSE sessions, costs fee + spread + slippage per symbol.',
+         'BTC 1, ETH 1, NVDA 0, TSLA 1 trade in a year: 3 trades, all stopped, −3R. On ~40% of days the target is reached before the setup completes; no sweep / late MSS kill most of the rest. Keeping news days changes nothing.',
+         'With SMC (year backtest BTC/ETH base n121 + live SM / SB): the ICT day bias does not help (with the trade −0.06R n42 vs against +0.03R n26).',
+         'Lead only: SMC entries in the NY morning 09:30–12:00 did worse in all 4 sets (base −0.50R n9, raw −0.08R n19, live SM −0.31R n7, live SB −0.57R n6; pooled −11.3R n23); too small to pass the halves test. Next step if Fred wants: a backtested "no SMC entries 09:30–12:00 NY" test switch.']},
   {d: '2026-11-21', t: 'GMS PMR v1.4: 1h pattern → 15m causal OB/FVG → 5m entry (BTC/ETH)', st: 'testing',
    idea: 'Fred\'s playbook: trade only after a CONFIRMED 1h pattern breakout (flag, triangle, double top/bottom, head & shoulders), from a fresh 15m OB/FVG caused by the breakout impulse, entering on the first 5m retest with an MSS, a displacement candle and a new 5m FVG; net R:R ≥ 2 after costs.',
    pts: ['365 days BTCUSDT + ETHUSDT to 2026-11-21, fills and exits on 1m bars, fees + spread + slippage + funding. 520 patterns confirmed; most die on the way: no fresh causal 15m POI 227, no retest within 2 h 131, no 5m MSS in 45 min 70, invalidated 70, R:R < 2 17.',
